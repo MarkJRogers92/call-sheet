@@ -26,7 +26,7 @@ const OFF_FAMILIES=['run','quick','deep','constraint'];
 // ---------------------------------------------------------------- setup
 function create(opts){
   const seed=String(opts.seed??'call-sheet');
-  const game=Engine.createGame({home:{id:'home',name:opts.home.name,rating:70},away:{id:'away',name:opts.away.name,rating:70},seed,rules:{penalties:true,returns:true,pressure:true}});
+  const game=Engine.createGame({home:{id:'home',name:opts.home.name,rating:70},away:{id:'away',name:opts.away.name,rating:70},seed,rules:{penalties:true,returns:true,pressure:true,...(opts.conditions?{conditions:opts.conditions}:{})}});
   const b={version:VERSION,seed,mode:opts.mode||'series',user:opts.user||null,control:opts.control||'both',weather:opts.weather||'clear',rivalry:!!opts.rivalry,game,
     teams:{home:clone(opts.home),away:clone(opts.away)},
     decks:{home:clone(opts.home.decks||D.DEFAULT_DECKS),away:clone(opts.away.decks||D.DEFAULT_DECKS)},

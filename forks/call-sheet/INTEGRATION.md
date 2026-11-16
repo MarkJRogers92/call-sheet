@@ -27,8 +27,8 @@ tracks, and every battle result flows back into Dynasty Lab's own records. Statu
 | Prestige and fan support | Home crowd: the visiting offense risks false starts on 3rd down | ○ |
 | Weekly preparation and opponent scouting | Opponent Look facts start Confirmed; prepared counters cost 1 less | ▶ |
 | Scouting confidence | Opponent players you haven't scouted show their grades as ranges in the duel chips | ○ |
-| Rivalries and trophies (`rival-watch.js`, trophy art) | Rivalry packs and the real trophy turntable | ○ |
-| `game-conditions.js` weather and stadium | Duel modifiers (already in the battle) driven by the real forecast | ▶ |
+| Rivalries and trophies (`rival-watch.js`, trophy art) | Protected rivals trigger rivalry week and the rivalry pack ✅; the real trophy turntable ○ | ✅ / ○ |
+| `game-conditions.js` weather and stadium | Duel modifiers driven by Dynasty Lab's real forecast for the game; the conditions are recorded with it | ✅ |
 
 ## Results → dynasty
 
@@ -37,12 +37,15 @@ tracks, and every battle result flows back into Dynasty Lab's own records. Statu
 | Final Game Engine 2 state | `recordV2GameLabResult({externalState})`: schedule, records, archive, player stats, rankings, validation, rollback | ✅ `tests/card-battle-record.js` |
 | Who won each duel | Attribution with the actual ball carriers and targets (currently Dynasty Lab's share-based attribution) | ▶ |
 | Breakouts, combos, legendaries | Season moments, storylines, news | ○ |
-| Card playbook, packs, mastery | Stored on the controlled team in the save (versioned, validated) | ▶ |
+| Card playbook, packs, mastery, combos, settings | Stored in the save at `universe.callSheet` and autosaved after the pack ✅; versioned validation ○ | ✅ / ○ |
 
 ## Next build steps
 
-1. **Coach a real game with cards:** "Coach with cards" on game day opens the battle screen on both real rosters
-   and records through `recordV2GameLabResult({externalState})`.
+1. ✅ **Coach a real game with cards:** "Coach with Cards" on the next-matchup card opens the battle full-screen
+   (`card-gameday.js`, frame built from the slice by `tools/build.js`) on both real rosters and depth charts,
+   with the real forecast. The final records through `recordV2GameLabResult({externalState})`, and the pack
+   and evolutions save into the dynasty. Proven by `tests/card-gameday-browser.js`. Classic Game Day stays
+   available.
 2. **Save integration:** the playbook, mastery, signatures and combo book stored on the controlled team, versioned
    and validated.
 3. **Duel-true attribution:** stats credited to the players who actually won and lost the duels.

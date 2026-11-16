@@ -70,7 +70,8 @@
     "test:slow": "node tests/smoke.js && node --test --test-concurrency=4 tests/save-export.js tests/season-review.js tests/admin-outlook.js tests/persistence.js tests/legacy-backup.js tests/promises.js tests/transfers.js tests/portraits.js tests/recaps.js tests/scholarships.js tests/gamestore.js tests/weeklyplan.js tests/delegation-correctness.js tests/career.js tests/bowls.js tests/signingday.js tests/careerblock.js tests/programhistory.js tests/portal-recruiting.js tests/portal-desk.js tests/player-arcs.js tests/scheduling.js tests/saveslots.js tests/history-compaction.js tests/rng-domain2.js tests/rng-domain3.js tests/rng-domain4.js tests/recruiting-actions.js tests/recruit-timelines.js tests/recruiting-calibration-tools.js tests/facilities-boosters.js tests/realignment.js tests/locker-room.js tests/noncon-schedule.js tests/nfl-pipeline.js tests/coach-rivals.js tests/senior-day.js tests/pro-alumni-coaches.js tests/trophy-case.js tests/saw-him-first.js tests/season-card.js tests/week-stakes.js tests/admin-wager.js tests/home-streaks.js tests/dynasty-page.js tests/traditions.js tests/players-of-week.js tests/retired-numbers.js tests/rising-class.js tests/living-world-integration.js tests/session-resume.js tests/lint.js tests/card-battle-record.js",
     "test:dynasty-logo-browser": "node tests/dynasty-logo-browser.js",
     "test:long-save-browser": "node tests/long-save-browser.js",
-    "test:long-save-desktop": "node tests/long-save-desktop.js"
+    "test:long-save-desktop": "node tests/long-save-desktop.js",
+    "test:card-gameday-browser": "node tests/card-gameday-browser.js"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",
