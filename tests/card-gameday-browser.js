@@ -13,6 +13,7 @@ const shots=process.env.CARD_SHOTS||'';
     await page.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(page);
     while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
     const before=await page.evaluate(()=>window.__DL_TEST__.preseasonDebug());
+    await page.evaluate(()=>{const launch=window.__callSheetDynasty.launch;window.__callSheetDynasty.launch=()=>({...launch(),scouting:{confidence:50}})});
     if(shots)await page.screenshot({path:`${shots}/c0-hub.png`});
     await page.locator('#broadcastFeature [data-coach-cards]').click();
     const frameEl=await page.waitForSelector('#cardGameDay iframe',{timeout:10000});
@@ -35,6 +36,18 @@ const shots=process.env.CARD_SHOTS||'';
     await frame.evaluate(()=>{const el=document.querySelector('#field .pl');el.dispatchEvent(new PointerEvent('pointerenter',{clientX:300,clientY:300,bubbles:false}))});
     assert.match(await frame.locator('#ptip').innerText(),/THIS GAME|This game/i,'hovering a field card shows the player card');
     await frame.evaluate(()=>document.querySelector('#field .pl').dispatchEvent(new PointerEvent('pointerleave')));
+    const fog=await frame.evaluate(()=>{
+      const b=window.__slice.b,el=[...document.querySelectorAll('#field .pl')].find(x=>x.dataset.side!==b.user);
+      el.dispatchEvent(new PointerEvent('pointerenter',{clientX:300,clientY:300}));
+      const tip=document.querySelector('#ptip'),rows=[...tip.querySelectorAll('.tt-traits > div')].map(r=>({range:r.querySelector('b').textContent,bar:parseFloat(r.querySelector('i').style.getPropertyValue('--v'))}));
+      el.dispatchEvent(new PointerEvent('pointerleave'));return rows;
+    });
+    assert.ok(fog.length&&fog.every(r=>r.range.includes('–')&&r.bar===Number(r.range.split('–')[0])),'opponent bars use the displayed range, never the exact hidden trait');
+    if(await frame.evaluate(()=>window.__slice.req?.kind==='snap'&&window.__slice.req.role==='off')){
+      await frame.locator('#hand .card.k-play:not(.blocked)').first().click({force:true});
+      assert.match(await frame.locator('#side').innerText(),/Exact forecasts are unavailable/);
+      assert.equal(await frame.locator('#field .edge,#field .risk,#field .threat').count(),0,'fog cannot reveal exact matchup margins through field colors');
+    }
     if(shots)await page.screenshot({path:`${shots}/c2-battle.png`});
     // Call one snap by hand, then let the coordinators finish the game.
     // (When the game opens on a 4th-down choice the hand is hidden, so the call goes through the game's own submit path.)
@@ -42,8 +55,16 @@ const shots=process.env.CARD_SHOTS||'';
     if(called){await page.waitForTimeout(1200);if(shots)await page.screenshot({path:`${shots}/c3-clash.png`})}
     await frame.waitForFunction(()=>!window.__slice.busy,null,{timeout:60000});
     await frame.evaluate(()=>{document.getElementById('modal').classList.remove('on')});
+    const rewardsBefore=await page.evaluate(()=>window.DynastyCardGameDay.meta());
+    await page.evaluate(()=>{const record=window.__callSheetDynasty.record;let first=true;window.__callSheetDynasty.record=(...args)=>{if(first){first=false;return{ok:false,error:'Temporary recorder failure'}}return record(...args)}});
     await frame.click('#bSim',{force:true});
-    for(let i=0;i<400;i++){if(await frame.$('#openPack'))break;const f=await frame.$('#modal [data-o]');if(f)await f.click({force:true}).catch(()=>{});await page.waitForTimeout(150)}
+    for(let i=0;i<400;i++){if(await frame.$('#retryRecord'))break;const f=await frame.$('#modal [data-o]');if(f)await f.click({force:true}).catch(()=>{});await page.waitForTimeout(150)}
+    await frame.waitForSelector('#retryRecord');
+    assert.equal(await frame.locator('#openPack').count(),0,'failed recording offers no rewards');
+    const failed=await page.evaluate(()=>window.DynastyCardGameDay.meta());
+    for(const key of ['playbook','games','players','moments'])assert.deepEqual(failed[key],rewardsBefore[key],`failed recording leaves ${key} unchanged`);
+    assert.equal((await page.evaluate(()=>window.__DL_TEST__.preseasonDebug())).played,before.played,'failed recording leaves the schedule unchanged');
+    await frame.click('#retryRecord');await frame.waitForSelector('#openPack');
     await page.waitForTimeout(600);
     const finalText=await frame.locator('#modal').innerText();
     if(shots)await page.screenshot({path:`${shots}/c4-final.png`});
@@ -62,6 +83,7 @@ const shots=process.env.CARD_SHOTS||'';
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
     assert.ok(meta&&meta.playbook&&meta.playbook.packsOpened===1,'the pack pick is saved in the dynasty');
+    assert.equal(meta.games,1);assert.equal(meta.playbook.record.w+meta.playbook.record.l,1,'retry grants game progression exactly once');
     if(shots)await page.screenshot({path:`${shots}/c6-back.png`});
     // The Card Program panel appears on This Week, under the next-matchup card.
     await page.waitForSelector('#cardProgram',{timeout:5000});

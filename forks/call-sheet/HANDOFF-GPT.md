@@ -11,7 +11,7 @@ and every result flows back into Dynasty Lab's own records. Read this file first
 
 | What | Where |
 | --- | --- |
-| The real fork (work here) | GitHub `MarkJRogers92/call-sheet`, branch **`card-battles`** (latest: 30b6677) |
+| The real fork (work here) | GitHub `MarkJRogers92/call-sheet`, branch **`card-battles`** |
 | `call-sheet` `main` | Dynasty Lab plus an early copy of this folder. **It does not have the card-battles work yet.** Merge only when Mark says so |
 | Prototype copy | GitHub `MarkJRogers92/Football`, branch `claude/gracious-volta-3me7m2`, folder `forks/call-sheet/` (synced with `card-battles` for `core/`, `slice/`, `tools/` and the docs; it has none of the Dynasty Lab integration files) |
 | Playable sandbox | https://claude.ai/artifact/65grKWrvUGk2Ea4suJxGac (the slice bundled into one page; it runs without a dynasty) |
@@ -105,6 +105,31 @@ logged and skipped. Registered integrations: `program-edges`, `signature-graduat
 table of next ideas by hook.
 
 ## Done (newest first)
+
+### Review fixes — 2026-11-16
+
+- Failed coached-game recording now offers Retry Save and Return to Dynasty. It grants no game count,
+  record, mastery, breakout or pack until the result is accepted. Retrying records and rewards the game once.
+- Simulated card games now update the card win/loss record and award a pack. The existing scheme-aware
+  coordinator chooses the card and trims the deck to capacity; manual games still let the player choose.
+- AI playbooks track `recordYear`, so last season's record cannot block new-season packs and evolution reps.
+  Older saves infer a reset when the team's current record has fewer games than the stored record.
+- Both coached and simulated packs exclude legendaries already held by opponents. Coached pack seeds now
+  include the dynasty matchup instead of sharing a null sandbox-team seed across dynasties.
+- Save normalization rejects unknown/wrong-side deck cards and unusable signature metadata before a battle
+  can crash. Broken base sheets retain the existing reset behavior; valid evolved cards and signatures survive.
+- Practice mastery requires this week's preparation. Integration switches are fresh per dynasty. A blocked
+  week does not run card progression hooks; completed-week card news and AI progression are autosaved.
+- Switching Program edges off now removes scheme/preparation/crowd effects and staff Command bonuses
+  on both teams, instead of silently reapplying adapter defaults.
+- Scouting fog applies to trait bars, precise forecasts and matchup colors as well as grade labels. Duel replay
+  uses the recorded play's sides, so a touchdown or turnover cannot swap which team's grades are hidden.
+
+Regression coverage: `node --test tests/card-review.js` (also in `npm test` / `test:slow`) and
+`node tests/card-gameday-browser.js` (fog, forced recording failure, retry, exactly-once rewards, pack and return).
+Postseason remains the next substantial feature; this review does not enable it.
+
+### Previous implementation
 
 1. **Every player has a card** (30b6677):
    - Player pages show a battle card: role and depth, ability, grades, conditions and card career.

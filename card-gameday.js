@@ -9,21 +9,29 @@
 // ================================================================ 1. save format
 const CALL_SHEET_SAVE_VERSION=1;
 function normalizeCardPlaybook(pb,maxSignatures=3){
-  if(!pb||typeof pb!=='object')return null;
+  if(!pb||typeof pb!=='object'||Array.isArray(pb))return null;
+  const CS=globalThis.CallSheet,D=CS?.data;
   const ids=(a,max)=>Array.isArray(a)?a.filter(x=>typeof x==='string'&&x.length>0&&x.length<80).slice(0,max):[];
   const int=(v,lo,hi,d)=>Number.isFinite(Number(v))?Math.max(lo,Math.min(hi,Math.round(Number(v)))):d;
   const intMap=o=>Object.fromEntries(Object.entries(o&&typeof o==='object'?o:{}).filter(([,v])=>Number.isFinite(Number(v))).map(([k,v])=>[k,int(v,0,100000,0)]));
   const strMap=o=>Object.fromEntries(Object.entries(o&&typeof o==='object'?o:{}).filter(([,v])=>typeof v==='string'));
   const objs=(a,max)=>Array.isArray(a)?a.filter(x=>x&&typeof x==='object'&&typeof x.id==='string').slice(-max):[];
-  const deck=d=>({base:ids(d?.base,4),wrinkles:ids(d?.wrinkles,40),tactics:ids(d?.tactics,40)});
-  pb.off=deck(pb.off);pb.def=deck(pb.def);
-  if(pb.off.base.length!==4||pb.def.base.length!==4)return null; // a call sheet must hold four base calls
+  const legal=(id,side,tactic)=>{const table=tactic?D?.TACTICS:side==='off'?D?.PLAYS:D?.CALLS;return table&&Object.hasOwn(table,id)&&table[id].side===side&&!table[id].signature};
+  const deck=(d,side)=>({base:ids(d?.base,4).filter(id=>legal(id,side,false)),wrinkles:ids(d?.wrinkles,40).filter(id=>legal(id,side,false)),tactics:ids(d?.tactics,40).filter(id=>legal(id,side,true))});
+  pb.off=deck(pb.off,'off');pb.def=deck(pb.def,'def');
+  if([pb.off,pb.def].some(d=>new Set(d.base).size!==4))return null; // invalid base sheets reset rather than crash on the next draw
   pb.capacity={wrinkles:int(pb.capacity?.wrinkles,10,30,14),tactics:int(pb.capacity?.tactics,10,30,14)};
   pb.legendaries=ids(pb.legendaries,20);pb.record={w:int(pb.record?.w,0,9999,0),l:int(pb.record?.l,0,9999,0)};
   pb.packsOpened=int(pb.packsOpened,0,99999,0);pb.gamesPlayed=int(pb.gamesPlayed,0,99999,0);
   if(pb.lastSignatureGame!==undefined)pb.lastSignatureGame=int(pb.lastSignatureGame,0,99999,0);
+  if(pb.recordYear!==undefined)pb.recordYear=int(pb.recordYear,0,99999,0);
   pb.mastery=intMap(pb.mastery);pb.evolved=strMap(pb.evolved);pb.history=objs(pb.history,300);
-  pb.signatures=objs(pb.signatures,maxSignatures).filter(x=>typeof x.playerId==='string'||typeof x.playerId==='number');pb.ringOfHonor=objs(pb.ringOfHonor,200);
+  pb.signatures=objs(pb.signatures,maxSignatures).filter(x=>{
+    if(!CS?.signatures||!['string','number'].includes(typeof x.playerId)||x.id!==`sig_${x.playerId}`||typeof x.name!=='string'||typeof x.last!=='string')return false;
+    if(!Object.hasOwn(D.OFF_ROLES,x.role)&&!Object.hasOwn(D.DEF_ROLES,x.role))return false;
+    if(CS.signatures.templateFor({role:x.role,archetype:x.archetype})!==x.template)return false;
+    const built=CS.signatures.build(x);return x.side===built.side&&x.pile===(built.kind==='tactic'?'tactics':'wrinkles');
+  });pb.ringOfHonor=objs(pb.ringOfHonor,200);
   return pb;
 }
 function normalizeCallSheet(u){
@@ -57,8 +65,8 @@ function normalizeCallSheet(u){
   const CS=globalThis.CallSheet||{};
   const DEFAULT_SETTINGS={mode:'key',control:'offense',fast:false,sound:true,integrations:{}};
   function cardMeta(){
-    universe.callSheet??={version:CALL_SHEET_SAVE_VERSION,playbook:null,combos:[],settings:{...DEFAULT_SETTINGS},games:0,seenHelp:false,ai:{}};
-    universe.callSheet.ai??={};universe.callSheet.newsLog??=[];universe.callSheet.players??={};universe.callSheet.moments??=[];universe.callSheet.settings??={...DEFAULT_SETTINGS};universe.callSheet.settings.integrations??={};
+    universe.callSheet??={version:CALL_SHEET_SAVE_VERSION,playbook:null,combos:[],settings:{...DEFAULT_SETTINGS,integrations:{}},games:0,seenHelp:false,ai:{}};
+    universe.callSheet.ai??={};universe.callSheet.newsLog??=[];universe.callSheet.players??={};universe.callSheet.moments??=[];universe.callSheet.settings??={...DEFAULT_SETTINGS,integrations:{}};universe.callSheet.settings.integrations??={};
     return universe.callSheet;
   }
   function userPlaybook(){const m=cardMeta();if(!m.playbook&&CS.packs)m.playbook=CS.packs.newPlaybook();return m.playbook}
@@ -121,7 +129,7 @@ function normalizeCallSheet(u){
     run_fits:['run_fit','cover3'],coverage:['two_high','cover1'],pressure:['zone_pressure','cover1']};
   const PRACTICE_REPS=5;
   function practiceReps(team,opp){
-    const wp=team.weeklyPrep;if(!wp||wp.opponent!==opp.name||wp.year!==universe.year)return{};
+    const wp=team.weeklyPrep;if(!wp||wp.opponent!==opp.name||wp.year!==universe.year||wp.week!==universe.week)return{};
     const out={};for(const f of wp.focuses||[])for(const root of PRACTICE[f]||[])out[root]=(out[root]||0)+PRACTICE_REPS;
     return out;
   }
@@ -146,7 +154,11 @@ function normalizeCallSheet(u){
     return out;
   }
   function aiWeek(team){
-    const pb=aiPlaybookFor(team),spec=aiSpec(team),games=(team.w||0)+(team.l||0),before=(pb.record.w||0)+(pb.record.l||0);
+    const pb=aiPlaybookFor(team),spec=aiSpec(team),games=(team.w||0)+(team.l||0);
+    let before=(pb.record.w||0)+(pb.record.l||0);
+    // Old saves have no year stamp; a reset team record identifies their first new season.
+    if((pb.recordYear!=null&&pb.recordYear!==universe.year)||games<before){pb.record={w:0,l:0};before=0}
+    pb.recordYear=universe.year;
     if(games<=before)return null; // no new game this week
     const won=(team.w||0)>(pb.record.w||0);pb.record={w:team.w||0,l:team.l||0};
     const pack=CS.packs.openPack(pb,{won,seed:`ai:${universe.year}:${universe.week}:${team.id}`,worldTaken:takenLegendaries(team.id)});
@@ -193,7 +205,7 @@ function normalizeCallSheet(u){
       label:`Week ${g.week} · ${g.conf?'Conference':'Non-conference'}`,record:{w:me.w||0,l:me.l||0},
       weather:battleWeather(conditions),conditions,rivalry:(me.protectedRivalIds||[]).includes(opp.id),
       playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
-      seed:`card:${universe.year}:${g.week}:${me.id}`,moves:[],practiceReps:{}};
+      seed:`card:${universe.year}:${g.week}:${me.id}`,moves:[],practiceReps:{},worldTaken:takenLegendaries(),program:{home:{enabled:false},away:{enabled:false}}};
     runHook('launch',{cfg,g,home,away,me,opp,userSide:cfg.userSide});
     if(cfg.moves.length)try{autosaveAfter('game')}catch(err){}
     return cfg;
@@ -232,8 +244,14 @@ function normalizeCallSheet(u){
     if(sim&&out?.ok){
       const pb=userPlaybook(),me=selected(),opp=sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home;
       CS.evolution.recordReps(pb,sim.b.log,sim.cfg.userSide);pb.gamesPlayed=(pb.gamesPlayed||0)+1;cardMeta().games++;
+      const won=sim.b.game.score[sim.cfg.userSide]>sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];pb.record[won?'w':'l']++;
+      // Sim delegates the pick to the same scheme-aware coordinator used by AI programs.
+      const pack=CS.packs.openPack(pb,{won,rivalry:sim.cfg.rivalry,seed:sim.cfg.seed,oppTendency:sim.b.tend[sim.cfg.userSide==='home'?'away':'home'],worldTaken:takenLegendaries()});
+      if(pack.cards.length){const spec=aiSpec(me),pick=CS.world.aiPick(spec,pack,pb,DynastyRng.create(`${sim.cfg.seed}:pick`));CS.packs.applyPick(pb,pick);
+        for(let over=CS.packs.overCapacity(pb);over;over=CS.packs.overCapacity(pb))CS.world.aiCut(spec,pb,over)}
       try{addCardCareer(CS.battle.duelTally(sim.b),sim.week)}catch(err){console.error(err)}
       runHook('afterGame',{b:sim.b,userSide:sim.cfg.userSide,me,opp,coached:false});
+      if(!options.advancingWeek)try{autosaveAfter('game')}catch(err){console.error(err)}
     }
     return out;
   };
@@ -247,10 +265,11 @@ function normalizeCallSheet(u){
         try{cardResult=recordV2GameLabResult({advancingWeek:true}).result}catch(err){console.error('Card-simulated game was not recorded; the standard simulation will play it.',err)}
       }
     }
-    const playedWeek=universe.week+1,playedYear=universe.year; // universe.week counts weeks completed; the schedule numbers from 1
+    const beforeWeek=universe.week,beforePhase=universe.phase,playedWeek=beforeWeek+1,playedYear=universe.year; // universe.week counts weeks completed; the schedule numbers from 1
     const out=simWeekBase.apply(this,args);
     if(cardResult&&Array.isArray(universe.latest)&&!universe.latest.some(r=>r?.gameId===cardResult.gameId))universe.latest.unshift(cardResult);
-    if(universe?.callSheet&&CS.packs)try{const ctx=runHook('weekTick',{week:playedWeek,year:playedYear});const cs=universe.callSheet;cs.lastWeekNews=ctx.news||[];cs.newsLog=(cs.newsLog||[]).concat(cs.lastWeekNews.map(n=>({...n,year:ctx.year,week:ctx.week}))).slice(-40)}catch(err){console.error(err)}
+    const advanced=universe&&(universe.week!==beforeWeek||universe.year!==playedYear||universe.phase!==beforePhase);
+    if(advanced&&universe.callSheet&&CS.packs)try{const ctx=runHook('weekTick',{week:playedWeek,year:playedYear});const cs=universe.callSheet;cs.lastWeekNews=ctx.news||[];cs.newsLog=(cs.newsLog||[]).concat(cs.lastWeekNews.map(n=>({...n,year:ctx.year,week:ctx.week}))).slice(-40);autosaveAfter('week')}catch(err){console.error(err)}
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };

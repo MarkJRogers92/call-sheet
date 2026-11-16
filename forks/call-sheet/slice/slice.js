@@ -120,7 +120,7 @@ function ensureDots(f){
 let glowNotes={};
 function clearGlow(){glowNotes={};for(const el of Object.values(layer.dots||{}))el.classList.remove('edge','risk','threat','won','dim')}
 function fieldGlow(duels,userOff){
-  clearGlow();if(!duels)return;
+  clearGlow();if(!duels||fogSpread())return;
   for(const d of duels){
     const adv=userOff?d.margin:-d.margin;if(Math.abs(adv)<1)continue;
     const mine=(userOff?d.offRoles:d.defRoles).map(r=>(userOff?'o:':'d:')+r),theirs=(userOff?d.defRoles:d.offRoles).map(r=>(userOff?'d:':'o:')+r);
@@ -172,8 +172,8 @@ function showTip(el,ev){
   tip.className=`${el.classList.contains('sig')?'sig':''} ${opp?'opp':''}`;
   tip.style.setProperty('--tc',team.colors[0]);
   tip.innerHTML=`<div class="tt-head"><canvas width="56" height="56"></canvas><div><b>${esc(p.name)}</b><span>#${esc(p.number)} · ${esc(p.pos||p.role)} · ${esc(CLASS_YR[p.year]||'')}</span><span>${esc(team.short)} ${esc(p.role)} · ${esc(p.archetype||'')}${p.ovr?` · <b>${g(p.ovr)}</b> OVR`:''}</span></div></div>
-    <div class="tt-traits">${traits.map(([t,v])=>`<div class="${strong.has(t)?'key':''}"><span>${t==='iq'?'IQ':esc(t)}</span><i style="--v:${Math.max(0,Math.min(100,v))}%"></i><b>${g(v)}</b></div>`).join('')}</div>
-    ${(p.cond||[]).length?`<div class="tt-cond">${p.cond.map(c=>`<span class="${c.v>0?'up':'down'}">${c.v>0?'+1':'−1'} ${esc(c.src)}<small>${c.when==='late'?'4th quarter':c.when==='money'?'3rd & 4th down':'every snap'}</small></span>`).join('')}</div>`:''}
+    <div class="tt-traits">${traits.map(([t,v])=>`<div class="${strong.has(t)?'key':''}"><span>${t==='iq'?'IQ':esc(t)}</span><i style="--v:${Math.max(0,Math.min(100,fog?v-(v%(fog*5+1)):v))}%"></i><b>${g(v)}</b></div>`).join('')}</div>
+    ${(p.cond||[]).length?`<div class="tt-cond">${p.cond.map(c=>`<span class="${c.v>0?'up':'down'}">${c.v>0?'+1':'−1'} ${esc(fog?c.src.replace(/ \(health \d+\)/,''):c.src)}<small>${c.when==='late'?'4th quarter':c.when==='money'?'3rd & 4th down':'every snap'}</small></span>`).join('')}</div>`:''}
     ${notes.length?`<div class="tt-notes">${notes.map(n=>`<div>${esc(n)}</div>`).join('')}</div>`:''}
     ${b.fire[p.id]?'<div class="tt-fire">ON FIRE</div>':''}${el.classList.contains('sig')?'<div class="tt-sig">SIGNATURE CARD</div>':''}
     <div class="tt-line"><span>This game</span>${gameLine(b.players?.[p.id])}</div>${fog?`<div class="tt-fog">Film confidence ${DYN.scouting.confidence}%: grades are ranges</div>`:''}`;
@@ -258,6 +258,14 @@ function readHTML(){
   if(!sel.play){clearGlow();return`<div class="box"><h3>The read</h3><div class="mini">Pick a play card. Drag it onto the field, or tap it and hit SNAP.</div></div>`}
   const tactics=sel.tac.map(i=>req.options.tactics.find(t=>t.slot===i)?.id).filter(Boolean);
   const pv=B.preview(b,req.side,{play:sel.play,tactics});if(!pv)return'';
+  // Precise forecasts and matchup colors also reveal the hidden grades. Keep the read honest under fog.
+  if(fogSpread()){
+    clearGlow();
+    const duels=req.role==='off'?pv.snap.duels:pv.vs.slice().sort((a,c)=>c.weight-a.weight)[0]?.snap.duels||[];
+    const side=b.user==='home'?'away':'home';
+    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}%: scout them to sharpen the matchup. Exact forecasts are unavailable.</div>
+      ${duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} vs ${esc(d.defNames.join(' & '))}<br>Opponent grade ${esc(fogGrade(req.role==='off'?d.defGrade:d.offGrade,(req.role==='off'?d.defNames:d.offNames)[0],side).text)}</span><span class="chip fogchip">?</span></div>`).join('')}</div>`;
+  }
   if(req.role==='off'){
     fieldGlow(pv.snap.duels,true);
     const bonus=pv.snap.duels.flatMap(d=>d.mods.filter(m=>m.src!=='Play design').map(m=>({...m,k:d.key})));
@@ -442,8 +450,8 @@ function fogGrade(grade,pid,side){
   let h=0;for(const ch of String(pid))h=(h*31+ch.charCodeAt(0))>>>0;const lo=grade-(h%(sp+1));
   return{text:`${lo}–${lo+sp}`,fog:true};
 }
-function fighterHTML(cls,names,roles,lineup,grade,color){
-  {const pl=lineup[roles[0]],side=cls==='o'?b.game.possession:(b.game.possession==='home'?'away':'home'),fg=fogGrade(grade,names[0],side);grade=fg.text}
+function fighterHTML(cls,names,roles,lineup,grade,color,side){
+  grade=fogGrade(grade,names[0],side).text;
   const p=lineup[roles[0]];const hot=p&&b.fire[p.id];
   return`<div class="fighter ${cls} ${hot?'burn':''}" style="--${cls==='o'?'oc':'dc'}:${color}"><canvas class="face" data-pid="${esc(p?p.id:'')}" data-side="${cls}" width="64" height="64" aria-label="${esc(names[0]||'')}"></canvas><div><div class="nm">${esc(names.join(' & '))}</div><div class="ar">${esc(p?p.archetype:'')}${hot?' · 🔥 ON FIRE':''}</div></div><div class="gr">${grade}</div></div>`;
 }
@@ -459,8 +467,8 @@ async function cinematic(e){
     const d=e.duels[i],won=e.duelResults[i].won,userWon=uo?won:!won;
     const slot=d.key==='G'?'GATE':d.key==='K'?'KEY':'FINISH';
     clash.innerHTML=`<div class="cl"><div class="lab">${slot}${d.label.toUpperCase()===slot?'':' · '+esc(d.label)}</div>
-      ${fighterHTML('o',d.offNames,d.offRoles,offT.lineup.off,d.offGrade,offT.colors[0])}<div class="vs">VS</div>
-      ${fighterHTML('d',d.defNames,d.defRoles,defT.lineup.def,d.defGrade,defT.colors[0])}
+      ${fighterHTML('o',d.offNames,d.offRoles,offT.lineup.off,d.offGrade,offT.colors[0],e.offSide)}<div class="vs">VS</div>
+      ${fighterHTML('d',d.defNames,d.defRoles,defT.lineup.def,d.defGrade,defT.colors[0],e.defSide)}
       <div class="mods">${d.mods.map(m=>`<span class="${m.src==='Play design'?'design':((m.v>0)===uo?'':'neg')}">${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>
       <div class="stamp ${userWon?'w':'l'}">${userWon?'WIN':'LOSE'}</div></div>`;
     for(const cv of clash.querySelectorAll('canvas.face')){const lu=cv.dataset.side==='o'?offT.lineup.off:defT.lineup.def,pl=Object.values(lu).find(x=>x.id===cv.dataset.pid);if(pl)paintPortrait(cv,pl,(cv.dataset.side==='o'?offT:defT).colors,64)}
@@ -556,8 +564,15 @@ function fourthModal(){
 function finalScreen(){
   $('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
   const won=b.game.score[b.user]>b.game.score[b.user==='home'?'away':'home'];
+  if(DYN&&!b._recorded){
+    try{b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b))}catch(e){b._saved={ok:false,error:e.message||String(e)}}
+    if(!b._saved?.ok){
+      const m=$('#modal');m.innerHTML=`<div class="mwrap"><p class="big red">RESULT NOT SAVED</p><p class="statline">${esc(b._saved?.error||'The result could not be recorded.')}</p><p>Your season and card rewards are unchanged. Retry to record this finished game.</p><button class="btn go" id="retryRecord">RETRY SAVE</button><button class="btn" id="leaveUnsaved">RETURN TO DYNASTY</button></div>`;
+      m.classList.add('on');$('#retryRecord').onclick=()=>finalScreen();$('#leaveUnsaved').onclick=()=>HOST.close();return;
+    }
+  }
   if(!b._recorded){b._recorded=true;b._breakout=SG.candidate(b,b.user,save.playbook);save.playbook.record[won?'w':'l']++;save.games++;save.playbook.gamesPlayed=(save.playbook.gamesPlayed||0)+1;
-    if(DYN){b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b));for(const [root,n] of Object.entries(DYN.practiceReps||{}))EV.addReps(save.playbook,root,n)}
+    if(DYN){for(const [root,n] of Object.entries(DYN.practiceReps||{}))EV.addReps(save.playbook,root,n)}
     else{CL.recordCareers(save.world.userLineup,b.players);const op=save.world.programs[oppId()];if(op?.lineup)CL.recordCareers(op.lineup,b.players);save.pending={won,userTendency:b.tend[b.user]}}
     b._gained=EV.recordReps(save.playbook,b.log,b.user);writeSave()}
   const top=Object.values(b.players).filter(p=>p.side===b.user).sort((a,c)=>(c.passYds+c.rushYds*1.6+c.recYds*1.6+c.sacks*30+c.intDef*35)-(a.passYds+a.rushYds*1.6+a.recYds*1.6+a.sacks*30+a.intDef*35)).slice(0,3);
@@ -576,7 +591,7 @@ function finalScreen(){
 async function packScreen(won){
   S.init();
   const opp=b.user==='home'?'away':'home';
-  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,seed:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?[]:W.takenLegendaries(save.world,save.playbook,'user')});
+  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?DYN.worldTaken||[]:W.takenLegendaries(save.world,save.playbook,'user')});
   const pc=pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
   const m=$('#modal');
   m.innerHTML=`<div class="mwrap"><p class="big ${won?'gold':''}" style="font-size:clamp(40px,7vw,80px)">${esc(pack.title.toUpperCase())}</p><p class="statline">${esc(pack.subtitle)}</p>

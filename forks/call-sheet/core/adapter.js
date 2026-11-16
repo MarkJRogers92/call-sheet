@@ -88,9 +88,10 @@ function staffCommand(team){
 }
 function battleTeam(team,decks,info){
   const {lineup,missing}=lineupFromTeam(team),coach=coachFromTeam(team);
-  coach.commandBonus=staffCommand(team);
+  const programOn=info?.enabled!==false;
+  coach.commandBonus=programOn?staffCommand(team):{off:0,def:0};
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
-    lineup,coach,decks:decks||undefined,missing,edges:programEdges(team,info||{})};
+    lineup,coach,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
 }
 return{ROLE_MAP,POS_FALLBACK,toBattlePlayer,conditionsOf,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });
