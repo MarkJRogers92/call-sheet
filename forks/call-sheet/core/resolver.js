@@ -19,7 +19,16 @@ function grade(lineup,roles,traits){
   return Math.floor(ps.reduce((s,p)=>s+playerAvg(p,traits),0)/ps.length/10);
 }
 function traitGrade(p,trait){return Math.floor((p?.traits?.[trait]??50)/10)}
-const winChance=m=>D.WIN_CHANCE[String(clamp(m,-3,3))];
+function winChance(m){
+  const x=clamp(m,-3,3),lo=Math.floor(x),hi=Math.ceil(x);
+  return D.WIN_CHANCE[lo]+(D.WIN_CHANCE[hi]-D.WIN_CHANCE[lo])*(x-lo);
+}
+// Keep the full trait average for resolution; ten-point display bands must not erase development.
+function ability(lineup,roles,traits){
+  const ps=roles.map(r=>lineup[r]).filter(Boolean);
+  return ps.length?ps.reduce((s,p)=>s+playerAvg(p,traits),0)/ps.length/10:5;
+}
+const rootPlay=p=>p.evolvedFrom||p.upgradeOf||p.id;
 
 // Is a play legal for this lineup? Returns null or a reason.
 function playBlocked(play,lineup){
@@ -47,7 +56,7 @@ function tacticBlocked(tac,play,offLineup){
     if(traitGrade(t,'iq')<n.targetIq&&!['Route Sculptor','Space Hunter','Motion Weapon'].includes(sig))return`Target needs iq ${n.targetIq}+ or a route signature`;
   }
   if(n.plays){
-    const ok=n.plays.includes(play.id)||(play.id==='inside_zone'&&D.SIGNATURES[offLineup.TE?.archetype]?.flag==='mauler');
+    const ok=n.plays.includes(rootPlay(play))||(rootPlay(play)==='inside_zone'&&D.SIGNATURES[offLineup.TE?.archetype]?.flag==='mauler');
     if(!ok)return'Only on '+n.plays.map(id=>D.PLAYS[id].name).join(', ')+(offFlag(offLineup,'mauler')?', Inside Zone':'');
   }
   return null;
@@ -66,7 +75,7 @@ function buildSnap(ctx){
   const {off,def,play,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
   const sit=ctx.situation||{down:1,distance:10,field:25};
   const brRole=dt.has('bracket')?(ctx.bracketRole||bracketRole(off)):null;
-  const flags={};
+  const flags={},origin=rootPlay(play),abilityContext={play:{...play,id:origin},call,offTactics:[...ot],defTactics:[...dt],situation:sit};
   const duels=['G','K','F'].map(key=>{
     const d=play.duels[key],mods=[];
     const add=(v,src)=>{if(v)mods.push({v,src})};
@@ -85,8 +94,8 @@ function buildSnap(ctx){
     }
     if(play.family==='deep'&&key==='K'){if(call.shell===2)add(-1,'Two deep');if(call.shell===0)add(2,'No safety')}
     if(play.pass&&key==='K'&&call.counters.includes(play.family))add(-1,'Coverage built for it');
-    if(play.id==='screen'&&key==='G'&&call.pressure>0)add(2,'They rushed into it');
-    if(play.id==='pa_boot'&&key==='K'&&call.box==='loaded')add(1,'Linebackers crowding');
+    if(origin==='screen'&&key==='G'&&call.pressure>0)add(2,'They rushed into it');
+    if(origin==='pa_boot'&&key==='K'&&call.box==='loaded')add(1,'Linebackers crowding');
     if(play.family==='constraint'&&key==='K'&&call.counters.includes('constraint'))add(-1,'Robber lurking');
     // Tendency: the defense leans, constraint plays punish it.
     if(ctx.lean){
@@ -94,7 +103,7 @@ function buildSnap(ctx){
       if(key==='K'&&play.punishes===ctx.lean)add(2,'Punish the lean');
       if(key==='K'&&play.id==='vertical_shot'&&ctx.lean==='quick')add(1,'Punish the lean');
     }
-    if(ctx.heat&&play.id==='screen'&&key==='K')add(1,'Blitz-happy defense');
+    if(ctx.heat&&origin==='screen'&&key==='K')add(1,'Blitz-happy defense');
     // Offensive tactics.
     const targetDuel=d.release||d.separation;
     if(ot.has('motion')&&targetDuel&&d.off.includes(play.target))add(1,'Motion');
@@ -138,15 +147,26 @@ function buildSnap(ctx){
     }
     // Signatures (offense positive, defense negative).
     for(const [roles,lineup] of [[d.off,off],[d.def,def]]){
-      for(const r of roles){const s=D.SIGNATURES[lineup[r]?.archetype];if(s?.duel&&s.scope!=='field')add(s.duel({play,call},key,d),`${lineup[r].name} (${lineup[r].archetype})`)}
+      for(const r of roles){const s=D.SIGNATURES[lineup[r]?.archetype];if(s?.duel&&s.scope!=='field')add(s.duel(abilityContext,key,d),`${lineup[r].name} (${lineup[r].archetype})`)}
     }
     // Player conditions from the dynasty (fatigue, composure, morale, playing out of position). Labeled, ±1 each.
     const condOn=c=>c.when==='any'||c.when==='late'&&(sit.period||1)>=4||c.when==='money'&&sit.down>=3;
     for(const [roles,lineup,sign] of [[d.off,off,1],[d.def,def,-1]])for(const r of roles){const pl=lineup[r];for(const c of pl?.cond||[])if(condOn(c))add(sign*c.v,`${pl.name}: ${c.src}`)}
-    for(const r of Object.keys(D.DEF_ROLES)){const p=def[r],s=D.SIGNATURES[p?.archetype];if(s?.duel&&s.scope==='field')add(s.duel({play,call},key,d),`${p.name} (${p.archetype})`)}
-    const offGrade=grade(off,d.off,d.ot),defGrade=grade(def,d.def,d.dt);
+    for(const r of Object.keys(D.DEF_ROLES)){const p=def[r],s=D.SIGNATURES[p?.archetype];if(s?.duel&&s.scope==='field')add(s.duel(abilityContext,key,d),`${p.name} (${p.archetype})`)}
+    // Today's workload is separate from existing health/wear. Durable players retain their edge longer.
+    for(const [roles,lineup,sign] of [[d.off,off,1],[d.def,def,-1]]){
+      let tired=null,penalty=0;
+      for(const role of roles){const p=lineup[role];if(!p)continue;
+        const loss=clamp(((ctx.workload?.[p.id]||0)-(20+(p.traits?.durability??50)/2))/20,0,1);
+        if(loss>penalty){penalty=loss;tired=p}}
+      if(tired)add(-sign*Math.round(penalty*10)/10,`${tired.name}: Game fatigue`);
+    }
+    const throwing=play.pass&&key==='F'&&!d.off.includes('QB')&&off.QB;
+    const qbTraits=play.family==='deep'?['power','technique','composure']:['technique','iq','composure'];
+    const receiverGrade=ability(off,d.off,d.ot),offGrade=throwing?.7*receiverGrade+.3*ability(off,['QB'],qbTraits):receiverGrade,defGrade=ability(def,d.def,d.dt);
+    const offRoles=throwing?[...d.off,'QB']:d.off;
     const raw=offGrade-defGrade+mods.reduce((s,m)=>s+m.v,0),margin=clamp(raw,-3,3);
-    return{key,label:d.label,offRoles:d.off,defRoles:d.def,offNames:d.off.map(r=>off[r]?.name),defNames:d.def.map(r=>def[r]?.name),offGrade,defGrade,mods,raw,margin,p:winChance(margin),chip:D.chip(margin)};
+    return{key,label:d.label,offRoles,defRoles:d.def,offTraits:d.ot,defTraits:d.dt,qbTraits:throwing?qbTraits:null,offNames:offRoles.map(r=>off[r]?.name),defNames:d.def.map(r=>def[r]?.name),offGrade,defGrade,mods,raw,margin,p:winChance(margin),chip:D.chip(margin)};
   });
   // Result conversions that come from people.
   if(play.pass&&sit.down===3&&offFlag(off,'outlet')&&off.RB&&D.SIGNATURES[off.RB.archetype]?.flag==='outlet')flags.outlet=3;

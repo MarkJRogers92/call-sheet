@@ -14,7 +14,7 @@ and every result flows back into Dynasty Lab's own records. Read this file first
 | The real fork (work here) | GitHub `MarkJRogers92/call-sheet`, branch **`card-battles`** |
 | `call-sheet` `main` | Dynasty Lab plus an early copy of this folder. **It does not have the card-battles work yet.** Merge only when Mark says so |
 | Prototype copy | GitHub `MarkJRogers92/Football`, branch `claude/gracious-volta-3me7m2`, folder `forks/call-sheet/` (synced with `card-battles` for `core/`, `slice/`, `tools/` and the docs; it has none of the Dynasty Lab integration files) |
-| Hosted playtest (current battle improvements) | https://call-sheet-playtest-mark.markjrogers92.chatgpt.site — private to Mark; Quick Battle at `/battle/`, full Dynasty Mode at `/dynasty/`; gameplay source `cb0d530` |
+| Hosted playtest (current battle improvements) | https://call-sheet-playtest-mark.markjrogers92.chatgpt.site — private to Mark; Quick Battle at `/battle/`, full Dynasty Mode at `/dynasty/`; gameplay source: latest tested `card-battles` deck/roster update |
 | Earlier playable sandbox | https://claude.ai/artifact/65grKWrvUGk2Ea4suJxGac (the slice bundled into one page; it runs without a dynasty) |
 | Art tools | Pixel Forge (`MarkJRogers92/pixel-forge`, installed by the cloud environment's setup script), PixelLab (claude.ai connector), Meshy (3D) |
 
@@ -112,6 +112,47 @@ logged and skipped. Registered integrations: `program-edges`, `signature-graduat
 table of next ideas by hook.
 
 ## Done (newest first)
+
+### Roster-driven battles, deck building and resume (2026-11-16)
+
+Mark's priority: the actual players, traits, archetypes, role fit, tactics and synergies must determine battle odds.
+Keep uncertainty; a stack of tactical bonuses must not erase a major talent disadvantage.
+
+- Duel resolution now retains full trait averages and interpolates the existing 15–85% probability curve.
+  Display bands no longer make 70 and 79 identical. On receiver-led pass Finishes, the receiver contributes 70%
+  and the QB's relevant passing traits 30%; QB-led read duels keep their own existing formula.
+- All 62 archetypes now have an ability. Added the 32 missing situational specialties, generally half-edges;
+  an exhaustive test verifies every duel specialty can actually activate in its legal position. Existing scheme,
+  prep, health/wear, morale, role familiarity, roster availability and staff wiring remain in the same resolver.
+- Durability already contributed to contact duels; it now also delays game-workload fatigue. Each active player
+  accrues one load per non-penalty snap; fatigue starts after 20 + durability/2 and ramps to −1 over 20 more snaps.
+  Halftime recovers 10 load. Rotation preserves the resting player's freshness. These are game-local effects.
+- Preview, coordinator evaluation and real resolution now share known fire, workload and drive-combo effects.
+  Upgraded/evolved plays retain original play identity for abilities, tactical legality, screen counters and the
+  Establish the Run combo. Island Protector now obeys its advertised no-tactic condition.
+- The battle shows Ability / Effects / Edge and duel odds, with trait details and the pass blend on hover.
+  Scouting fog still hides exact opposing grades and forecasts. Player tooltips show all seven traits and the
+  archetype ability. Ready play-action combinations are marked on cards. Replay controls offer all/key moments.
+- **Build Deck** is available before the first full-Dynasty game and on the Quick Battle program screen.
+  Four unique base calls can be chosen from owned non-trick plays, provided one free unrestricted call remains.
+  Active play and tactic piles retain their limits; storing/cutting a card now preserves it in `playbook.reserve`.
+  Collection ownership, including stored legendary cards, survives upgrades, evolutions, saves and reloads.
+  The shared editor lives in `core/playbook-ui.js` and saves a draft only on Save Deck.
+- Five one-time achievements award real collection cards: first game (RPO Bubble), first win (Hurry-Up), all
+  four offensive families in a game (HB Wheel), Establish the Run (Draw), three sacks (Stunt). Coached and
+  simulated Dynasty games use the same award function. Pack choices remain available after every game.
+- Battle checkpoints persist the exact state/RNG before replays and after information or personnel actions.
+  Quick Battle offers Resume; Dynasty reopens the matching saved game. Finished-game and pack-pick markers
+  prevent repeat rewards on refresh; the host also remembers the recorded battle seed. Deck editing is locked
+  during a game. `activeBattle` is stored alongside the existing program save, not in a separate season system.
+- Whole-hand validation happens before any play/tactic is spent. False-start refunds use the actual custom
+  base sheet instead of a catalog card's original base flag.
+
+Tests: `tests/card-deck-depth.js` covers probabilities, traits, every archetype, fatigue, evolved synergies,
+collection ownership, achievements and deterministic resume. `tests/card-deck-browser.js` covers desktop/phone
+editing, browser refresh, exactly-once rewards, real-roster deck launch and host resume. Both are registered.
+Postseason card recording, alternate pass targets, and additional combo recipes remain follow-up features.
+
 
 ### Battle coaching improvements — 2026-11-16
 

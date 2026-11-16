@@ -24,17 +24,17 @@ const COUNTERS={run:['bear','robber','two_man','spy','stunt'],quick:['cover2_tra
 
 const CAPACITY={wrinkles:14,tactics:14};
 function newPlaybook(){
-  return{version:1,off:clone(D.DEFAULT_DECKS.off),def:clone(D.DEFAULT_DECKS.def),capacity:clone(CAPACITY),legendaries:[],record:{w:0,l:0},history:[],packsOpened:0,mastery:{},signatures:[]};
+  return{version:1,reserve:{off:{wrinkles:[],tactics:[]},def:{wrinkles:[],tactics:[]}},achievements:[],off:clone(D.DEFAULT_DECKS.off),def:clone(D.DEFAULT_DECKS.def),capacity:clone(CAPACITY),legendaries:[],record:{w:0,l:0},history:[],packsOpened:0,mastery:{},signatures:[]};
 }
 // Signature cards ride along outside the capacity limits: one copy each, in the pile their kind belongs to.
 function decksOf(pb){const d={off:clone(pb.off),def:clone(pb.def)};for(const sg of pb.signatures||[])d[sg.side][sg.pile].push(sg.id);return d}
 function owns(pb,c){
-  if(c.kind==='upgrade'){const d=pb[c.side];return d.base.includes(c.id)||d.wrinkles.includes(c.id)}
+  if(c.kind==='upgrade'){const d=pb[c.side];return d.base.includes(c.id)||d.wrinkles.includes(c.id)||(pb.reserve?.[c.side]?.wrinkles||[]).includes(c.id)}
   return false;
 }
 function eligible(pb,c,worldTaken=[]){
   if(c.rarity==='legendary'&&(pb.legendaries.includes(c.id)||worldTaken.includes(c.id)))return false;
-  if(c.kind==='upgrade'){const d=pb[c.side];if(owns(pb,c))return false;return d.base.includes(c.replaces)||d.wrinkles.includes(c.replaces)}
+  if(c.kind==='upgrade'){const d=pb[c.side];if(owns(pb,c))return false;return d.base.includes(c.replaces)||d.wrinkles.includes(c.replaces)||(pb.reserve?.[c.side]?.wrinkles||[]).includes(c.replaces)}
   return true;
 }
 function rollRarity(rng,won){
@@ -74,7 +74,7 @@ function applyPick(pb,card){
   const d=pb[card.side];
   if(card.kind==='upgrade'){
     const bi=d.base.indexOf(card.replaces);
-    if(bi>=0)d.base[bi]=card.id;else{const wi=d.wrinkles.indexOf(card.replaces);if(wi>=0)d.wrinkles[wi]=card.id}
+    if(bi>=0)d.base[bi]=card.id;else{const wi=d.wrinkles.indexOf(card.replaces);if(wi>=0)d.wrinkles[wi]=card.id;else{const reserve=ensureCollection(pb)[card.side].wrinkles,ri=reserve.indexOf(card.replaces);if(ri>=0)reserve[ri]=card.id}}
   }else if(card.kind==='tactic')d.tactics.push(card.id);
   else d.wrinkles.push(card.id);
   if(card.rarity==='legendary')pb.legendaries.push(card.id);
@@ -91,10 +91,54 @@ function overCapacity(pb){
 function cut(pb,side,pile,index){
   const list=pb[side][pile];if(index<0||index>=list.length)throw new Error('No card at that slot.');
   const [id]=list.splice(index,1);
-  if(D.rarityOf(id)==='legendary')pb.legendaries=pb.legendaries.filter(x=>x!==id);
+  ensureCollection(pb)[side][pile].push(id);
   return id;
+}
+// Owned cards stay in the collection when removed from the active deck.
+function ensureCollection(pb){
+  pb.reserve??={};for(const side of ['off','def']){pb.reserve[side]??={};for(const pile of ['wrinkles','tactics'])pb.reserve[side][pile]??=[]}
+  pb.achievements??=[];return pb.reserve;
+}
+function moveCard(pb,side,pile,index,equip){
+  if(!['off','def'].includes(side)||!['wrinkles','tactics'].includes(pile))throw new Error('Invalid deck.');
+  const reserve=ensureCollection(pb),from=equip?reserve[side][pile]:pb[side][pile],to=equip?pb[side][pile]:reserve[side][pile];
+  if(!Number.isInteger(index)||!from[index])throw new Error('No card at that slot.');
+  if(equip&&to.length>=pb.capacity[pile])throw new Error('Move a card to the collection to make room first.');
+  to.push(from.splice(index,1)[0]);
+}
+function setBase(pb,side,slot,id){
+  if(!['off','def'].includes(side)||!Number.isInteger(slot)||slot<0||slot>3)throw new Error('Invalid base slot.');
+  const c=(side==='off'?D.PLAYS:D.CALLS)[id],deck=pb[side];
+  if(!c||c.trick||c.signature)throw new Error('Trick and signature cards stay in the draw pile.');
+  if(deck.base[slot]===id)return;
+  if(deck.base.includes(id))throw new Error('Choose four different base cards.');
+  const reserve=ensureCollection(pb)[side].wrinkles,from=deck.wrinkles.includes(id)?deck.wrinkles:reserve,index=from.indexOf(id);
+  if(index<0)throw new Error('Unlock this card first.');
+  const proposed=deck.base.map((old,i)=>i===slot?id:old);
+  if(!proposed.some(x=>{const c=cardDef(x);return c.cost===0&&!c.needs}))throw new Error('Keep at least one free, unrestricted base play so you can always call a snap.');
+  from[index]=deck.base[slot];deck.base[slot]=id;
+}
+const ACHIEVEMENTS=[
+  {id:'first_game',name:'First Whistle',how:'Finish a card battle',reward:'rpo_bubble'},
+  {id:'first_win',name:'Winning Formula',how:'Win a card battle',reward:'hurry_up'},
+  {id:'balanced',name:'Keep Them Guessing',how:'Call all four offensive families in one game',reward:'hb_wheel'},
+  {id:'combo',name:'Set Them Up',how:'Trigger Establish the Run',reward:'draw'},
+  {id:'pressure',name:'Bring the Heat',how:'Record three sacks in one game',reward:'stunt'}
+];
+function awardAchievements(pb,b,side){
+  if(!b.final)return[];
+  const reserve=ensureCollection(pb),snaps=b.log.filter(e=>e.type==='snap'&&!e.penalty&&e.offSide===side);
+  const families=new Set(snaps.map(e=>D.PLAYS[e.play]?.family));
+  const met={first_game:true,first_win:b.final.winner===side,balanced:['run','quick','deep','constraint'].every(f=>families.has(f)),
+    combo:snaps.some(e=>e.events?.some(x=>x.type==='combo'&&x.id==='establish')),pressure:Object.values(b.players||{}).filter(p=>p.side===side).reduce((n,p)=>n+(p.sacks||0),0)>=3};
+  const gained=[];
+  for(const a of ACHIEVEMENTS){if(!met[a.id]||pb.achievements.includes(a.id))continue;
+    const c=POOL.find(c=>c.id===a.reward),pile=c.kind==='tactic'?'tactics':'wrinkles';
+    reserve[c.side][pile].push(c.id);pb.achievements.push(a.id);pb.history.push({id:c.id,kind:'achievement',side:c.side,achievement:a.id});gained.push(a);
+  }
+  return gained;
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

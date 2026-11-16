@@ -46,7 +46,7 @@ const DEF_ROLES={RUSH:'EDGE',SET:'EDGE',NT:'DT',DT3:'DT',MIKE:'LB',WILL:'LB',FCB
 
 // Margin → offense win chance. Shown to the player as chips; exact values on demand.
 const WIN_CHANCE={'-3':.15,'-2':.25,'-1':.35,'0':.5,'1':.65,'2':.75,'3':.85};
-const chip=m=>m<=-2?'Danger':m===-1?'Tough':m===0?'Even':m===1?'Edge':'Strong';
+const chip=m=>m<=-2?'Danger':m<-.25?'Tough':m<=.25?'Even':m<2?'Edge':'Strong';
 
 // Result tables. Each category is a weighted list of results; yards are [mean, sd].
 // kind: run | catch | inc | sack | scramble. int: chance an incompletion is intercepted.
@@ -190,7 +190,7 @@ const SIGNATURES={
   'Boundary Bully':{text:'Wins at the catch point: +1 on contested catches.',duel:(c,k)=>c.play.id==='vertical_shot'&&k==='F'?1:0},
   'Inline Mauler':{text:'Seal Block also fits Inside Zone.',flag:'mauler'},
   'Backfield Hybrid':{text:'Check-and-Release: with Max Protect against no pressure, a lost Key duel becomes +4 to him.',flag:'checkRelease'},
-  'Island Protector':{text:'Protection duels: +1 without a tactic.',duel:(c,k,d)=>d.protect?1:0},
+  'Island Protector':{text:'Protection duels: +1 without a tactic.',duel:(c,k,d)=>d.protect&&!c.offTactics?.length?1:0},
   'Pulling Guard':{text:'Power and Screen: +1 on his block.',duel:(c,k)=>(c.play.id==='power'&&k==='G')||(c.play.id==='screen'&&k==='K')?1:0},
   'Interior Technician':{text:'Hard Count costs 0 and never draws a false start.',cost:{hard_count:0},flag:'noFalseStart'},
   'Protection Quarterback':{text:'Hard Count costs 0 and never draws a false start.',cost:{hard_count:0},flag:'noFalseStart'},
@@ -262,6 +262,42 @@ const RARITY={
   film_tell:'common',identify_protection:'common',disguise:'common',bracket:'common',spy:'common',press:'common',midnight_mirage:'legendary'
 };
 const rarityOf=id=>RARITY[id]||'common';
+
+// Situational specialties for the rest of the roster. Half-edges reward fit without overwhelming talent.
+Object.assign(SIGNATURES,{
+  'Power Creator':{text:'QB runs: +0.5 through contact.',duel:(c,k,d)=>d.qbRun&&k==='F'?.5:0},
+  'Space Cutter':{text:'Outside runs: +0.5 finding space.',duel:(c,k)=>c.play.id==='outside_zone'&&k==='K'?.5:0},
+  'Contact Glider':{text:'Runs: +0.5 to finish against a loaded box.',duel:(c,k)=>c.play.family==='run'&&k==='F'&&c.call.box==='loaded'?.5:0},
+  'Vertical Glider':{text:'Deep routes: +0.5 separation.',duel:(c,k,d)=>c.play.family==='deep'&&d.separation?.5:0},
+  'Catch-Point Ace':{text:'Passes: +0.5 at the catch point.',duel:(c,k)=>c.play.pass&&k==='F'?.5:0},
+  'YAC Creator':{text:'Quick passes and screens: +0.5 after the catch.',duel:(c,k)=>c.play.pass&&['quick','constraint'].includes(c.play.family)&&k==='F'?.5:0},
+  'Motion Weapon':{text:'Motion: +0.5 on release or separation.',duel:(c,k,d)=>c.offTactics.includes('motion')&&(d.release||d.separation)?.5:0},
+  'Seam Hunter':{text:'Two-high coverage: +0.5 release or separation.',duel:(c,k,d)=>c.play.pass&&(d.separation||d.release)&&c.call.shell===2?.5:0},
+  'Move Chesspiece':{text:'Route adjustment: +0.5 on release or separation.',duel:(c,k,d)=>c.offTactics.includes('route_adjust')&&(d.release||d.separation)?.5:0},
+  'Red-Zone Tower':{text:'Red-zone passes: +0.5 at the catch point.',duel:(c,k)=>c.play.pass&&k==='F'&&c.situation.field>=80?.5:0},
+  'Movement Tackle':{text:'Outside runs: +0.5 at the edge.',duel:(c,k)=>c.play.id==='outside_zone'&&k==='G'?.5:0},
+  'Power Edge':{text:'Runs: +0.5 at the point of attack.',duel:(c,k)=>c.play.family==='run'&&k==='G'?.5:0},
+  'Long-Frame Project':{text:'Max Protect: +0.5 on protection.',duel:(c,k,d)=>d.protect&&c.offTactics.includes('max_protect')?.5:0},
+  'Drive Blocker':{text:'Runs: +0.5 at the point of attack.',duel:(c,k)=>c.play.family==='run'&&k==='G'?.5:0},
+  'Phone-Booth Anchor':{text:'Run blitzes: +0.5 holding the point.',duel:(c,k)=>c.play.family==='run'&&k==='G'&&c.call.pressure>0?.5:0},
+  'Leverage Center':{text:'Loaded boxes: +0.5 on the run Gate.',duel:(c,k)=>c.play.family==='run'&&k==='G'&&c.call.box==='loaded'?.5:0},
+  'Movement Pivot':{text:'Light boxes: +0.5 reaching the run block.',duel:(c,k)=>c.play.family==='run'&&k==='G'&&c.call.box==='light'?.5:0},
+  'Power Pivot':{text:'Inside runs: +0.5 at the point.',duel:(c,k)=>c.play.family==='run'&&c.play.id!=='outside_zone'&&k==='G'?.5:0},
+  'Power Setter':{text:'Outside runs: +0.5 setting the edge.',duel:(c,k)=>c.play.id==='outside_zone'&&k==='G'?-.5:0},
+  'Chaos Rusher':{text:'Stunts: +0.5 against protection.',duel:(c,k,d)=>d.protect&&c.defTactics?.includes('stunt')?-.5:0},
+  'Run-Side Anchor':{text:'Runs: +0.5 holding the point.',duel:(c,k)=>c.play.family==='run'&&k==='G'?-.5:0},
+  'Pocket Crusher':{text:'Pressure: +0.5 collapsing the pocket.',scope:'field',duel:(c,k,d)=>d.protect&&c.call.pressure>0?-.5:0},
+  'Penetrator':{text:'Light boxes: +0.5 penetrating the run Gate.',duel:(c,k)=>c.play.family==='run'&&k==='G'&&c.call.box==='light'?-.5:0},
+  'Interior Disruptor':{text:'Runs: +0.5 disrupting the Key.',duel:(c,k)=>c.play.family==='run'&&k==='K'?-.5:0},
+  'Range Hunter':{text:'Outside runs: +0.5 pursuit.',duel:(c,k)=>c.play.id==='outside_zone'&&k==='K'?-.5:0},
+  'Coverage Rover':{text:'Zone: +0.5 against pass separation.',duel:(c,k,d)=>d.separation&&c.call.coverage==='zone'?-.5:0},
+  'Pressure Backer':{text:'Blitzes: +0.5 on the quarterback read.',duel:(c,k,d)=>d.qbRead&&c.call.pressure>0?-.5:0},
+  'Boundary Fighter':{text:'Man coverage: +0.5 against the release.',duel:(c,k,d)=>d.release&&c.call.coverage==='man'?-.5:0},
+  'Slot Shadow':{text:'Quick passes: +0.5 in coverage.',duel:(c,k,d)=>c.play.family==='quick'&&(d.release||d.separation)?-.5:0},
+  'Box Hammer':{text:'Runs: +0.5 finishing the tackle.',duel:(c,k)=>c.play.family==='run'&&k==='F'?-.5:0},
+  'Coverage Eraser':{text:'Two-high: +0.5 finishing pass coverage.',duel:(c,k)=>c.play.pass&&k==='F'&&c.call.shell===2?-.5:0},
+  'Hybrid Rover':{text:'Constraint plays: +0.5 finishing coverage.',duel:(c,k)=>c.play.family==='constraint'&&k==='F'?-.5:0}
+});
 
 // --- Pack cards (rules v0.5) ---------------------------------------------------------------------------
 Object.assign(PLAYS,{

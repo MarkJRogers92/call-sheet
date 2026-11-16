@@ -62,3 +62,12 @@ test('switching program edges off removes scheme and staff bonuses from both tea
     assert.deepEqual(team.edges,{off:[],def:[]});assert.deepEqual(team.coach.commandBonus,{off:0,def:0});
   }
 });
+
+
+test('a current card checkpoint blocks week advancement but stale checkpoints do not',async()=>{
+  const {e,cg,u}=await dynasty(720),cfg=cg.launch(),week=u.week;
+  u.callSheet.activeBattle={seed:cfg.seed,battle:'pending'};
+  e.simWeek();assert.equal(u.week,week);
+  u.callSheet.activeBattle.seed='old-season';
+  e.simWeek();assert.ok(u.week!==week);
+});

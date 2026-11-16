@@ -20,6 +20,8 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
   const deck=(d,side)=>({base:ids(d?.base,4).filter(id=>legal(id,side,false)),wrinkles:ids(d?.wrinkles,40).filter(id=>legal(id,side,false)),tactics:ids(d?.tactics,40).filter(id=>legal(id,side,true))});
   pb.off=deck(pb.off,'off');pb.def=deck(pb.def,'def');
   if([pb.off,pb.def].some(d=>new Set(d.base).size!==4))return null; // invalid base sheets reset rather than crash on the next draw
+  pb.reserve=Object.fromEntries(['off','def'].map(side=>[side,{wrinkles:ids(pb.reserve?.[side]?.wrinkles,500).filter(id=>legal(id,side,false)),tactics:ids(pb.reserve?.[side]?.tactics,500).filter(id=>legal(id,side,true))}]));
+  pb.achievements=[...new Set(ids(pb.achievements,30))].filter(id=>CS.packs.ACHIEVEMENTS.some(a=>a.id===id));
   pb.capacity={wrinkles:int(pb.capacity?.wrinkles,10,30,14),tactics:int(pb.capacity?.tactics,10,30,14)};
   pb.legendaries=ids(pb.legendaries,20);pb.record={w:int(pb.record?.w,0,9999,0),l:int(pb.record?.l,0,9999,0)};
   pb.packsOpened=int(pb.packsOpened,0,99999,0);pb.gamesPlayed=int(pb.gamesPlayed,0,99999,0);
@@ -43,7 +45,8 @@ function normalizeCallSheet(u){
   cs.combos=Array.isArray(cs.combos)?cs.combos.filter(x=>typeof x==='string').slice(0,20):[];
   const st=cs.settings&&typeof cs.settings==='object'?cs.settings:{};
   const integrations=Object.fromEntries(Object.entries(st.integrations&&typeof st.integrations==='object'?st.integrations:{}).filter(([k,v])=>typeof k==='string'&&typeof v==='boolean'));
-  cs.settings={mode:['key','series','snap','sim'].includes(st.mode)?st.mode:'key',control:['offense','both','defense'].includes(st.control)?st.control:'offense',fast:!!st.fast,sound:st.sound!==false,integrations};
+  cs.settings={mode:['key','series','snap','sim'].includes(st.mode)?st.mode:'key',control:['offense','both','defense'].includes(st.control)?st.control:'offense',replays:st.replays==='moments'?'moments':'all',fast:!!st.fast,sound:st.sound!==false,integrations};
+  if(cs.activeBattle&&(typeof cs.activeBattle.seed!=='string'||typeof cs.activeBattle.battle!=='string'||cs.activeBattle.battle.length>4000000))cs.activeBattle=null;
   cs.games=Number.isFinite(Number(cs.games))?Math.max(0,Math.min(99999,Math.round(Number(cs.games)))):0;cs.seenHelp=!!cs.seenHelp;
   // AI programs' playbooks, keyed by team id. Kept small: only programs you play, plus your rival.
   const ai={};for(const [id,pb] of Object.entries(cs.ai&&typeof cs.ai==='object'?cs.ai:{}).slice(0,40)){const n=normalizeCardPlaybook(pb,2);if(n)ai[id]=n}
@@ -181,11 +184,16 @@ function normalizeCallSheet(u){
     }});
 
   // ============================================================== 3. game day and simulated games
+  function currentCardGame(){
+    const next=findUserGame();if(next)return next;
+    const me=selected(),key=universe?.callSheet?.activeBattle?.seed;
+    return me&&key?(universe.schedule?.[universe.week]||[]).find(g=>(g.home===me.name||g.away===me.name)&&key===`card:${universe.year}:${g.week}:${me.id}`)||null:null;
+  }
   function cardGameBlocker(){
     if(!universe||!selected())return'Start or load a dynasty first.';
     if(universe.phase!=='regular')return'Card battles cover regular-season games for now. Bowls and playoffs use Classic Game Day.';
-    const g=findUserGame();if(!g)return'There is no game for your program this week.';
-    if(g.played)return'This week\'s game is already complete.';
+    const g=currentCardGame();if(!g)return'There is no game for your program this week.';
+    if(g.played&&universe.callSheet?.activeBattle?.seed!==`card:${universe.year}:${g.week}:${selected().id}`)return'This week\'s game is already complete.';
     if(hasPendingCareerChoice())return'Choose your next job before playing this week.';
     if(hasPendingWeeklyDecisions())return'Resolve the Coach’s Desk decisions before playing this week.';
     if(universe.liveGameDay)return'A Classic Game Day is in progress. Finish it first.';
@@ -199,12 +207,13 @@ function normalizeCallSheet(u){
   }
   // Everything a battle needs for this week's game, from the dynasty, after every integration has had its say.
   function buildLaunch(){
-    const g=findUserGame(),home=T(g.home),away=T(g.away),me=selected(),meta=cardMeta();
+    const g=currentCardGame(),home=T(g.home),away=T(g.away),me=selected(),meta=cardMeta();
+    if(meta.activeBattle&&meta.activeBattle.seed!==`card:${universe.year}:${g.week}:${me.id}`)meta.activeBattle=null;
     const opp=home.name===me.name?away:home,conditions=globalThis.DynastyGameConditions?.forGame({home,year:universe.year,week:g.week})||null;
     const cfg={home,away,userSide:home.name===me.name?'home':'away',week:g.week,season:universe.year,
       label:`Week ${g.week} · ${g.conf?'Conference':'Non-conference'}`,record:{w:me.w||0,l:me.l||0},
       weather:battleWeather(conditions),conditions,rivalry:(me.protectedRivalIds||[]).includes(opp.id),
-      playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
+      activeBattle:meta.activeBattle?.seed===`card:${universe.year}:${g.week}:${me.id}`?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
       seed:`card:${universe.year}:${g.week}:${me.id}`,moves:[],practiceReps:{},worldTaken:takenLegendaries(),program:{home:{enabled:false},away:{enabled:false}}};
     runHook('launch',{cfg,g,home,away,me,opp,userSide:cfg.userSide});
     if(cfg.moves.length)try{autosaveAfter('game')}catch(err){}
@@ -245,6 +254,7 @@ function normalizeCallSheet(u){
       const pb=userPlaybook(),me=selected(),opp=sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home;
       CS.evolution.recordReps(pb,sim.b.log,sim.cfg.userSide);pb.gamesPlayed=(pb.gamesPlayed||0)+1;cardMeta().games++;
       const won=sim.b.game.score[sim.cfg.userSide]>sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];pb.record[won?'w':'l']++;
+      CS.packs.awardAchievements(pb,sim.b,sim.cfg.userSide);
       // Sim delegates the pick to the same scheme-aware coordinator used by AI programs.
       const pack=CS.packs.openPack(pb,{won,rivalry:sim.cfg.rivalry,seed:sim.cfg.seed,oppTendency:sim.b.tend[sim.cfg.userSide==='home'?'away':'home'],worldTaken:takenLegendaries()});
       if(pack.cards.length){const spec=aiSpec(me),pick=CS.world.aiPick(spec,pack,pb,DynastyRng.create(`${sim.cfg.seed}:pick`));CS.packs.applyPick(pb,pick);
@@ -257,6 +267,8 @@ function normalizeCallSheet(u){
   };
   const simWeekBase=simWeek;
   simWeek=function simWeekWithCards(...args){
+    const active=universe?.callSheet?.activeBattle,g=currentCardGame();
+    if(active&&g&&active.seed===`card:${universe.year}:${g.week}:${selected().id}`){setStatus('Resume your card battle and finish its rewards before advancing the week.');return}
     // Your game first, as a card battle, under the same gate the week itself uses; the week then skips it.
     let cardResult=null;
     if(simWithCardsOn()&&universe.phase==='regular'){
@@ -305,8 +317,8 @@ function normalizeCallSheet(u){
     const news=log.length?`<ul class="cpn-feed">${log.map(newsHTML).join('')}</ul>`:'<p class="muted cpn-empty">Sim a week and opponents on your schedule start opening packs.</p>';
     return`<section id="cardProgram" class="card cpn" data-dview="week" aria-labelledby="cpnTitle">
       <div class="cpn-head"><div><span class="eyebrow">CALL SHEET</span><h3 id="cpnTitle">Card Program</h3></div>
-      <button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>
-      <div class="cpn-stats">${stats}</div>
+      <button type="button" class="cpn-btn" data-card-deck>Build Deck</button><button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>
+      <div class="cpn-stats">${stats}</div>${cs.activeBattle?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':''}
       <div class="cpn-league"><span class="eyebrow">AROUND THE LEAGUE</span>${news}</div>
       <p class="cpn-foot muted">${escH(MODES.find(m=>m[0]===cs.settings.mode)?.[1]||'Key downs')} · ${escH(CONTROLS.find(c=>c[0]===cs.settings.control)?.[1]||'Offense')} · ${on}/${INTEGRATIONS.length} connections on</p>
     </section>`;
@@ -565,13 +577,15 @@ function normalizeCallSheet(u){
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
-  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings()});
+  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){if(cardMeta().activeBattle?.seed===`card:${universe.year}:${currentCardGame()?.week}:${selected().id}`){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(userPlaybook(),{onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
 
   let host=null;
   globalThis.__callSheetDynasty={
     launch:buildLaunch,
     record(state,tally){
-      try{const week=findUserGame()?.week;const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}return{ok:true,result:out.result}}
+      const key=cardMeta().activeBattle?.seed;
+      if(key&&cardMeta().recordedBattleSeed===key)return{ok:true};
+      try{const week=findUserGame()?.week;const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;return{ok:true,result:out.result}}
       catch(err){console.error(err);return{ok:false,error:err.message||String(err)}}
     },
     save(data){

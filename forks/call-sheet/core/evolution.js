@@ -85,7 +85,7 @@ function ready(pb){
   pb.mastery??={};pb.evolved??={};const out=[];
   for(const [rootId,reps] of Object.entries(pb.mastery)){
     if(pb.evolved[rootId]||!TREE[rootId])continue;
-    const side=D.PLAYS[rootId]?'off':'def',holds=[...pb[side].base,...pb[side].wrinkles].some(id=>rootOf(id)===rootId);
+    const side=D.PLAYS[rootId]?'off':'def',holds=[...pb[side].base,...pb[side].wrinkles,...(pb.reserve?.[side]?.wrinkles||[])].some(id=>rootOf(id)===rootId);
     if(holds&&reps>=threshold(pb,rootId))out.push({rootId,side,options:TREE[rootId].map(([id])=>id)});
   }
   return out;
@@ -96,6 +96,7 @@ function evolve(pb,rootId,branchId){
   if(!TREE[rootId]?.some(([id])=>id===branchId))throw new Error('Not a branch of that card.');
   const side=D.PLAYS[rootId]?'off':'def';
   for(const pile of ['base','wrinkles'])pb[side][pile]=pb[side][pile].map(id=>rootOf(id)===rootId?branchId:id);
+  if(pb.reserve?.[side])pb.reserve[side].wrinkles=pb.reserve[side].wrinkles.map(id=>rootOf(id)===rootId?branchId:id);
   pb.evolved??={};pb.evolved[rootId]=branchId;
   (pb.history??=[]).push({id:branchId,kind:'evolution',side,from:rootId});
   return branchId;
