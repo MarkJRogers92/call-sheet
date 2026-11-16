@@ -14,8 +14,15 @@ and every result flows back into Dynasty Lab's own records. Read this file first
 | The real fork (work here) | GitHub `MarkJRogers92/call-sheet`, branch **`card-battles`** |
 | `call-sheet` `main` | Dynasty Lab plus an early copy of this folder. **It does not have the card-battles work yet.** Merge only when Mark says so |
 | Prototype copy | GitHub `MarkJRogers92/Football`, branch `claude/gracious-volta-3me7m2`, folder `forks/call-sheet/` (synced with `card-battles` for `core/`, `slice/`, `tools/` and the docs; it has none of the Dynasty Lab integration files) |
-| Playable sandbox | https://claude.ai/artifact/65grKWrvUGk2Ea4suJxGac (the slice bundled into one page; it runs without a dynasty) |
+| Hosted playtest (current battle improvements) | https://call-sheet-playtest-mark.markjrogers92.chatgpt.site — private to Mark; Quick Battle at `/battle/`, full Dynasty Mode at `/dynasty/`; gameplay source `cb0d530` |
+| Earlier playable sandbox | https://claude.ai/artifact/65grKWrvUGk2Ea4suJxGac (the slice bundled into one page; it runs without a dynasty) |
 | Art tools | Pixel Forge (`MarkJRogers92/pixel-forge`, installed by the cloud environment's setup script), PixelLab (claude.ai connector), Meshy (3D) |
+
+The hosted playtest is a static copy of the tested build, not an automatic deployment of this GitHub branch.
+Its separate hosting checkout is `../call-sheet-prototype` beside the local `call-sheet` checkout; preserve its
+`.openai/hosting.json` Site identity when updating. Copy the full game and assets together into `dist/dynasty/`
+and regenerate `dist/battle/index.html` with the sandbox bundler. The root mode selector lives in `dist/index.html`.
+Quick Battle uses the existing sandbox teams; real-roster backfield packages are in Dynasty Mode.
 
 ## Run, build, test
 
