@@ -23,9 +23,14 @@ const winChance=m=>D.WIN_CHANCE[String(clamp(m,-3,3))];
 
 // Is a play legal for this lineup? Returns null or a reason.
 function playBlocked(play,lineup){
+  const sig=signatureBlocked(play,lineup);if(sig)return sig;
   const n=play.needs;
   if(n&&traitGrade(lineup[n.role],n.trait)<n.grade)return`Needs a ${n.role} with ${n.trait} ${n.grade}+`;
   return null;
+}
+function signatureBlocked(card,lineup){
+  const s=card?.signature;
+  return s&&String(lineup[s.role]?.id)!==String(s.playerId)?`${s.name} must be on the field`:null;
 }
 function hasSig(lineup,roles,flag){return roles.some(r=>D.SIGNATURES[lineup[r]?.archetype]?.flag===flag)}
 function offFlag(lineup,flag){return hasSig(lineup,Object.keys(D.OFF_ROLES),flag)}
@@ -33,6 +38,7 @@ function defFlag(lineup,flag){return hasSig(lineup,Object.keys(D.DEF_ROLES),flag
 
 // Tactic legality for a given play. Returns null or a reason.
 function tacticBlocked(tac,play,offLineup){
+  const sig=signatureBlocked(tac,offLineup);if(sig)return sig;
   const n=tac.needs;if(!n)return null;
   if(n.protection&&!play.protection)return'Only on plays with a protection duel';
   if(n.pass&&!play.pass)return'Only on pass plays';
@@ -228,5 +234,5 @@ function resolve(snap,rng,situation){
   return out;
 }
 
-return{grade,traitGrade,playBlocked,tacticBlocked,bracketRole,buildSnap,categoryProbs,evaluate,resolve,winChance};
+return{grade,traitGrade,signatureBlocked,playBlocked,tacticBlocked,bracketRole,buildSnap,categoryProbs,evaluate,resolve,winChance};
 });

@@ -88,7 +88,7 @@ function signatureIds(){
   const ids=new Set();for(const pb of [save.playbook,DYN?.oppPlaybook])for(const s of pb?.signatures||[])ids.add(String(s.playerId));
   return ids;
 }
-function ensureDots(f){
+function ensureDots(f,e){
   const sigs=signatureIds();
   for(const[k,d]of Object.entries(f.dots)){
     let el=layer.dots[k];
@@ -104,7 +104,7 @@ function ensureDots(f){
       el.addEventListener('pointerleave',hideTip);el.addEventListener('pointerdown',ev=>{if(ev.pointerType!=='mouse'){ev.stopPropagation();tipFor===el?hideTip():showTip(el,ev)}});
       layer.dots[k]=el;
     }
-    const team=teamOf(d.side),p=team.lineup[d.lineup][d.role],c=el.firstChild;
+    const team=teamOf(d.side),p=(e?B.snapLineup(b,e,d.lineup):team.lineup[d.lineup])[d.role],c=el.firstChild;
     el.dataset.side=d.side;el.dataset.lineup=d.lineup;el.dataset.role=d.role;el.dataset.pid=p?p.id:'';
     c.querySelector('.cbody').setAttribute('fill',team.colors[0]);c.querySelector('.nband').setAttribute('fill',team.colors[0]);
     c.querySelector('.cbody').setAttribute('stroke',team.colors[1]||'#fff');
@@ -161,7 +161,7 @@ function gameLine(st){
   return out.join('<br>')||'No stats yet';
 }
 function showTip(el,ev){
-  const team=teamOf(el.dataset.side),p=team.lineup[el.dataset.lineup]?.[el.dataset.role];if(!p)return;
+  const team=teamOf(el.dataset.side),p=b.personnel?.[el.dataset.pid]||team.lineup[el.dataset.lineup]?.[el.dataset.role];if(!p)return;
   tipFor=el;let tip=$('#ptip');
   if(!tip){tip=document.createElement('div');tip.id='ptip';tip.setAttribute('role','tooltip');document.body.appendChild(tip)}
   const strong=new Set(D.STYLE_TRAITS[p.archetype]||[]);
@@ -197,10 +197,10 @@ function setMarkers(st,instant){
   set(layer.los,los);set(layer.fd,fd);
   layer.zone.setAttribute('x',Math.min(los,fd));layer.zone.setAttribute('width',Math.abs(fd-los));
 }
-async function setFormation(st,ms=380){
+async function setFormation(st,ms=380,e=null){
   const f=formation(st);if(!f){layer.players.style.opacity=0;layer.ball.style.opacity=0;layer.shadow.style.opacity=0;return}
   layer.players.style.opacity=1;layer.ball.style.opacity=1;layer.shadow.style.opacity=1;
-  ensureDots(f);setMarkers(st);
+  ensureDots(f,e);setMarkers(st);
   const from={};for(const k of Object.keys(f.dots))from[k]=pos[k]||{x:f.dots[k].x,y:f.dots[k].y+(k[0]==='o'?40:-40)};
   await FX.tween(ms,t=>{for(const[k,d]of Object.entries(f.dots))placeDot(k,from[k].x+(d.x-from[k].x)*t,from[k].y+(d.y-from[k].y)*t);placeBall(f.los-1.2*YD*f.dir,MIDY)},FX.ease.out);
 }
@@ -279,12 +279,31 @@ function readHTML(){
   return`<div class="box"><h3>The read</h3><div class="exp">${avg.toFixed(1)}<small>yds allowed</small></div>
     ${rows.map(v=>`<div class="drow"><span class="k">${Math.round(v.weight*100)}</span><span class="n"><b>If ${esc(v.family)}</b><br>${v.snap.duels.map(d=>`${d.key} <span class="chip ${D.chip(Math.max(-3,Math.min(3,-d.margin)))}" style="font-size:10px;padding:1px 5px">${D.chip(Math.max(-3,Math.min(3,-d.margin)))}</span>`).join(' ')}</span><span class="cond">${v.ev.yards.toFixed(1)}</span></div>`).join('')}</div>`;
 }
+function coachingHTML(){
+  const cues=B.coachingRead(req,sel.play);
+  return cues.length?`<div class="box" id="coachingRead"><h3>Coach's read</h3>${cues.map(c=>`<p class="mini">${esc(c)}</p>`).join('')}</div>`:'';
+}
+function backfieldHTML(){
+  if(req?.kind!=='snap'||req.role!=='off')return'';
+  const team=teamOf(req.side);if(!(team.backfield?.length>1))return'';
+  const p=team.lineup.off.RB,mode=b.backfieldMode?.[req.side]||'auto';
+  return`<div class="box"><h3><label for="backfield">Backfield package</label></h3><select id="backfield" class="tbtn" style="width:100%">${Object.entries(B.BACKFIELD_MODES).map(([id,name])=>`<option value="${id}" ${id===mode?'selected':''}>${esc(name)}</option>`).join('')}</select><div class="mini" style="margin-top:6px"><b>${esc(p.name)}</b> · ${esc(p.archetype)}<br>${mode==='auto'?'Backup takes every fourth offensive snap.':mode==='starter'?'Keep the depth-chart starter on the field.':mode==='power'?'Best power and technique, adjusted for conditions.':'Best technique, IQ and versatility, adjusted for conditions.'}</div></div>`;
+}
+function lastSnapHTML(){
+  const e=b.lastResult,note=B.explainSnap(e);if(!note)return'';
+  const outcome=e.penalty?e.penalty.label:e.turnover?e.turnover:e.kind==='inc'?'Incomplete':`${e.yards>0?'+':''}${e.yards} yards`;
+  return`<div class="box" id="lastSnap"><h3>Last snap · ${esc(teamOf(e.offSide).short)} offense</h3><div class="mini">${esc(D.PLAYS[e.play]?.name||'')} · ${esc(outcome)}</div><p class="mini">${esc(note.summary)}</p><div class="mini muted">${esc(note.detail)}</div></div>`;
+}
 function renderSide(){
   const pb=save.playbook;
   const ur=DYN?DYN.record:(save.world.userRecord||pb.record);
-  $('#side').innerHTML=readHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
+  $('#side').innerHTML=backfieldHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
    <div class="mini">vs ${esc(teamOf('away').name)} · ${esc(teamOf('away').coach.name)}</div>
    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
+  const backfield=$('#backfield');if(backfield)backfield.onchange=()=>{
+    if(busy)return;
+    try{req=B.setBackfield(b,req.side,backfield.value);sel={play:null,tac:[]};err='';hideTip();const f=formation(sitNow());if(f)ensureDots(f);refresh()}catch(e){err=e.message;renderHand()}
+  };
   $('#bHelp').onclick=()=>howToPlay();
   $('#bFast').onclick=()=>{save.settings.fast=!save.settings.fast;FX.speed=save.settings.fast?.45:1;writeSave();renderSide()};
   $('#bSound').onclick=()=>{save.settings.sound=!save.settings.sound;S.on=save.settings.sound;writeSave();renderSide()};
@@ -336,7 +355,7 @@ function renderHand(){
     <button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
-    const why=!t.card.info&&role==='off'&&play?R.tacticBlocked(t.card,play.card,teamOf(req.side).lineup.off):null;
+    const why=R.signatureBlocked(t.card,teamOf(req.side).lineup[role])||(!t.card.info&&role==='off'&&play?R.tacticBlocked(t.card,play.card,teamOf(req.side).lineup.off):null);
     const el=card(t.id,{cost:t.cost,selected:sel.tac.includes(t.slot),blocked:!!why,why});
     const n=o.tactics.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*5}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);
     el.onclick=()=>tacticClick(t,why);fanT.appendChild(el);
@@ -418,7 +437,7 @@ const userOff=e=>e.offSide===b.user;
 function scored(e){return e.score&&e.sit&&(e.score[e.offSide]-(b._lastScore?.[e.offSide]??0))>=6}
 async function quick(e){
   renderBug(e.sit,b._lastScore||e.score);
-  await setFormation(e.sit,FX.skipping?0:200);
+  await setFormation(e.sit,FX.skipping?0:200,e);
   ticker(`${teamOf(e.offSide).short} · ${e.text}`);
   if(!e.penalty){await animatePlayFast(e)}
   const td=e.score&&e.score[e.offSide]-(b._lastScore?b._lastScore[e.offSide]:0)>=6;
@@ -457,9 +476,9 @@ function fighterHTML(cls,names,roles,lineup,grade,color,side){
 }
 async function cinematic(e){
   renderBug(e.sit,b._lastScore||e.score);
-  await setFormation(e.sit,FX.skipping?0:250);
+  await setFormation(e.sit,FX.skipping?0:250,e);
   const uo=userOff(e),stage=$('#stage'),clash=$('#clash');
-  const offT=teamOf(e.offSide),defT=teamOf(e.defSide);
+  const offT=teamOf(e.offSide),defT=teamOf(e.defSide),offLine=B.snapLineup(b,e,'off'),defLine=B.snapLineup(b,e,'def');
   // Phase 1: three duel clashes.
   if(e.penalty){await callout('FLAG!','bad small',1000,e.penalty.label);b._lastScore={...e.score};return}
   clash.classList.add('on');
@@ -467,11 +486,11 @@ async function cinematic(e){
     const d=e.duels[i],won=e.duelResults[i].won,userWon=uo?won:!won;
     const slot=d.key==='G'?'GATE':d.key==='K'?'KEY':'FINISH';
     clash.innerHTML=`<div class="cl"><div class="lab">${slot}${d.label.toUpperCase()===slot?'':' · '+esc(d.label)}</div>
-      ${fighterHTML('o',d.offNames,d.offRoles,offT.lineup.off,d.offGrade,offT.colors[0],e.offSide)}<div class="vs">VS</div>
-      ${fighterHTML('d',d.defNames,d.defRoles,defT.lineup.def,d.defGrade,defT.colors[0],e.defSide)}
-      <div class="mods">${d.mods.map(m=>`<span class="${m.src==='Play design'?'design':((m.v>0)===uo?'':'neg')}">${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>
+      ${fighterHTML('o',d.offNames,d.offRoles,offLine,d.offGrade,offT.colors[0],e.offSide)}<div class="vs">VS</div>
+      ${fighterHTML('d',d.defNames,d.defRoles,defLine,d.defGrade,defT.colors[0],e.defSide)}
+      <div class="mods">${d.mods.map(m=>`<span class="${m.src==='Play design'?'design':((m.v>0)===uo?'':'neg')}">${m.v>0?'+':''}${m.v} ${esc(fogSpread()?m.src.replace(/ \(health \d+\)/g,''):m.src)}</span>`).join('')}</div>
       <div class="stamp ${userWon?'w':'l'}">${userWon?'WIN':'LOSE'}</div></div>`;
-    for(const cv of clash.querySelectorAll('canvas.face')){const lu=cv.dataset.side==='o'?offT.lineup.off:defT.lineup.def,pl=Object.values(lu).find(x=>x.id===cv.dataset.pid);if(pl)paintPortrait(cv,pl,(cv.dataset.side==='o'?offT:defT).colors,64)}
+    for(const cv of clash.querySelectorAll('canvas.face')){const lu=cv.dataset.side==='o'?offLine:defLine,pl=Object.values(lu).find(x=>x.id===cv.dataset.pid);if(pl)paintPortrait(cv,pl,(cv.dataset.side==='o'?offT:defT).colors,64)}
     const fo=clash.querySelector('.fighter.o'),fd=clash.querySelector('.fighter.d'),vs=clash.querySelector('.vs');
     S.whoosh();
     await Promise.all([FX.anim(fo,[{transform:'translateX(-80vw)'},{transform:'translateX(10px)'},{transform:'none'}],{duration:340,easing:'ease-in'}),FX.anim(fd,[{transform:'translateX(80vw)'},{transform:'translateX(-10px)'},{transform:'none'}],{duration:340,easing:'ease-in'})]);

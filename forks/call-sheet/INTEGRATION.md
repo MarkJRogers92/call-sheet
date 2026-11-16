@@ -54,6 +54,11 @@ Rules every integration follows:
   green and red matchup glow before the snap, gold for duel winners after it.
 - **Player page:** every active player's page opens with his battle card: role and depth, archetype ability,
   the seven duel grades, his conditions, and his card career.
+- **Backfield packages:** the adapter supplies available real RB depth behind the starter. Auto rotation rests
+  the lead back every fourth offensive snap; Starter, Power and Receiving let the coach choose the approach.
+  Existing traits and conditions decide package fit. Snap lineup IDs keep replays and card careers accurate.
+- **Coaching cues:** the public Look and observed tendencies provide short pre-snap advice. A last-snap panel
+  explains a reached duel and its labeled edge without exposing numerical opponent health.
 - **Card careers** (`callSheet.players`): duels won and lost, highlight plays and card games for your players,
   from coached and simulated games alike (`CallSheet.battle.duelTally`).
 - **Prospect cards:** every recruit's page opens with his card: projected role and archetype ability, grades as

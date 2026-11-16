@@ -106,6 +106,28 @@ table of next ideas by hook.
 
 ## Done (newest first)
 
+### Battle coaching improvements — 2026-11-16
+
+- **Backfield packages:** Auto rotation (the depth-chart backup takes every fourth offensive snap), Starter,
+  Power (power/technique), and Receiving (technique/IQ/versatility). Package selection uses existing player
+  conditions, costs no Command, and persists for the current battle. Real injured backs and players occupying
+  another lineup role are excluded. Both teams rotate; the standalone sandbox keeps its existing fixed roster.
+- **Coach's read:** up to two short cues from the public Look, confirmed film and observed tendencies, visible
+  before a card is selected. Unconfirmed pressure remains explicitly uncertain. Hidden opponent traits and the
+  committed call are never inputs to these cues; exact forecasts remain suppressed under scouting fog.
+- **Last snap:** a compact result and duel takeaway names the actual players and a labeled edge. A failed Gate
+  explicitly marks Key and Finish as unreached, including in the ticker.
+- **Historical personnel:** snap logs store lineup IDs; `b.personnel` stores the player cards once.
+  `battle.snapLineup` resolves those IDs for replays, field portraits, duel careers and signature breakouts.
+  Engine box-score actors continue to use the players on the field at resolution. Older battle saves still load.
+- **Progression fixes:** fire streaks and signature breakouts no longer count Key/Finish after a failed Gate.
+  Signature cards require their owner in the correct active role; a replacement cannot use a resting star's card.
+- **Hand layout:** the card hand stays within its pane, has space below the fan, and scrolls when needed.
+
+Regression coverage: `tests/card-coaching.js` (nine cases; included in full/slow suites), the existing engine and
+integration tests, and `tests/card-gameday-browser.js` (package controls, field identity, reads, desktop/phone
+hand access, result explanation and the existing record/retry/reward flow).
+
 ### Review fixes — 2026-11-16
 
 - Failed coached-game recording now offers Retry Save and Return to Dynasty. It grants no game count,
@@ -168,7 +190,6 @@ Postseason remains the next substantial feature; this review does not enable it.
    - duel notes in box scores.
 3. **Known gaps:**
    - In the standalone sandbox, AI-vs-AI games use quick results.
-   - The single running back carries a heavy load.
    - Recruit prospect cards use a deterministic estimate (`scoutHash`), not Dynasty Lab's per-domain estimates.
 4. **Art pass (optional):** pack wrappers, legendary and signature card art, trophies, flame effects. Use PixelLab
    or Pixel Forge. Keep player faces on Dynasty Lab's portrait renderer (`DynastyPortraits`) so they match

@@ -13,7 +13,7 @@ const shots=process.env.CARD_SHOTS||'';
     await page.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(page);
     while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
     const before=await page.evaluate(()=>window.__DL_TEST__.preseasonDebug());
-    await page.evaluate(()=>{const launch=window.__callSheetDynasty.launch;window.__callSheetDynasty.launch=()=>({...launch(),scouting:{confidence:50}})});
+    await page.evaluate(()=>{const launch=window.__callSheetDynasty.launch;window.__callSheetDynasty.launch=()=>{const cfg=launch();return{...cfg,settings:{...cfg.settings,mode:'snap',control:'offense'},scouting:{confidence:50}}}});
     if(shots)await page.screenshot({path:`${shots}/c0-hub.png`});
     await page.locator('#broadcastFeature [data-coach-cards]').click();
     const frameEl=await page.waitForSelector('#cardGameDay iframe',{timeout:10000});
@@ -43,17 +43,40 @@ const shots=process.env.CARD_SHOTS||'';
       el.dispatchEvent(new PointerEvent('pointerleave'));return rows;
     });
     assert.ok(fog.length&&fog.every(r=>r.range.includes('–')&&r.bar===Number(r.range.split('–')[0])),'opponent bars use the displayed range, never the exact hidden trait');
+    assert.ok(await frame.locator('#coachingRead').isVisible(),'public coaching cues appear before selecting a play');
+    assert.ok(await frame.locator('#backfield').isVisible(),'the real roster provides a backfield choice');
+    const command=await frame.evaluate(()=>window.__slice.req.options.command);
+    for(const mode of ['receiving','power','starter','auto']){
+      await frame.selectOption('#backfield',mode);
+      const fieldBack=await frame.evaluate(()=>{
+        const b=window.__slice.b,p=b.teams[b.user].lineup.off.RB,el=document.querySelector('#field .pl[data-lineup="off"][data-role="RB"]');
+        return{mode:b.backfieldMode[b.user],id:p.id,fieldId:el.dataset.pid,command:window.__slice.req.options.command};
+      });
+      assert.equal(fieldBack.mode,mode);assert.equal(fieldBack.fieldId,fieldBack.id);assert.equal(fieldBack.command,command);
+    }
+    if(shots)await page.screenshot({path:`${shots}/c2-before-hand.png`});
     if(await frame.evaluate(()=>window.__slice.req?.kind==='snap'&&window.__slice.req.role==='off')){
-      await frame.locator('#hand .card.k-play:not(.blocked)').first().click({force:true});
+      await frame.locator('#hand .card.k-play:not(.blocked)').first().click();
       assert.match(await frame.locator('#side').innerText(),/Exact forecasts are unavailable/);
       assert.equal(await frame.locator('#field .edge,#field .risk,#field .threat').count(),0,'fog cannot reveal exact matchup margins through field colors');
     }
     if(shots)await page.screenshot({path:`${shots}/c2-battle.png`});
+    await page.setViewportSize({width:390,height:844});
+    await frame.selectOption('#backfield','receiving');
+    await frame.locator('#hand .card.k-play:not(.blocked)').first().click();
+    const phone=await frame.evaluate(()=>{const h=document.querySelector('#hand'),r=h.getBoundingClientRect();return{right:r.right,width:innerWidth,scrolls:h.scrollWidth>h.clientWidth}});
+    assert.ok(phone.right<=phone.width+1&&phone.scrolls,'phone hand stays inside the screen and scrolls to all cards');
+    if(shots)await page.screenshot({path:`${shots}/c2-phone.png`});
+    await page.setViewportSize({width:1400,height:900});
+    await frame.selectOption('#backfield','auto');
     // Call one snap by hand, then let the coordinators finish the game.
     // (When the game opens on a 4th-down choice the hand is hidden, so the call goes through the game's own submit path.)
     const called=await frame.evaluate(()=>{const r=window.__slice.req;if(!r||r.kind!=='snap')return false;const p=r.options.plays.find(x=>!x.blocked&&x.cost<=r.options.command);if(!p)return false;window.__slice.go({type:'call',play:p.id,tactics:[]});return true});
     if(called){await page.waitForTimeout(1200);if(shots)await page.screenshot({path:`${shots}/c3-clash.png`})}
     await frame.waitForFunction(()=>!window.__slice.busy,null,{timeout:60000});
+    assert.ok(await frame.locator('#lastSnap').isVisible(),'the next decision keeps a short explanation of the last snap');
+    await frame.locator('#hand').evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)));
+    if(shots)await page.screenshot({path:`${shots}/c3-coaching.png`});
     await frame.evaluate(()=>{document.getElementById('modal').classList.remove('on')});
     const rewardsBefore=await page.evaluate(()=>window.DynastyCardGameDay.meta());
     await page.evaluate(()=>{const record=window.__callSheetDynasty.record;let first=true;window.__callSheetDynasty.record=(...args)=>{if(first){first=false;return{ok:false,error:'Temporary recorder failure'}}return record(...args)}});
@@ -88,22 +111,22 @@ const shots=process.env.CARD_SHOTS||'';
     // The Card Program panel appears on This Week, under the next-matchup card.
     await page.waitForSelector('#cardProgram',{timeout:5000});
     assert.match(await page.locator('#cardProgram .cpn-stats').innerText(),/Packs\s*1/,'the panel shows the opened pack');
-    // Card Settings: switch scouting fog off and the mode to every snap; the dynasty keeps the choice.
+    // Card Settings: switch scouting fog off and the mode to key downs; the dynasty keeps the choice.
     await page.locator('#cardProgram [data-card-settings]').click();
     await page.waitForSelector('#cardSettings form');
     if(shots)await page.screenshot({path:`${shots}/c7-settings.png`});
     await page.locator('#cardSettings input[name="int:scouting-fog"]').uncheck();
-    await page.locator('#cardSettings input[name="mode"][value="snap"]').check();
+    await page.locator('#cardSettings input[name="mode"][value="key"]').check();
     await page.keyboard.press('Escape');
     assert.equal(await page.locator('#cardSettings').count(),0,'Escape closes settings');
-    assert.equal((await page.evaluate(()=>window.DynastyCardGameDay.meta())).settings.mode,'key','cancel keeps the old settings');
+    assert.equal((await page.evaluate(()=>window.DynastyCardGameDay.meta())).settings.mode,'snap','cancel keeps the old settings');
     await page.locator('#cardProgram [data-card-settings]').click();
     await page.locator('#cardSettings input[name="int:scouting-fog"]').uncheck();
-    await page.locator('#cardSettings input[name="mode"][value="snap"]').check();
+    await page.locator('#cardSettings input[name="mode"][value="key"]').check();
     await page.locator('#cardSettings button[type="submit"]').click();
     const saved=await page.evaluate(()=>window.DynastyCardGameDay.meta().settings);
-    assert.equal(saved.integrations['scouting-fog'],false,'scouting fog is switched off');assert.equal(saved.mode,'snap');
-    assert.match(await page.locator('#cardProgram .cpn-foot').innerText(),/Every snap/);
+    assert.equal(saved.integrations['scouting-fog'],false,'scouting fog is switched off');assert.equal(saved.mode,'key');
+    assert.match(await page.locator('#cardProgram .cpn-foot').innerText(),/Key downs/);
     // Advance the week: opponents open packs and the news shows Around the League.
     while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
     await page.locator('#hubAdvance').click();

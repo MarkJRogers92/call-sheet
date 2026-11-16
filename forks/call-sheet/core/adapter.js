@@ -88,10 +88,16 @@ function staffCommand(team){
 }
 function battleTeam(team,decks,info){
   const {lineup,missing}=lineupFromTeam(team),coach=coachFromTeam(team);
+  // Keep the depth-chart starter first; never borrow a player already filling another role.
+  const occupied=new Set([...Object.entries(lineup.off).filter(([r])=>r!=='RB').map(([,p])=>p.id),...Object.values(lineup.def).map(p=>p.id)]);
+  const depth=(team.roleDepth?.RB1||[]).map(String);
+  const backs=(team.roster||[]).filter(p=>p.pos==='RB'&&available(p)&&!occupied.has(String(p.id))&&String(p.id)!==lineup.off.RB?.id)
+    .sort((a,b)=>{const rank=p=>{const i=depth.indexOf(String(p.id));return i<0?Infinity:i};return rank(a)-rank(b)||(b.trueNow||0)-(a.trueNow||0)});
+  const backfield=[...(lineup.off.RB?[lineup.off.RB]:[]),...backs.map(p=>toBattlePlayer(p,'RB'))];
   const programOn=info?.enabled!==false;
   coach.commandBonus=programOn?staffCommand(team):{off:0,def:0};
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
-    lineup,coach,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
+    lineup,backfield,coach,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
 }
 return{ROLE_MAP,POS_FALLBACK,toBattlePlayer,conditionsOf,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });

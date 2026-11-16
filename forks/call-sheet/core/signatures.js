@@ -4,10 +4,10 @@
 // plays only while he's on the field. Programs hold at most 3, so earning a fourth means choosing.
 (function(root,factory){
   const node=typeof module==='object'&&module.exports;
-  const deps=node?[require('./data.js')]:[root.CallSheet.data];
+  const deps=node?[require('./data.js'),require('./battle.js')]:[root.CallSheet.data,root.CallSheet.battle];
   const api=factory(...deps);
   if(node)module.exports=api;else root.CallSheet.signatures=api;
-})(typeof window==='object'?window:globalThis,function(D){
+})(typeof window==='object'?window:globalThis,function(D,B){
 'use strict';
 const SLOTS=3;
 const R=(w,kind,yards,extra={})=>({w,kind,yards,...extra});
@@ -73,11 +73,12 @@ function specFor(player,info={}){
 // Who broke out in this game? A dominant share of his duels, or catching fire again and again.
 // Plus a cooldown: at most one breakout every COOLDOWN games, so a signature card stays an event.
 function breakouts(b,side){
-  const tally=new Map(),lu=b.teams[side].lineup;
+  const tally=new Map();
   const touch=(p,won)=>{if(!p)return;const t=tally.get(p.id)||{p,wins:0,duels:0,fire:0};t.duels++;if(won)t.wins++;tally.set(p.id,t)};
   for(const e of b.log){
     if(e.type!=='snap'||!e.duelResults)continue;
-    e.duels.forEach((d,i)=>{const won=e.duelResults[i].won;
+    const lu={off:B.snapLineup(b,e,'off'),def:B.snapLineup(b,e,'def')};
+    e.duels.forEach((d,i)=>{if(!e.duelResults[i]||(i>0&&!e.duelResults[0].won))return;const won=e.duelResults[i].won;
       if(e.offSide===side)for(const r of d.offRoles)touch(lu.off[r],won);
       if(e.defSide===side)for(const r of d.defRoles)touch(lu.def[r],!won);});
     for(const ev of e.events||[])if(ev.type==='fire'&&ev.side===side){const t=tally.get(ev.id);if(t)t.fire++}
