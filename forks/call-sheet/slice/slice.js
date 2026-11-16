@@ -772,13 +772,29 @@ function dynastyDone(){
   m.classList.add('on');$('#home').onclick=()=>HOST.close();
 }
 // Dynasty game day: the battle starts at once with the real teams.
+// A playbook from the save only plays cards this build knows; anything else is dropped (base calls fall back).
+function sanitizePlaybook(pb){
+  const known=id=>!!(D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]);
+  for(const side of ['off','def']){const d=pb[side];if(!d)continue;
+    if(!(d.base||[]).every(known)||(d.base||[]).length!==4)d.base=[...D.DEFAULT_DECKS[side].base];
+    d.wrinkles=(d.wrinkles||[]).filter(known);d.tactics=(d.tactics||[]).filter(known);}
+  pb.signatures=(pb.signatures||[]).filter(sg=>known(sg.id));
+  return pb;
+}
 function dynastyStart(){
-  registerSignatures();
-  b=B.create({home:window.CallSheet.adapter.battleTeam(DYN.home,DYN.userSide==='home'?P.decksOf(save.playbook):null),away:window.CallSheet.adapter.battleTeam(DYN.away,DYN.userSide==='away'?P.decksOf(save.playbook):null),
+  registerSignatures();sanitizePlaybook(save.playbook);
+  const AD=window.CallSheet.adapter;
+  b=B.create({home:AD.battleTeam(DYN.home,DYN.userSide==='home'?P.decksOf(save.playbook):null,DYN.program?.home),away:AD.battleTeam(DYN.away,DYN.userSide==='away'?P.decksOf(save.playbook):null,DYN.program?.away),
     user:DYN.userSide,mode:save.settings.mode,control:save.settings.control,seed:DYN.seed,weather:DYN.weather||'clear',rivalry:!!DYN.rivalry,conditions:DYN.conditions||null});
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);$('#ticker').innerHTML='';
-  const begin=()=>callout(DYN.rivalry?'RIVALRY WEEK':'KICKOFF','small',800,`${teamOf('away').name} at ${teamOf('home').name}`).then(()=>go(null));
+  const begin=async()=>{
+    for(const mv of DYN.moves||[]){
+      if(mv.how==='ring'){$('#rays').classList.add('on');S.fanfare();await callout('RING OF HONOR','',1600,`${mv.name} · ${mv.exit||'graduated'} · his card retires`);$('#rays').classList.remove('on')}
+      else await callout(mv.how==='transfer'?'TRANSFERRED':'MOVED ON','cool small',1200,`${mv.name}${mv.to?` · now at ${mv.to}`:''} · his card leaves with him`);
+    }
+    await callout(DYN.rivalry?'RIVALRY WEEK':'KICKOFF','small',800,`${teamOf('away').name} at ${teamOf('home').name}`);go(null);
+  };
   if(!save.seenHelp)howToPlay(begin);else begin();
 }
 function leagueScreen(){

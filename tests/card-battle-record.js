@@ -24,6 +24,17 @@ const B=require('../forks/call-sheet/core/battle.js');
   const homeWon=b.game.score.home>b.game.score.away;
   assert.equal(home.w,before.hw+(homeWon?1:0));assert.equal(away.l,before.al+(homeWon?1:0));
   assert.equal((u.gameArchive||[]).length,before.archive+1,'the game is in the permanent archive');
+  // Duel-true stats: every receiver's catches and yards, and every back's rushing, match the card battle exactly.
+  const lines=new Map([...out.candidate.playerStats.home,...out.candidate.playerStats.away].map(r=>[String(r.id),r.stats||{}]));
+  let checked=0;const mismatches=[];
+  for(const bp of Object.values(b.players)){
+    const st=lines.get(String(bp.id))||{};
+    if(bp.rec||bp.recYds){checked++;if((st.receptions||0)!==bp.rec||(st.recYds||0)!==bp.recYds)mismatches.push(`${bp.name} rec ${bp.rec}/${bp.recYds} vs ${st.receptions}/${st.recYds}`)}
+    if(bp.role!=='QB'&&(bp.rushAtt||0)>0){checked++;if((st.rushAtt||0)!==bp.rushAtt||(st.rushYds||0)!==bp.rushYds)mismatches.push(`${bp.name} rush ${bp.rushAtt}/${bp.rushYds} vs ${st.rushAtt}/${st.rushYds}`)}
+    if(bp.role==='QB'&&bp.passAtt){checked++;if((st.passAtt||0)!==bp.passAtt||(st.passYds||0)!==bp.passYds)mismatches.push(`${bp.name} pass ${bp.passAtt}/${bp.passYds} vs ${st.passAtt}/${st.passYds}`)}
+  }
+  assert.ok(checked>6,'checked the main ball handlers');
+  if(mismatches.length)console.log(mismatches.slice(0,12).join('\n'));assert.deepEqual(mismatches,[],'recorded stats match who actually played each snap');
   const qb=home.roster.find(p=>p.id===home.roleDepth.QB1[0]);
   assert.ok((qb.stats?.passAtt||0)>0||(qb.stats?.rushAtt||0)>0,'the real starting QB has stats from the card battle');
   // A wrong matchup is refused, and nothing is written.

@@ -25,10 +25,15 @@ const shots=process.env.CARD_SHOTS||'';
     assert.ok(qb.portraitSeed,'battle players carry their Dynasty Lab portrait');
     const realQb=await page.evaluate(id=>{const t=window.__DL_TEST__.selected();return t.roster.find(p=>String(p.id)===id)?.name},qb.id);
     assert.equal(realQb,qb.name,'the battle quarterback is the real starter');
+    // Program wiring: both teams arrive with their scheme edges and staff, labeled by source.
+    const prog=await frame.evaluate(()=>{const b=window.__slice.b;return['home','away'].map(sd=>({edges:b.teams[sd].edges,cmd:b.teams[sd].coach.commandBonus}))});
+    assert.ok(prog.every(t=>t.edges&&Array.isArray(t.edges.off)&&Array.isArray(t.edges.def)&&t.cmd),'program edges and staff bonuses are attached');
+    assert.ok(prog.flatMap(t=>[...t.edges.off,...t.edges.def]).every(e=>/^(Scheme fit|Weekly prep|Crowd noise|Still installing)/.test(e.src)),'every program edge names its source');
     if(shots)await page.screenshot({path:`${shots}/c2-battle.png`});
     // Call one snap by hand, then let the coordinators finish the game.
-    const cards=await frame.$$('#hand .fan:first-child .card:not(.blocked)');
-    if(cards.length){await cards[0].click({force:true});await frame.click('#snapBtn',{force:true});await page.waitForTimeout(1200);if(shots)await page.screenshot({path:`${shots}/c3-clash.png`})}
+    // (When the game opens on a 4th-down choice the hand is hidden, so the call goes through the game's own submit path.)
+    const called=await frame.evaluate(()=>{const r=window.__slice.req;if(!r||r.kind!=='snap')return false;const p=r.options.plays.find(x=>!x.blocked&&x.cost<=r.options.command);if(!p)return false;window.__slice.go({type:'call',play:p.id,tactics:[]});return true});
+    if(called){await page.waitForTimeout(1200);if(shots)await page.screenshot({path:`${shots}/c3-clash.png`})}
     await frame.waitForFunction(()=>!window.__slice.busy,null,{timeout:60000});
     await frame.evaluate(()=>{document.getElementById('modal').classList.remove('on')});
     await frame.click('#bSim',{force:true});

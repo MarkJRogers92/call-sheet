@@ -107,6 +107,10 @@ function buildSnap(ctx){
     const hits=e=>(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
     for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
     for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
+    // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.
+    const edgeHits=e=>hits(e)&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
+    for(const e of ctx.offEdges||[])if(edgeHits(e))add(e.v,e.src);
+    for(const e of ctx.defEdges||[])if(edgeHits(e))add(-e.v,e.src);
     for(const e of play.effects||[])if(hits(e))add(e.v,e.src||play.name);
     for(const e of call.effects||[])if(hits(e))add(-e.v,e.src||call.name);
     // Weather.

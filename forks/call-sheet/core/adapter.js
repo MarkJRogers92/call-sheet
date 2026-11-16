@@ -44,10 +44,38 @@ function coachFromTeam(team){
   const discipline=/Pressure|Aggressive|Attack/.test(def)?3:/Control|Quarters|Split/.test(def)?5:4;
   return{name:team.staff?.OC?.name||'Coordinator',discipline,film:true,passRate};
 }
-function battleTeam(team,decks){
-  const {lineup,missing}=lineupFromTeam(team);
-  return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
-    lineup,coach:coachFromTeam(team),decks:decks||undefined,missing};
+// Scheme fit: an installed scheme sharpens the plays it's built on.
+const OFF_FIT={'Ground Pressure':{family:'run',duel:'G'},'Option Motion':{family:'run',duel:'K'},'Heavy Play Action':{family:'constraint',duel:'K'},
+  'Vertical Strike':{family:'deep',duel:'K'},'Rhythm Control':{family:'quick',duel:'K'},'Tempo Spread':{family:'quick',duel:'F'},'Multiple':{family:'constraint',duel:'G'}};
+function defFit(name){
+  if(/Pressure|Attack|Aggressive/.test(name))return{pressureCall:true,flag:'protect'};
+  if(/Odd Front|Two-Gap|Run/.test(name))return{flag:'run',duel:'G'};
+  if(/Quarters|Split-Safety|Match/.test(name))return{flag:'separation'};
+  return null;
 }
-return{ROLE_MAP,toBattlePlayer,lineupFromTeam,coachFromTeam,battleTeam};
+const PREP={pass_protection:{side:'off',flag:'protect'},run_blocking:{side:'off',flag:'run',duel:'G'},explosive_pass:{side:'off',family:'deep',duel:'K'},
+  run_fits:{side:'def',flag:'run',duel:'G'},coverage:{side:'def',flag:'separation'},pressure:{side:'def',pressureCall:true,flag:'protect'}};
+const PREP_LABEL={pass_protection:'Pass Protection',run_blocking:'Run Blocking',explosive_pass:'Explosive Passing',run_fits:'Run Fits',coverage:'Coverage',pressure:'Pressure Package'};
+// info: {familiarity (0-100), prep:[focus ids for this opponent], home (bool)}. Every edge is labeled with its source.
+function programEdges(team,info={}){
+  const off=[],def=[],fam=Number(info.familiarity??100);
+  const of=OFF_FIT[team.offScheme];
+  if(of&&fam>=60)off.push({...of,v:1,src:`Scheme fit: ${team.offScheme}`});
+  if(fam<40)off.push({duel:'K',v:-1,src:'Still installing the scheme'});
+  const df=defFit(String(team.defScheme||''));
+  if(df&&fam>=60)def.push({...df,v:1,src:`Scheme fit: ${team.defScheme}`});
+  for(const f of info.prep||[]){const p=PREP[f];if(!p)continue;const {side,...e}=p;(side==='off'?off:def).push({...e,v:1,src:`Weekly prep: ${PREP_LABEL[f]}`})}
+  if(info.home&&Number(team.fan_support)>=75)def.push({thirdDown:true,flag:'qbRead',v:1,src:'Crowd noise'});
+  return{off,def};
+}
+function staffCommand(team){
+  return{off:Number(team.staff?.OC?.playCall)>=80?1:0,def:Number(team.staff?.DC?.playCall)>=80?1:0};
+}
+function battleTeam(team,decks,info){
+  const {lineup,missing}=lineupFromTeam(team),coach=coachFromTeam(team);
+  coach.commandBonus=staffCommand(team);
+  return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
+    lineup,coach,decks:decks||undefined,missing,edges:programEdges(team,info||{})};
+}
+return{ROLE_MAP,toBattlePlayer,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });

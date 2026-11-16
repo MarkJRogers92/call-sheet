@@ -90,9 +90,17 @@ function weightedPick(list,rng,kind='base'){
   }
   return filtered.at(-1).player;
 }
+// Call Sheet fork: a card-battle play names who actually played it (event.card.actors, Dynasty Lab player ids).
+// When it does, those players get the credit; every other game is attributed exactly as before.
+function cardActor(result,side,e,key){
+  const id=e?.card?.actors?.[key];if(id==null)return null;
+  const c=result.contexts[side];
+  for(const p of [c.qb,...c.rushers.map(x=>x.player),...c.receivers.map(x=>x.player),...c.defenders.map(x=>x.player),...c.offensiveLine.map(x=>x.player)])if(p&&String(p.id)===String(id))return p;
+  return null;
+}
 function addTackle(result,defSide,evt,rng,{sack=false}={}){
   const ctx=result.contexts[defSide];
-  const p=weightedPick(ctx.defenders,rng,sack?'rush':'tackle');
+  const p=cardActor(result,defSide,evt,sack?'sacker':'tackler')||weightedPick(ctx.defenders,rng,sack?'rush':'tackle');
   if(!p)return null;
   const line=ensureLine(result.lines[defSide],p);
   line.stats.tackles++;
@@ -205,7 +213,7 @@ function attributeScrimmage(result,e,rng,side,def,team,ctx){
   if(Number.isFinite(from.distance)&&yards>=from.distance&&e.state?.fieldPosition<100)team.firstDowns++;
 
   if(kind==='pass'){
-    const qb=ctx.qb||weightedPick(ctx.rushers,rng,'carry');
+    const qb=cardActor(result,side,e,'qb')||ctx.qb||weightedPick(ctx.rushers,rng,'carry');
     if(!qb)throw new Error(`${side} has no quarterback attribution candidate.`);
     const q=ensureLine(result.lines[side],qb);
 
@@ -225,7 +233,7 @@ function attributeScrimmage(result,e,rng,side,def,team,ctx){
 
     team.passAtt++;
     q.stats.passAtt++;
-    const target=weightedPick(ctx.receivers,rng,'receive');
+    const target=cardActor(result,side,e,'target')||weightedPick(ctx.receivers,rng,'receive');
     if(!target)throw new Error(`${side} has no receiving attribution candidate.`);
     ensureLine(result.lines[side],target).stats.targets++;
 
@@ -235,7 +243,7 @@ function attributeScrimmage(result,e,rng,side,def,team,ctx){
     return;
   }
 
-  const runner=(e.scramble&&ctx.qb)||weightedPick(ctx.rushers,rng,'carry')||ctx.qb;
+  const runner=cardActor(result,side,e,'carrier')||(e.scramble&&ctx.qb)||weightedPick(ctx.rushers,rng,'carry')||ctx.qb;
   if(!runner)throw new Error(`${side} has no rushing attribution candidate.`);
   const r=ensureLine(result.lines[side],runner);
   r.stats.rushAtt++;
@@ -248,7 +256,7 @@ function attributeScrimmage(result,e,rng,side,def,team,ctx){
   if(e.pressure){const rusher=addPressure(result,side,def,e,rng);if(rusher&&result.playActors[e.seq])result.playActors[e.seq].pr=rusher.id}
 }
 function attributeInterception(result,e,rng,side,def,team,ctx){
-  const qb=ctx.qb||weightedPick(ctx.rushers,rng,'carry');
+  const qb=cardActor(result,side,e,'qb')||ctx.qb||weightedPick(ctx.rushers,rng,'carry');
   if(!qb)throw new Error(`${side} has no quarterback attribution candidate.`);
   const q=ensureLine(result.lines[side],qb);
   q.stats.passAtt++;
@@ -257,12 +265,12 @@ function attributeInterception(result,e,rng,side,def,team,ctx){
   team.int++;
   team.turnovers++;
 
-  const target=weightedPick(ctx.receivers,rng,'receive');
+  const target=cardActor(result,side,e,'target')||weightedPick(ctx.receivers,rng,'receive');
   if(!target)throw new Error(`${side} has no receiving attribution candidate.`);
   ensureLine(result.lines[side],target).stats.targets++;
 
   const dbs=result.contexts[def].defenders.filter(x=>['CB','S','LB'].includes(x.player.pos));
-  const thief=weightedPick(dbs,rng,'takeaway')||weightedPick(result.contexts[def].defenders,rng,'takeaway');
+  const thief=cardActor(result,def,e,'interceptor')||weightedPick(dbs,rng,'takeaway')||weightedPick(result.contexts[def].defenders,rng,'takeaway');
   if(thief)ensureLine(result.lines[def],thief).stats.intDef++;
   result.lastPlay[side]={type:'interception',qb,receiver:target};
   noteActors(result,e,{qb,tg:target,ib:thief});
@@ -270,7 +278,7 @@ function attributeInterception(result,e,rng,side,def,team,ctx){
 function attributeFumble(result,e,rng,side,def,team,ctx){
   const yards=Number(e.yards)||0;
   const isPass=e.kind==='pass';
-  const runner=isPass?(ctx.qb||weightedPick(ctx.rushers,rng,'carry')):(weightedPick(ctx.rushers,rng,'carry')||ctx.qb);
+  const runner=isPass?(cardActor(result,side,e,'qb')||ctx.qb||weightedPick(ctx.rushers,rng,'carry')):(cardActor(result,side,e,'carrier')||weightedPick(ctx.rushers,rng,'carry')||ctx.qb);
   if(!runner)throw new Error(`${side} has no fumble attribution candidate.`);
   const r=ensureLine(result.lines[side],runner);
   r.stats.fumbles++;
