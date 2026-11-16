@@ -29,6 +29,12 @@ const shots=process.env.CARD_SHOTS||'';
     const prog=await frame.evaluate(()=>{const b=window.__slice.b;return['home','away'].map(sd=>({edges:b.teams[sd].edges,cmd:b.teams[sd].coach.commandBonus}))});
     assert.ok(prog.every(t=>t.edges&&Array.isArray(t.edges.off)&&Array.isArray(t.edges.def)&&t.cmd),'program edges and staff bonuses are attached');
     assert.ok(prog.flatMap(t=>[...t.edges.off,...t.edges.def]).every(e=>/^(Scheme fit|Weekly prep|Crowd noise|Still installing)/.test(e.src)),'every program edge names its source');
+    // Every player on the field is a card with his real face; hovering shows his grades and game line.
+    const field=await frame.evaluate(()=>({cards:document.querySelectorAll('#field .pl').length,faces:[...document.querySelectorAll('#field .pl .pface')].filter(i=>i.getAttribute('href')).length}));
+    assert.equal(field.cards,22,'22 player cards on the field');assert.ok(field.faces>=20,'field cards carry portraits');
+    await frame.evaluate(()=>{const el=document.querySelector('#field .pl');el.dispatchEvent(new PointerEvent('pointerenter',{clientX:300,clientY:300,bubbles:false}))});
+    assert.match(await frame.locator('#ptip').innerText(),/THIS GAME|This game/i,'hovering a field card shows the player card');
+    await frame.evaluate(()=>document.querySelector('#field .pl').dispatchEvent(new PointerEvent('pointerleave')));
     if(shots)await page.screenshot({path:`${shots}/c2-battle.png`});
     // Call one snap by hand, then let the coordinators finish the game.
     // (When the game opens on a 4th-down choice the hand is hidden, so the call goes through the game's own submit path.)

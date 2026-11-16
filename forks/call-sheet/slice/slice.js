@@ -48,6 +48,7 @@ function drawField(){
   svg.innerHTML='';
   const defs=mk('defs',{},svg);
   const g=mk('linearGradient',{id:'turf',x1:0,y1:0,x2:0,y2:1},defs);mk('stop',{offset:0,'stop-color':'#1f6b33'},g);mk('stop',{offset:1,'stop-color':'#124a22'},g);
+  {const f=mk('filter',{id:'plglow',x:'-60%',y:'-60%',width:'220%',height:'220%'},defs);mk('feGaussianBlur',{stdDeviation:2.6},f)}
   mk('rect',{x:0,y:0,width:1200,height:533,fill:'url(#turf)',rx:6},svg);
   for(let i=0;i<10;i++)mk('rect',{x:100+i*100,y:0,width:50,height:533,fill:'rgba(255,255,255,.035)'},svg);
   const hc=teamOf('home').colors[0],ac=teamOf('away').colors[0];
@@ -64,8 +65,8 @@ function drawField(){
   layer.ball=mk('ellipse',{cx:0,cy:0,rx:8,ry:5,fill:'#8a4b1c',stroke:'#fff','stroke-width':1.5},svg);
   pos={};layer.dots={};
 }
-const OFF_SPOTS={LT:[-1,206],LG:[-1,236],C:[-1,266],RG:[-1,296],RT:[-1,326],TE:[-1.3,362],X:[-1,70],Z:[-1,462],SLOT:[-2,412],QB:[-5,266],RB:[-7.5,266]};
-const DEF_SPOTS={RUSH:[1.3,190],NT:[1.3,250],DT3:[1.3,284],SET:[1.3,346],WILL:[5,212],MIKE:[5,268],BOXS:[6,352],NICKEL:[5.5,412],BCB:[7,70],FCB:[7,462],FS:[13,266]};
+const OFF_SPOTS={LT:[-1,194],LG:[-1,230],C:[-1,266],RG:[-1,302],RT:[-1,338],TE:[-1.3,376],X:[-1,70],Z:[-1,462],SLOT:[-2,412],QB:[-5,266],RB:[-7.5,266]};
+const DEF_SPOTS={RUSH:[1.3,176],NT:[1.3,246],DT3:[1.3,290],SET:[1.3,358],WILL:[5,212],MIKE:[5,268],BOXS:[6,352],NICKEL:[5.5,412],BCB:[7,70],FCB:[7,462],FS:[13,266]};
 function formation(st){
   if(!st||!st.possession||st.field==null)return null;
   const off=st.possession,def=off==='home'?'away':'home',dir=off==='home'?1:-1,los=X(absOf(st.field,off)),out={};
@@ -73,16 +74,118 @@ function formation(st){
   for(const[r,[dx,y]]of Object.entries(DEF_SPOTS))out[`d:${r}`]={x:los+dx*YD*dir,y,side:def,role:r,lineup:'def'};
   return{los,dir,dots:out,off,def};
 }
+// ---------------------------------------------------------------- player cards on the field
+// Every player on the field is a small card: team color, real face, jersey number. Hover (or tap) for the player's
+// grades and this game's line. Cards light up: green where you hold the edge in the coming duels, red where you
+// don't, gold when a player wins his duel, and a big pop for the player who made the play.
+const CW=26,CH=34,faceCache=new Map();
+function faceURL(p,colors){
+  const key=`${p.id}|${colors?.[0]}`;if(faceCache.has(key))return faceCache.get(key);
+  let url='';try{const cv=document.createElement('canvas');cv.width=cv.height=48;if(paintPortrait(cv,p,colors,48))url=cv.toDataURL()}catch(e){}
+  faceCache.set(key,url);return url;
+}
+function signatureIds(){
+  const ids=new Set();for(const pb of [save.playbook,DYN?.oppPlaybook])for(const s of pb?.signatures||[])ids.add(String(s.playerId));
+  return ids;
+}
 function ensureDots(f){
+  const sigs=signatureIds();
   for(const[k,d]of Object.entries(f.dots)){
     let el=layer.dots[k];
-    if(!el){el=mk('g',{class:'pl'},layer.players);mk('circle',{r:12,'stroke-width':3},el);const t=mk('text',{'text-anchor':'middle','dominant-baseline':'central','font-size':11,'font-weight':800,fill:'#fff','font-family':'system-ui'},el);layer.dots[k]=el}
-    const p=teamOf(d.side).lineup[d.lineup][d.role],c=el.firstChild;
-    c.setAttribute('fill',teamOf(d.side).colors[0]);c.setAttribute('stroke',d.lineup==='off'?'#fff':'#ffd2ce');
-    c.classList.toggle('hotp',!!(p&&b.fire[p.id]));
-    el.lastChild.textContent=p?p.number:'';
+    if(!el){
+      el=mk('g',{class:'pl',role:'img'},layer.players);el.dataset.key=k;
+      const c=mk('g',{class:'pc'},el);
+      mk('rect',{class:'glow',x:-CW/2-2,y:-CH/2-2,width:CW+4,height:CH+4,rx:5,filter:'url(#plglow)'},c);
+      mk('rect',{class:'cbody',x:-CW/2,y:-CH/2,width:CW,height:CH,rx:3,'stroke-width':1.5},c);
+      mk('image',{class:'pface',x:-CW/2+1.5,y:-CH/2+1.5,width:CW-3,height:CH-12,preserveAspectRatio:'xMidYMin slice'},c);
+      mk('rect',{class:'nband',x:-CW/2,y:CH/2-11,width:CW,height:11,rx:2},c);
+      mk('text',{class:'num',x:0,y:CH/2-5.2,'text-anchor':'middle','dominant-baseline':'central'},c);
+      el.addEventListener('pointerenter',ev=>showTip(el,ev));el.addEventListener('pointermove',ev=>moveTip(ev));
+      el.addEventListener('pointerleave',hideTip);el.addEventListener('pointerdown',ev=>{if(ev.pointerType!=='mouse'){ev.stopPropagation();tipFor===el?hideTip():showTip(el,ev)}});
+      layer.dots[k]=el;
+    }
+    const team=teamOf(d.side),p=team.lineup[d.lineup][d.role],c=el.firstChild;
+    el.dataset.side=d.side;el.dataset.lineup=d.lineup;el.dataset.role=d.role;el.dataset.pid=p?p.id:'';
+    c.querySelector('.cbody').setAttribute('fill',team.colors[0]);c.querySelector('.nband').setAttribute('fill',team.colors[0]);
+    c.querySelector('.cbody').setAttribute('stroke',team.colors[1]||'#fff');
+    const face=c.querySelector('.pface'),url=p?faceURL(p,team.colors):'';
+    if(face.getAttribute('href')!==url){if(url)face.setAttribute('href',url);else face.removeAttribute('href')}
+    c.querySelector('.num').textContent=p?p.number:'';
+    el.classList.toggle('hot',!!(p&&b.fire[p.id]));el.classList.toggle('sig',!!(p&&sigs.has(String(p.id))));
+    el.classList.toggle('opp',d.side!==b.user);
+    el.setAttribute('aria-label',p?`${p.name}, #${p.number} ${p.role}`:d.role);
   }
 }
+// Matchup glow for the coming snap. duels come from the read (preview), margin > 0 favors the offense.
+let glowNotes={};
+function clearGlow(){glowNotes={};for(const el of Object.values(layer.dots||{}))el.classList.remove('edge','risk','threat','won','dim')}
+function fieldGlow(duels,userOff){
+  clearGlow();if(!duels)return;
+  for(const d of duels){
+    const adv=userOff?d.margin:-d.margin;if(Math.abs(adv)<1)continue;
+    const mine=(userOff?d.offRoles:d.defRoles).map(r=>(userOff?'o:':'d:')+r),theirs=(userOff?d.defRoles:d.offRoles).map(r=>(userOff?'d:':'o:')+r);
+    for(const k of mine){layer.dots[k]?.classList.add(adv>0?'edge':'risk');(glowNotes[k]??=[]).push(`${d.label}: ${D.chip(Math.max(-3,Math.min(3,adv)))}`)}
+    if(adv<0)for(const k of theirs){layer.dots[k]?.classList.add('threat');(glowNotes[k]??=[]).push(`${d.label}: a threat to you`)}
+  }
+}
+// After the play: duel winners flash gold, the playmaker pops.
+function celebrateCards(e){
+  clearGlow();const lit=[];
+  for(let i=0;i<(e.duelResults||[]).length;i++){
+    const d=e.duels[i],won=e.duelResults[i].won;
+    for(const r of won?d.offRoles:d.defRoles){const k=(won?'o:':'d:')+r;if(layer.dots[k])lit.push(k)}
+    if(i===0&&!won)break;
+  }
+  const P=e.participants||{},big=Math.abs(e.yards||0)>=15||e.turnover||e.kind==='sack';
+  const star=e.turnover==='interception'&&P.defender?`d:${P.defender}`:e.kind==='sack'&&P.sacker?`d:${P.sacker}`:P.carrier&&(e.kind==='run'||e.kind==='scramble')?`o:${P.carrier}`:P.target&&e.completed?`o:${P.target}`:null;
+  for(const k of new Set(lit)){const el=layer.dots[k];el.classList.add('won');layer.players.appendChild(el);
+    FX.anim(el.firstChild,[{transform:'scale(1)'},{transform:'scale(1.35)'},{transform:'scale(1.1)'}],{duration:320,easing:'cubic-bezier(.2,1.6,.4,1)'})}
+  if(star&&layer.dots[star]&&big){
+    const el=layer.dots[star];el.classList.add('won');layer.players.appendChild(el);
+    FX.anim(el.firstChild,[{transform:'scale(1)'},{transform:'scale(2.1)'},{transform:'scale(1.3)'}],{duration:520,easing:'cubic-bezier(.2,1.6,.4,1)'});
+    const r=el.getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+r.height/2,{n:28,speed:7,colors:['#fff','#ffe066','#ffb03c']});
+  }
+  setTimeout(()=>{for(const el of Object.values(layer.dots))el.classList.remove('won')},1700);
+}
+// Hover card: who he is, his grades, this game.
+let tipFor=null;
+const CLASS_YR=['','FR','SO','JR','SR'];
+function gameLine(st){
+  if(!st)return'No stats yet';
+  const out=[];
+  if(st.passAtt)out.push(`${st.comp}/${st.passAtt} · ${st.passYds} yds${st.passTD?` · ${st.passTD} TD`:''}${st.ints?` · ${st.ints} INT`:''}`);
+  if(st.rushAtt)out.push(`${st.rushAtt} car · ${st.rushYds} yds${st.rushTD?` · ${st.rushTD} TD`:''}`);
+  if(st.rec||st.targets)out.push(`${st.rec} rec · ${st.recYds} yds${st.recTD?` · ${st.recTD} TD`:''}`);
+  const dfn=[st.tackles&&`${st.tackles} tkl`,st.sacks&&`${st.sacks} sack${st.sacks>1?'s':''}`,st.intDef&&`${st.intDef} INT`].filter(Boolean);
+  if(dfn.length)out.push(dfn.join(' · '));
+  return out.join('<br>')||'No stats yet';
+}
+function showTip(el,ev){
+  const team=teamOf(el.dataset.side),p=team.lineup[el.dataset.lineup]?.[el.dataset.role];if(!p)return;
+  tipFor=el;let tip=$('#ptip');
+  if(!tip){tip=document.createElement('div');tip.id='ptip';tip.setAttribute('role','tooltip');document.body.appendChild(tip)}
+  const strong=new Set(D.STYLE_TRAITS[p.archetype]||[]);
+  const traits=D.TRAITS.map(t=>[t,p.traits?.[t]??50]).sort((a,c)=>(strong.has(c[0])-strong.has(a[0]))||c[1]-a[1]).slice(0,4);
+  const opp=el.dataset.side!==b.user,fog=opp?fogSpread():0;
+  const g=v=>{if(!fog)return String(v);const lo=v-(v%(fog*5+1));return`${lo}–${lo+fog*5}`};
+  const notes=glowNotes[el.dataset.key]||[];
+  tip.className=`${el.classList.contains('sig')?'sig':''} ${opp?'opp':''}`;
+  tip.style.setProperty('--tc',team.colors[0]);
+  tip.innerHTML=`<div class="tt-head"><canvas width="56" height="56"></canvas><div><b>${esc(p.name)}</b><span>#${esc(p.number)} · ${esc(p.pos||p.role)} · ${esc(CLASS_YR[p.year]||'')}</span><span>${esc(team.short)} ${esc(p.role)} · ${esc(p.archetype||'')}${p.ovr?` · <b>${g(p.ovr)}</b> OVR`:''}</span></div></div>
+    <div class="tt-traits">${traits.map(([t,v])=>`<div class="${strong.has(t)?'key':''}"><span>${t==='iq'?'IQ':esc(t)}</span><i style="--v:${Math.max(0,Math.min(100,v))}%"></i><b>${g(v)}</b></div>`).join('')}</div>
+    ${notes.length?`<div class="tt-notes">${notes.map(n=>`<div>${esc(n)}</div>`).join('')}</div>`:''}
+    ${b.fire[p.id]?'<div class="tt-fire">ON FIRE</div>':''}${el.classList.contains('sig')?'<div class="tt-sig">SIGNATURE CARD</div>':''}
+    <div class="tt-line"><span>This game</span>${gameLine(b.players?.[p.id])}</div>${fog?`<div class="tt-fog">Film confidence ${DYN.scouting.confidence}%: grades are ranges</div>`:''}`;
+  paintPortrait(tip.querySelector('canvas'),p,team.colors,56);
+  tip.classList.add('on');moveTip(ev);
+}
+function moveTip(ev){
+  const tip=$('#ptip');if(!tip||!tipFor)return;
+  const w=tip.offsetWidth,h=tip.offsetHeight,x=ev.clientX+16+w>innerWidth?ev.clientX-16-w:ev.clientX+16,y=Math.min(innerHeight-h-8,Math.max(8,ev.clientY-h/2));
+  tip.style.left=`${Math.max(8,x)}px`;tip.style.top=`${y}px`;
+}
+function hideTip(){tipFor=null;$('#ptip')?.classList.remove('on')}
+document.addEventListener('pointerdown',e=>{if(tipFor&&!e.target.closest?.('.pl'))hideTip()});
 function placeDot(k,x,y){const el=layer.dots[k];if(el)el.setAttribute('transform',`translate(${x.toFixed(1)},${y.toFixed(1)})`);pos[k]={x,y}}
 function placeBall(x,y,h=0){layer.ball.setAttribute('cx',x);layer.ball.setAttribute('cy',y-h);layer.ball.setAttribute('rx',8*(1+h/120));layer.ball.setAttribute('ry',5*(1+h/120));layer.shadow.setAttribute('cx',x);layer.shadow.setAttribute('cy',y+6)}
 function setMarkers(st,instant){
@@ -150,18 +253,19 @@ function hotHTML(){
 const COMBOS=[{id:'establish',name:'Establish the Run',how:'Run, run, then PA Boot in one drive',reward:'Key +1 and +1 Command'},{id:'chain_gang',name:'Chain Gang',how:'Three first downs in one drive',reward:'+1 Command next series'}];
 function comboHTML(){if(!save.combos.length)return'';return`<div class="box"><h3>Combo book</h3>${COMBOS.map(c=>{const f=save.combos.includes(c.id);return`<div class="combo ${f?'found':''}"><b>${f?esc(c.name):'? ? ?'}</b><br>${f?esc(c.how)+' · '+esc(c.reward):'Undiscovered'}</div>`}).join('')}</div>`}
 function readHTML(){
-  if(!req||req.kind!=='snap')return'';
-  if(!sel.play)return`<div class="box"><h3>The read</h3><div class="mini">Pick a play card. Drag it onto the field, or tap it and hit SNAP.</div></div>`;
+  if(!req||req.kind!=='snap'){clearGlow();return''}
+  if(!sel.play){clearGlow();return`<div class="box"><h3>The read</h3><div class="mini">Pick a play card. Drag it onto the field, or tap it and hit SNAP.</div></div>`}
   const tactics=sel.tac.map(i=>req.options.tactics.find(t=>t.slot===i)?.id).filter(Boolean);
   const pv=B.preview(b,req.side,{play:sel.play,tactics});if(!pv)return'';
   if(req.role==='off'){
+    fieldGlow(pv.snap.duels,true);
     const bonus=pv.snap.duels.flatMap(d=>d.mods.filter(m=>m.src!=='Play design').map(m=>({...m,k:d.key})));
     return`<div class="box"><h3>The read</h3>${DYN&&fogSpread()?`<div class="mini" style="color:#9fe3ff">Film confidence ${DYN.scouting.confidence}%: their ratings are ranges. Scout them to sharpen.</div>`:''}<div class="exp">${pv.ev.yards.toFixed(1)}<small>yds expected</small></div>
       <div class="kpis"><span>1ST DOWN <b>${Math.round(pv.ev.first*100)}%</b></span><span>TURNOVER <b>${(pv.ev.turnover*100).toFixed(0)}%</b></span></div>
       ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}${(()=>{const dside=req.side===b.user?(b.user==='home'?'away':'home'):b.user,fg=fogGrade(d.defGrade,d.defNames[0],dside);return fg.fog?` <span class="muted">(${fg.text})</span>`:''})()}</span><span class="chip ${d.chip}${fogSpread()&&DYN?' fogchip':''}">${d.chip}${fogSpread()&&DYN?'?':''}</span></div>`).join('')}
       ${bonus.length?`<div class="bonus">${bonus.map(m=>`<span class="${m.v<0?'neg':''}">${m.k} ${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>`:''}</div>`;
   }
-  const rows=pv.vs.sort((a,c)=>c.weight-a.weight);
+  const rows=pv.vs.sort((a,c)=>c.weight-a.weight);fieldGlow(rows[0]?.snap.duels,false);
   const avg=rows.reduce((s,v)=>s+v.weight*v.ev.yards,0);
   return`<div class="box"><h3>The read</h3><div class="exp">${avg.toFixed(1)}<small>yds allowed</small></div>
     ${rows.map(v=>`<div class="drow"><span class="k">${Math.round(v.weight*100)}</span><span class="n"><b>If ${esc(v.family)}</b><br>${v.snap.duels.map(d=>`${d.key} <span class="chip ${D.chip(Math.max(-3,Math.min(3,-d.margin)))}" style="font-size:10px;padding:1px 5px">${D.chip(Math.max(-3,Math.min(3,-d.margin)))}</span>`).join(' ')}</span><span class="cond">${v.ev.yards.toFixed(1)}</span></div>`).join('')}</div>`;
@@ -376,7 +480,9 @@ async function cinematic(e){
   }
   clash.classList.remove('on');clash.innerHTML='';
   // Phase 2: the play runs.
+  hideTip();clearGlow();
   await animatePlay(e);
+  celebrateCards(e);
   // Phase 3: count the yards, then the callout.
   const before=b._lastScore||e.score,td=e.score[e.offSide]-before[e.offSide]>=6;
   b._lastScore={...e.score};
