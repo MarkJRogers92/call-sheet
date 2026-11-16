@@ -12,7 +12,7 @@ presentation module, `DynastyCardGameDay.register`). It plugs into one or more h
 | --- | --- | --- | --- |
 | `launch` | Building any battle: coached or simulated | `{cfg, g, home, away, me, opp, userSide}` | Add edges, fog, opponent decks, callouts to `cfg` |
 | `afterGame` | A card-simulated game has been recorded | `{b, userSide, me, opp, coached:false}` | Mastery, news, awards from the battle log |
-| `weekTick` | After every simulated week (`simWeek`) | `{week, year, news}` | AI playbooks, league-wide effects, news items |
+| `weekTick` | After every simulated week (`simWeek`) | `{week, year, news}`, `week` = the week just played | AI playbooks, league-wide effects, news items (push to `ctx.news`) |
 | `offseason` | After `runOffseason` | `{year}` | Graduation ceremonies, staff departures, signing-class packs |
 
 Rules every integration follows:
@@ -20,7 +20,8 @@ Rules every integration follows:
   (`recordV2GameLabResult`, the save at `universe.callSheet`).
 - **Labeled effects only.** A duel bonus is an edge with a `src` the player can read in "The read" and the clash.
 - **Fail safe.** A throwing integration is logged and skipped. Tested by `tests/card-integrations.js`.
-- **Switchable.** `callSheet.settings.integrations[id]=false` turns it off; the save keeps the choice.
+- **Switchable.** `callSheet.settings.integrations[id]=false` turns it off; the save keeps the choice. Every
+  registered integration appears automatically in **Card Settings** with its `label` and `about`.
 - **Opt-in for the dynasty.** Nothing changes until `universe.callSheet` exists: the first Coach with Cards, or
   `DynastyCardGameDay.enable()`. Base Dynasty Lab behavior and all 1,026 of its tests are untouched.
 
@@ -34,6 +35,18 @@ Rules every integration follows:
 | `practice-reps` | launch, afterGame | Each prep focus adds 5 mastery reps to the matching cards every week |
 | `ai-playbooks` | weekTick, launch | Programs on your schedule (and your rival) open packs, pick by identity and evolve; you face their decks |
 | `sim-with-cards` | (record wrapper) | Simulated games are card battles with your playbook, recorded with duel-true stats |
+
+### On the This Week page
+
+- **Card Program panel** (`#cardProgram`, under the next-matchup card, once the dynasty uses cards): card record,
+  packs, evolutions, signatures and Ring of Honor, plus **Around the League**: the latest pulls and evolutions from
+  the programs you play (rare and legendary highlighted, each stamped with its week).
+- **News log:** each `weekTick`'s `ctx.news` items (`{team, card, rarity}` or `{team, evolved}`) are saved to
+  `callSheet.newsLog` with year and week. The log keeps the last 40 items and is validated on load. An integration that pushes items in this shape
+  shows up in the feed with no UI work.
+- **Card Settings** dialog: how much you call (key downs, series, every snap, watch), which side you coach, speed,
+  sound, and an on/off switch for every integration. Escape or Cancel leaves the settings unchanged; Save writes them
+  into the dynasty. Proven by `tests/card-gameday-browser.js`.
 
 ### Next integrations, by hook
 

@@ -57,7 +57,34 @@ const shots=process.env.CARD_SHOTS||'';
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
     assert.ok(meta&&meta.playbook&&meta.playbook.packsOpened===1,'the pack pick is saved in the dynasty');
     if(shots)await page.screenshot({path:`${shots}/c6-back.png`});
+    // The Card Program panel appears on This Week, under the next-matchup card.
+    await page.waitForSelector('#cardProgram',{timeout:5000});
+    assert.match(await page.locator('#cardProgram .cpn-stats').innerText(),/Packs\s*1/,'the panel shows the opened pack');
+    // Card Settings: switch scouting fog off and the mode to every snap; the dynasty keeps the choice.
+    await page.locator('#cardProgram [data-card-settings]').click();
+    await page.waitForSelector('#cardSettings form');
+    if(shots)await page.screenshot({path:`${shots}/c7-settings.png`});
+    await page.locator('#cardSettings input[name="int:scouting-fog"]').uncheck();
+    await page.locator('#cardSettings input[name="mode"][value="snap"]').check();
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#cardSettings').count(),0,'Escape closes settings');
+    assert.equal((await page.evaluate(()=>window.DynastyCardGameDay.meta())).settings.mode,'key','cancel keeps the old settings');
+    await page.locator('#cardProgram [data-card-settings]').click();
+    await page.locator('#cardSettings input[name="int:scouting-fog"]').uncheck();
+    await page.locator('#cardSettings input[name="mode"][value="snap"]').check();
+    await page.locator('#cardSettings button[type="submit"]').click();
+    const saved=await page.evaluate(()=>window.DynastyCardGameDay.meta().settings);
+    assert.equal(saved.integrations['scouting-fog'],false,'scouting fog is switched off');assert.equal(saved.mode,'snap');
+    assert.match(await page.locator('#cardProgram .cpn-foot').innerText(),/Every snap/);
+    // Advance the week: opponents open packs and the news shows Around the League.
+    while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
+    await page.locator('#hubAdvance').click();
+    await page.waitForFunction(()=>document.querySelectorAll('#cardProgram .cpn-news').length>0,null,{timeout:10000});
+    const news=await page.evaluate(()=>window.DynastyCardGameDay.news());
+    assert.ok(news.length>0&&news.every(n=>n.year&&n.week),'news is saved with the week it happened');
+    if(shots){await page.locator('#cardProgram').scrollIntoViewIfNeeded();await page.locator('#cardProgram').screenshot({path:`${shots}/c8-news.png`})}
     assert.deepEqual(errors,[],'no console errors');
     console.log('ok  Coach with Cards plays the real game, records it, saves the playbook and returns to the dynasty');
+    console.log('ok  the Card Program panel shows your playbook and Around the League news; Card Settings save with the dynasty');
   }finally{await browser.close()}
 })().catch(err=>{console.error(err);process.exit(1)});

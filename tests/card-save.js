@@ -18,6 +18,11 @@ const P=require('../forks/call-sheet/core/packs.js');
   const junk={callSheet:'garbage'};n(junk);assert.equal(junk.callSheet,undefined,'a non-object is removed');
   const capped={callSheet:{version:1,playbook:{...P.newPlaybook(),capacity:{wrinkles:999,tactics:-3}}}};n(capped);
   assert.deepEqual(capped.callSheet.playbook.capacity,{wrinkles:30,tactics:10});
+  // The Around the League log keeps the last 40 valid items, stamped with year and week.
+  const log=Array.from({length:50},(_,i)=>({team:'T'+i,card:'draw',rarity:'common',year:2027,week:i}));
+  const nl={callSheet:{version:1,newsLog:[...log,{team:5},'x',null,{team:'Z',evolved:'inside_zone_plus',week:'3',junk:{a:1}}]}};n(nl);
+  assert.equal(nl.callSheet.newsLog.length,40);assert.deepEqual(nl.callSheet.newsLog.at(-1),{team:'Z',evolved:'inside_zone_plus',week:3});
+  assert.equal(nl.callSheet.newsLog[0].team,'T11');
   // A playbook from a newer version refuses to load rather than being silently damaged.
   assert.throws(()=>n({callSheet:{version:99}}),/newer version/);
   // It runs as part of every load.

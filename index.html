@@ -23802,6 +23802,7 @@ if(typeof module==='object'&&module.exports){
 //   2. The integration framework: small named integrations that hook into game day, finished games and the
 //      weekly cycle. Each can be switched off in settings (callSheet.settings.integrations[id] = false).
 //   3. "Coach with Cards" game day and card-simulated games, both recorded through recordV2GameLabResult.
+//   4. The Card Program panel on This Week (Around the League news) and the Card Settings dialog.
 
 // ================================================================ 1. save format
 const CALL_SHEET_SAVE_VERSION=1;
@@ -23832,11 +23833,16 @@ function normalizeCallSheet(u){
   cs.combos=Array.isArray(cs.combos)?cs.combos.filter(x=>typeof x==='string').slice(0,20):[];
   const st=cs.settings&&typeof cs.settings==='object'?cs.settings:{};
   const integrations=Object.fromEntries(Object.entries(st.integrations&&typeof st.integrations==='object'?st.integrations:{}).filter(([k,v])=>typeof k==='string'&&typeof v==='boolean'));
-  cs.settings={mode:['key','snap','sim'].includes(st.mode)?st.mode:'key',control:['offense','both','defense'].includes(st.control)?st.control:'offense',fast:!!st.fast,sound:st.sound!==false,integrations};
+  cs.settings={mode:['key','series','snap','sim'].includes(st.mode)?st.mode:'key',control:['offense','both','defense'].includes(st.control)?st.control:'offense',fast:!!st.fast,sound:st.sound!==false,integrations};
   cs.games=Number.isFinite(Number(cs.games))?Math.max(0,Math.min(99999,Math.round(Number(cs.games)))):0;cs.seenHelp=!!cs.seenHelp;
   // AI programs' playbooks, keyed by team id. Kept small: only programs you play, plus your rival.
   const ai={};for(const [id,pb] of Object.entries(cs.ai&&typeof cs.ai==='object'?cs.ai:{}).slice(0,40)){const n=normalizeCardPlaybook(pb,2);if(n)ai[id]=n}
   cs.ai=ai;
+  // Around the League: what other programs pulled and evolved, newest last, kept short.
+  const txt=v=>typeof v==='string'?v.slice(0,80):undefined,num=v=>Number.isFinite(Number(v))?Math.round(Number(v)):undefined;
+  cs.newsLog=(Array.isArray(cs.newsLog)?cs.newsLog:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string'&&(typeof x.card==='string'||typeof x.evolved==='string'))
+    .slice(-40).map(x=>Object.fromEntries(Object.entries({team:txt(x.team),card:txt(x.card),rarity:txt(x.rarity),evolved:txt(x.evolved),year:num(x.year),week:num(x.week)}).filter(([,v])=>v!==undefined)));
+  cs.lastWeekNews=(Array.isArray(cs.lastWeekNews)?cs.lastWeekNews:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string').slice(0,60);
 }
 
 (function(){
@@ -23844,7 +23850,7 @@ function normalizeCallSheet(u){
   const DEFAULT_SETTINGS={mode:'key',control:'offense',fast:false,sound:true,integrations:{}};
   function cardMeta(){
     universe.callSheet??={version:CALL_SHEET_SAVE_VERSION,playbook:null,combos:[],settings:{...DEFAULT_SETTINGS},games:0,seenHelp:false,ai:{}};
-    universe.callSheet.ai??={};universe.callSheet.settings??={...DEFAULT_SETTINGS};universe.callSheet.settings.integrations??={};
+    universe.callSheet.ai??={};universe.callSheet.newsLog??=[];universe.callSheet.settings??={...DEFAULT_SETTINGS};universe.callSheet.settings.integrations??={};
     return universe.callSheet;
   }
   function userPlaybook(){const m=cardMeta();if(!m.playbook&&CS.packs)m.playbook=CS.packs.newPlaybook();return m.playbook}
@@ -24019,9 +24025,11 @@ function normalizeCallSheet(u){
         try{cardResult=recordV2GameLabResult({advancingWeek:true}).result}catch(err){console.error('Card-simulated game was not recorded; the standard simulation will play it.',err)}
       }
     }
+    const playedWeek=universe.week+1,playedYear=universe.year; // universe.week counts weeks completed; the schedule numbers from 1
     const out=simWeekBase.apply(this,args);
     if(cardResult&&Array.isArray(universe.latest)&&!universe.latest.some(r=>r?.gameId===cardResult.gameId))universe.latest.unshift(cardResult);
-    if(universe?.callSheet&&CS.packs)try{const ctx=runHook('weekTick',{week:universe.week,year:universe.year});universe.callSheet.lastWeekNews=ctx.news||[]}catch(err){console.error(err)}
+    if(universe?.callSheet&&CS.packs)try{const ctx=runHook('weekTick',{week:playedWeek,year:playedYear});const cs=universe.callSheet;cs.lastWeekNews=ctx.news||[];cs.newsLog=(cs.newsLog||[]).concat(cs.lastWeekNews.map(n=>({...n,year:ctx.year,week:ctx.week}))).slice(-40)}catch(err){console.error(err)}
+    try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
 
@@ -24032,6 +24040,120 @@ function normalizeCallSheet(u){
     if(universe?.callSheet)try{runHook('offseason',{year:universe.year})}catch(err){console.error(err)}
     return out;
   };
+
+  // ============================================================== 4. the Card Program panel and settings
+  // A panel on This Week, under the next-matchup card: your playbook at a glance, what other programs pulled and
+  // evolved (Around the League), and Card Settings. Shown only once the dynasty uses cards.
+  const escH=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const cardName=id=>CS.packs?.cardDef?.(id)?.name||String(id||'').replace(/_/g,' ');
+  const MODES=[['key','Key downs','You call 3rd downs, the red zone and the last two minutes. Coordinators run the rest with your cards.'],
+    ['series','Series','Script 1st and 2nd down at each new set of downs, then call the key downs live.'],
+    ['snap','Every snap','You call every play.'],['sim','Watch','Coordinators play the whole game with your cards.']];
+  const CONTROLS=[['offense','Offense'],['both','Both sides'],['defense','Defense']];
+  function newsHTML(n){
+    const wk=n.week?`<small class="cpn-wk">Wk ${escH(n.week)}</small> `:'';
+    if(n.evolved)return`<li class="cpn-news evolve">${wk}<b>${escH(n.team)}</b> evolved <span>${escH(cardName(n.evolved))}</span></li>`;
+    return`<li class="cpn-news ${escH(n.rarity||'common')}">${wk}<b>${escH(n.team)}</b> pulled <span>${escH(cardName(n.card))}</span>${n.rarity&&n.rarity!=='common'?` <em>${escH(n.rarity)}</em>`:''}</li>`;
+  }
+  function cardProgramHTML(){
+    const cs=universe.callSheet,pb=cs.playbook,on=INTEGRATIONS.filter(integrationOn).length;
+    const stat=(k,v)=>`<div><span>${k}</span><b>${v}</b></div>`;
+    const stats=pb?stat('Card record',`${pb.record?.w||0}–${pb.record?.l||0}`)+stat('Packs',pb.packsOpened||0)+stat('Evolved',Object.keys(pb.evolved||{}).length)
+      +stat('Signatures',`${(pb.signatures||[]).length}/3`)+stat('Ring of Honor',(pb.ringOfHonor||[]).length):'<p class="muted">Play a card game to start your playbook.</p>';
+    const log=(cs.newsLog||[]).slice().reverse().slice(0,8);
+    const news=log.length?`<ul class="cpn-feed">${log.map(newsHTML).join('')}</ul>`:'<p class="muted cpn-empty">Sim a week and opponents on your schedule start opening packs.</p>';
+    return`<section id="cardProgram" class="card cpn" data-dview="week" aria-labelledby="cpnTitle">
+      <div class="cpn-head"><div><span class="eyebrow">CALL SHEET</span><h3 id="cpnTitle">Card Program</h3></div>
+      <button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>
+      <div class="cpn-stats">${stats}</div>
+      <div class="cpn-league"><span class="eyebrow">AROUND THE LEAGUE</span>${news}</div>
+      <p class="cpn-foot muted">${escH(MODES.find(m=>m[0]===cs.settings.mode)?.[1]||'Key downs')} · ${escH(CONTROLS.find(c=>c[0]===cs.settings.control)?.[1]||'Offense')} · ${on}/${INTEGRATIONS.length} connections on</p>
+    </section>`;
+  }
+  function paintCardProgram(){
+    if(typeof document==='undefined'||typeof document.getElementById!=='function'||typeof document.createElement!=='function')return; // headless runs
+    const dash=document.querySelector('#dashboard'),old=document.querySelector('#cardProgram');
+    if(!dash||!universe?.callSheet||!selected()){old?.remove();return}
+    const html=cardProgramHTML();
+    if(old)old.outerHTML=html;else{const a=dash.querySelector('#broadcastFeature')||dash.querySelector('.command-center');a?a.insertAdjacentHTML('afterend',html):dash.insertAdjacentHTML('beforeend',html)}
+    injectCardProgramStyles();
+  }
+  function injectCardProgramStyles(){
+    if(document.getElementById('cardProgramStyles'))return;
+    const st=document.createElement('style');st.id='cardProgramStyles';st.textContent=`
+#cardProgram{margin:14px 0;padding:16px 18px;border-radius:14px;background:linear-gradient(135deg,#10172a,#1a1030);color:#eef2ff;border:1px solid #2f3a66}
+#cardProgram .eyebrow{color:#9fb4ff;letter-spacing:.12em;font-size:11px}
+#cardProgram h3{margin:2px 0 0;font-size:20px;color:#fff}
+.cpn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.cpn-btn{background:#ffd34d;color:#1a1300;border:0;border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer}
+.cpn-btn:focus-visible,#cardSettings :focus-visible{outline:3px solid #9fe3ff;outline-offset:2px}
+.cpn-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin:12px 0}
+.cpn-stats div{background:rgba(255,255,255,.06);border-radius:10px;padding:8px 10px}
+.cpn-stats span{display:block;font-size:11px;color:#aab6e8}.cpn-stats b{font-size:18px}
+.cpn-feed{list-style:none;margin:6px 0 0;padding:0;display:grid;gap:4px}
+.cpn-news{padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.05);border-left:4px solid #6b7bb5;font-size:14px}
+.cpn-news span{font-weight:700}.cpn-wk{color:#8c98c9;font-size:11px;margin-right:4px}.cpn-news em{font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.08em;margin-left:4px}
+.cpn-news.rare{border-color:#4da3ff}.cpn-news.rare em{color:#7cc0ff}
+.cpn-news.legendary{border-color:#ffb81c;background:linear-gradient(90deg,rgba(255,184,28,.22),rgba(255,255,255,.04))}.cpn-news.legendary em{color:#ffd34d}
+.cpn-news.evolve{border-color:#b26bff}
+#cardProgram .muted{color:#aab6e8}.cpn-foot{margin:10px 0 0;font-size:12px}
+#cardSettings{position:fixed;inset:0;z-index:2147482000;background:rgba(4,6,14,.72);display:flex;align-items:center;justify-content:center;padding:16px}
+#cardSettings .cps{background:#10172a;color:#eef2ff;border:1px solid #2f3a66;border-radius:16px;max-width:560px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px}
+#cardSettings h2{margin:0 0 4px;color:#fff}#cardSettings fieldset{border:0;margin:14px 0 0;padding:0}
+#cardSettings legend{font-weight:800;margin-bottom:6px;color:#9fb4ff;font-size:12px;letter-spacing:.1em;text-transform:uppercase}
+#cardSettings label.opt{display:flex;gap:10px;align-items:flex-start;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.05);margin-bottom:6px;cursor:pointer}
+#cardSettings label.opt small{display:block;color:#aab6e8}
+#cardSettings .seg{display:flex;gap:6px;flex-wrap:wrap}#cardSettings .seg label.opt{flex:1;min-width:110px;margin:0}
+#cardSettings .cps-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+#cardSettings .cps-actions button{border-radius:999px;padding:9px 16px;font-weight:800;cursor:pointer;border:1px solid #3a4677;background:transparent;color:#eef2ff}
+#cardSettings .cps-actions button.go{background:#ffd34d;color:#1a1300;border-color:#ffd34d}
+@media (prefers-reduced-motion:no-preference){.cpn-news.legendary{animation:cpnGlow 2.4s ease-in-out infinite alternate}@keyframes cpnGlow{to{box-shadow:0 0 14px rgba(255,184,28,.45)}}}`;
+    document.head.appendChild(st);
+  }
+  let settingsReturn=null;
+  function openCardSettings(){
+    if(!universe||!selected())return;
+    closeCardSettings(false);const s=cardMeta().settings;settingsReturn=document.activeElement;
+    const radio=(name,val,label,sub,checked)=>`<label class="opt"><input type="radio" name="${name}" value="${val}"${checked?' checked':''}><span>${escH(label)}${sub?`<small>${escH(sub)}</small>`:''}</span></label>`;
+    const box=(name,label,sub,checked)=>`<label class="opt"><input type="checkbox" name="${escH(name)}"${checked?' checked':''}><span>${escH(label)}${sub?`<small>${escH(sub)}</small>`:''}</span></label>`;
+    const el=document.createElement('div');el.id='cardSettings';
+    el.innerHTML=`<form class="cps" role="dialog" aria-modal="true" aria-labelledby="cpsTitle">
+      <h2 id="cpsTitle">Card Settings</h2><p class="muted" style="margin:0;color:#aab6e8">Saved with this dynasty.</p>
+      <fieldset><legend>How much you call</legend>${MODES.map(m=>radio('mode',m[0],m[1],m[2],s.mode===m[0])).join('')}</fieldset>
+      <fieldset><legend>You coach</legend><div class="seg">${CONTROLS.map(c=>radio('control',c[0],c[1],'',s.control===c[0])).join('')}</div></fieldset>
+      <fieldset><legend>Game feel</legend><div class="seg">${box('fast','Fast animations','',s.fast)}${box('sound','Sound','',s.sound!==false)}</div></fieldset>
+      <fieldset><legend>Dynasty connections</legend>${INTEGRATIONS.map(x=>box('int:'+x.id,x.label,x.about,integrationOn(x))).join('')}</fieldset>
+      <div class="cps-actions"><button type="button" data-cps-cancel>Cancel</button><button type="submit" class="go">Save</button></div></form>`;
+    document.body.appendChild(el);injectCardProgramStyles();
+    const form=el.querySelector('form');
+    form.addEventListener('submit',e=>{e.preventDefault();
+      const f=new FormData(form),meta=cardMeta();
+      meta.settings.mode=f.get('mode')||meta.settings.mode;meta.settings.control=f.get('control')||meta.settings.control;
+      meta.settings.fast=f.has('fast');meta.settings.sound=f.has('sound');
+      for(const x of INTEGRATIONS)meta.settings.integrations[x.id]=f.has('int:'+x.id);
+      try{autosaveAfter('game')}catch(err){console.error(err)}
+      closeCardSettings(true);paintCardProgram();try{setStatus('Card settings saved.')}catch(err){}
+    });
+    el.querySelector('[data-cps-cancel]').addEventListener('click',()=>closeCardSettings(true));
+    el.addEventListener('click',e=>{if(e.target===el)closeCardSettings(true)});
+    el.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){e.preventDefault();closeCardSettings(true)}
+      if(e.key==='Tab'){const f=[...form.querySelectorAll('input,button')],first=f[0],last=f[f.length-1];
+        if(e.shiftKey&&document.activeElement===first){e.preventDefault();last.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first.focus()}}
+    });
+    form.querySelector('input:checked,input')?.focus();
+  }
+  function closeCardSettings(restore){
+    const el=document.getElementById('cardSettings');if(!el)return;el.remove();
+    if(restore&&settingsReturn?.isConnected)settingsReturn.focus();settingsReturn=null;
+  }
+  const renderBase=render;
+  render=function renderWithCardProgram(...args){
+    const out=renderBase.apply(this,args);
+    try{paintCardProgram()}catch(err){console.error(err)}
+    return out;
+  };
+  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings()});
 
   let host=null;
   globalThis.__callSheetDynasty={
@@ -24063,7 +24185,7 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    register:registerCardIntegration,launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();
 
