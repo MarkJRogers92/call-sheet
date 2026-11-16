@@ -22,7 +22,21 @@ function toBattlePlayer(p,role){
   const strong=D.STYLE_TRAITS[p.style]||[];
   const ovr=Math.round(strong.reduce((a,t)=>a+traits[t],0)/Math.max(1,strong.length)*.6+Object.values(traits).reduce((a,v)=>a+v,0)/7*.4);
   return{id:String(p.id),dlId:p.id,name:p.name,role,pos:p.pos,archetype:p.style,traits,ovr,number:p.jerseyNumber??0,
-    portraitSeed:p.portraitSeed,year:YEAR_NUM[p.year]||1,height:p.height,weight:p.weight};
+    portraitSeed:p.portraitSeed,year:YEAR_NUM[p.year]||1,height:p.height,weight:p.weight,cond:conditionsOf(p,role,traits)};
+}
+// Player conditions from Dynasty Lab: each is a labeled ±1 on that player's duels in one situation.
+//   when: 'late' (4th quarter and overtime), 'money' (3rd and 4th down), 'any'.
+function conditionsOf(p,role,traits){
+  const out=[],health=Number(p.health??100),wear=Number(p.wear??0),morale=Number(p.morale??70),comp=traits.composure;
+  if(health<80||wear>=60)out.push({v:-1,when:'late',src:health<80?`Worn down (health ${Math.round(health)})`:'Worn down (heavy load)'});
+  if(comp>=85)out.push({v:1,when:'money',src:'Ice in his veins'});
+  else if(comp<=50)out.push({v:-1,when:'money',src:'Tight on the money downs'});
+  if(morale<=35)out.push({v:-1,when:'money',src:'Checked out (low morale)'});
+  // Hybrid roles accept several positions (an EDGE at 3-tech, a safety at nickel). Only a player from outside the
+  // role's positions, who hasn't learned the spot, plays out of position.
+  const fits=POS_FALLBACK[role]||[],home=fits[0];
+  if(home&&!fits.includes(p.pos)&&Math.max(0,...fits.map(x=>Number(p.positionFamiliarity?.[x]??0)))<70)out.push({v:-1,when:'any',src:`Out of position (${p.pos} at ${home})`});
+  return out;
 }
 // team: a Dynasty Lab team object. Returns {lineup:{off,def}, missing:[roles filled from fallback]}.
 function lineupFromTeam(team){
@@ -78,5 +92,5 @@ function battleTeam(team,decks,info){
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
     lineup,coach,decks:decks||undefined,missing,edges:programEdges(team,info||{})};
 }
-return{ROLE_MAP,toBattlePlayer,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
+return{ROLE_MAP,POS_FALLBACK,toBattlePlayer,conditionsOf,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });

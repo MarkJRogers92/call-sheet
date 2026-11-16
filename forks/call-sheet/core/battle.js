@@ -605,5 +605,27 @@ function load(text){const b=JSON.parse(text);if(b.version!==VERSION)throw new Er
 
 function simulate(opts){const b=create({...opts,user:null,mode:'sim'});advance(b);return b}
 
-return{VERSION,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor};
+// Who won and lost each duel this game, per player, plus the plays that made highlights.
+// A lost Gate decides the play, so the duels after it never happened. Returns {playerId:{name,side,w,l,big}}.
+function duelTally(b){
+  const out={},rec=(p,side)=>p?(out[p.id]??={name:p.name,side,w:0,l:0,big:0}):null;
+  for(const e of b.log||[]){
+    if(e.type!=='snap'||!e.duelResults||!e.duels)continue;
+    const O=b.teams[e.offSide].lineup.off,Df=b.teams[e.defSide].lineup.def;
+    for(let i=0;i<e.duelResults.length;i++){
+      const d=e.duels[i],won=e.duelResults[i].won;if(!d)continue;
+      for(const r of d.offRoles||[]){const t=rec(O[r],e.offSide);if(t)won?t.w++:t.l++}
+      for(const r of d.defRoles||[]){const t=rec(Df[r],e.defSide);if(t)won?t.l++:t.w++}
+      if(i===0&&!won)break;
+    }
+    const P=e.participants||{},td=/touchdown/i.test(e.text||'');
+    if(Math.abs(e.yards||0)>=20||td||e.turnover||e.kind==='sack'){
+      const defStar=e.kind==='sack'?Df[P.sacker]:e.turnover?Df[P.defender]:null;
+      const offStar=defStar?null:(e.kind==='run'||e.kind==='scramble')?O[P.carrier]:e.completed?O[P.target]:null;
+      const t=defStar?rec(defStar,e.defSide):rec(offStar,e.offSide);if(t)t.big++;
+    }
+  }
+  return out;
+}
+return{VERSION,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally};
 });

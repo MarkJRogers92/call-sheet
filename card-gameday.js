@@ -44,6 +44,12 @@ function normalizeCallSheet(u){
   const txt=v=>typeof v==='string'?v.slice(0,80):undefined,num=v=>Number.isFinite(Number(v))?Math.round(Number(v)):undefined;
   cs.newsLog=(Array.isArray(cs.newsLog)?cs.newsLog:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string'&&(typeof x.card==='string'||typeof x.evolved==='string'))
     .slice(-40).map(x=>Object.fromEntries(Object.entries({team:txt(x.team),card:txt(x.card),rarity:txt(x.rarity),evolved:txt(x.evolved),year:num(x.year),week:num(x.week)}).filter(([,v])=>v!==undefined)));
+  // Card careers of your players: duels won and lost, highlight plays, card games, keyed by Dynasty Lab player id.
+  const ci=v=>Number.isFinite(Number(v))?Math.max(0,Math.min(1e6,Math.round(Number(v)))):0;
+  cs.players=Object.fromEntries(Object.entries(cs.players&&typeof cs.players==='object'&&!Array.isArray(cs.players)?cs.players:{})
+    .filter(([k,v])=>k.length<64&&v&&typeof v==='object').slice(-800).map(([k,v])=>[k,{w:ci(v.w),l:ci(v.l),big:ci(v.big),games:ci(v.games)}]));
+  cs.moments=(Array.isArray(cs.moments)?cs.moments:[]).filter(x=>x&&typeof x==='object'&&typeof x.text==='string').slice(-60)
+    .map(x=>({year:ci(x.year),week:ci(x.week),kind:typeof x.kind==='string'?x.kind.slice(0,20):'moment',text:x.text.slice(0,200),...(x.playerId!=null?{playerId:String(x.playerId).slice(0,64)}:{})}));
   cs.lastWeekNews=(Array.isArray(cs.lastWeekNews)?cs.lastWeekNews:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string').slice(0,60);
 }
 
@@ -52,7 +58,7 @@ function normalizeCallSheet(u){
   const DEFAULT_SETTINGS={mode:'key',control:'offense',fast:false,sound:true,integrations:{}};
   function cardMeta(){
     universe.callSheet??={version:CALL_SHEET_SAVE_VERSION,playbook:null,combos:[],settings:{...DEFAULT_SETTINGS},games:0,seenHelp:false,ai:{}};
-    universe.callSheet.ai??={};universe.callSheet.newsLog??=[];universe.callSheet.settings??={...DEFAULT_SETTINGS};universe.callSheet.settings.integrations??={};
+    universe.callSheet.ai??={};universe.callSheet.newsLog??=[];universe.callSheet.players??={};universe.callSheet.moments??=[];universe.callSheet.settings??={...DEFAULT_SETTINGS};universe.callSheet.settings.integrations??={};
     return universe.callSheet;
   }
   function userPlaybook(){const m=cardMeta();if(!m.playbook&&CS.packs)m.playbook=CS.packs.newPlaybook();return m.playbook}
@@ -203,16 +209,30 @@ function normalizeCallSheet(u){
   }
   function simWithCardsOn(){return!!universe?.callSheet&&integrationOn(SIM_WITH_CARDS)&&!!globalThis.CallSheet?.battle}
   const SIM_WITH_CARDS=registerCardIntegration({id:'sim-with-cards',label:'Simulated games use your playbook',about:'When you sim your game, your coordinators play the card battle with your deck, evolutions and signature cards.',hooks:{}});
+  // Card careers: every duel your players win or lose, and their highlight plays, from both coached and simulated games.
+  function addCardCareer(tally,week){
+    const me=selected();if(!me||!tally||typeof tally!=='object')return;
+    const meta=cardMeta(),mine=new Set((me.roster||[]).map(p=>String(p.id))),book=meta.players,ours=[];
+    for(const [id,t] of Object.entries(tally)){if(!mine.has(String(id)))continue;ours.push([id,t]);
+      const r=book[id]??={w:0,l:0,big:0,games:0};r.w+=t.w|0;r.l+=t.l|0;r.big+=t.big|0;r.games++}
+    // Moments for the newsletter: the card Player of the Game and anyone with two or more highlight plays.
+    if(week==null)return;const year=universe.year,add=m=>meta.moments.push({year,week,...m});
+    const pog=ours.filter(([,t])=>t.w>=6).sort((a,b)=>(b[1].w-b[1].l)-(a[1].w-a[1].l)||b[1].big-a[1].big)[0];
+    if(pog)add({kind:'pog',playerId:pog[0],text:`Card Player of the Game: ${pog[1].name} won ${pog[1].w} of ${pog[1].w+pog[1].l} duels${pog[1].big?` and made ${pog[1].big} highlight play${pog[1].big>1?'s':''}`:''}.`});
+    for(const [id,t] of ours)if(t.big>=2&&(!pog||pog[0]!==id))add({kind:'big',playerId:id,text:`${t.name} made ${t.big} highlight plays.`});
+    meta.moments=meta.moments.slice(-60);
+  }
   const recordGameBase=recordV2GameLabResult;
   recordV2GameLabResult=function recordV2GameLabResultWithCards(options={}){
     let sim=null;
     if(!options.externalState&&simWithCardsOn()&&universe.phase==='regular'){
-      const g=findUserGame();if(g&&!g.played){try{sim=simulateCardGame();options={...options,externalState:sim.b.game}}catch(err){console.error('Card simulation failed; using the standard simulation.',err);sim=null}}
+      const g=findUserGame();if(g&&!g.played){try{sim=simulateCardGame();sim.week=g.week;options={...options,externalState:sim.b.game}}catch(err){console.error('Card simulation failed; using the standard simulation.',err);sim=null}}
     }
     const out=recordGameBase(options);
     if(sim&&out?.ok){
       const pb=userPlaybook(),me=selected(),opp=sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home;
       CS.evolution.recordReps(pb,sim.b.log,sim.cfg.userSide);pb.gamesPlayed=(pb.gamesPlayed||0)+1;cardMeta().games++;
+      try{addCardCareer(CS.battle.duelTally(sim.b),sim.week)}catch(err){console.error(err)}
       runHook('afterGame',{b:sim.b,userSide:sim.cfg.userSide,me,opp,coached:false});
     }
     return out;
@@ -349,6 +369,177 @@ function normalizeCallSheet(u){
     const el=document.getElementById('cardSettings');if(!el)return;el.remove();
     if(restore&&settingsReturn?.isConnected)settingsReturn.focus();settingsReturn=null;
   }
+
+  // ---------------------------------------------------------------- every player has a card
+  // The player page shows his battle card: the role he plays in the card game, his archetype ability, the seven
+  // grades the duels use, his conditions, and his card career (duels won and lost, highlight plays).
+  const ROLE_NAMES={QB:'Quarterback',RB:'Running back',X:'X receiver',Z:'Z receiver',SLOT:'Slot',TE:'Tight end',LT:'Left tackle',LG:'Left guard',C:'Center',RG:'Right guard',RT:'Right tackle',
+    RUSH:'Rush end',SET:'Set end',NT:'Nose tackle',DT3:'3-technique',MIKE:'Mike linebacker',WILL:'Will linebacker',FCB:'Field corner',BCB:'Boundary corner',NICKEL:'Nickel',FS:'Free safety',BOXS:'Box safety'};
+  function battleRoleOf(p,t){
+    const AD=CS.adapter;if(!AD)return null;let best=null;
+    for(const [role,slot] of Object.entries(AD.ROLE_MAP)){const i=(t?.roleDepth?.[slot]||[]).indexOf(p.id);if(i>=0&&(!best||i<best.depth))best={role,depth:i}}
+    if(best)return best;
+    const role=Object.keys(AD.ROLE_MAP).find(r=>(AD.POS_FALLBACK[r]||[])[0]===p.pos)||Object.keys(AD.ROLE_MAP).find(r=>(AD.POS_FALLBACK[r]||[]).includes(p.pos));
+    return role?{role,depth:null}:null;
+  }
+  function duelsForRole(role){
+    const D=CS.data,labels=new Map();if(!D)return[];
+    for(const pl of Object.values(D.PLAYS).concat(Object.values(D.CALLS||{}))){if(pl.signature||pl.evolvedFrom)continue;
+      for(const d of Object.values(pl.duels||{}))if((d.off||[]).includes(role)||(d.def||[]).includes(role))labels.set(d.label,(labels.get(d.label)||0)+1)}
+    return[...labels.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
+  }
+  function playerCardHTML(p,t){
+    const AD=CS.adapter,D=CS.data;if(!AD||!D)return'';
+    const r=battleRoleOf(p,t);if(!r)return'';
+    const bp=AD.toBattlePlayer(p,r.role),cs=universe.callSheet,career=cs?.players?.[String(p.id)];
+    const sig=(cs?.playbook?.signatures||[]).find(x=>String(x.playerId)===String(p.id)),ring=(cs?.playbook?.ringOfHonor||[]).some(x=>String(x.playerId)===String(p.id));
+    const strong=new Set(D.STYLE_TRAITS[bp.archetype]||[]),ability=D.SIGNATURES[bp.archetype]?.text||'';
+    const depth=r.depth===0?'Starter':r.depth!=null?`No. ${r.depth+1} on the depth chart`:'Not on the depth chart';
+    const duels=duelsForRole(r.role),pct=career&&career.w+career.l?Math.round(career.w*100/(career.w+career.l)):null;
+    const when={late:'4th quarter',money:'3rd & 4th down',any:'every snap'};
+    return`<section class="cs-pcard${sig?' sig':''}" id="playerBattleCard" aria-label="Battle card">
+      <div class="cs-pcard-face" style="--tc:${escH(t?.primary||'#2a3550')};--tc2:${escH(t?.secondary||'#e8e2d0')}">
+        <div class="cs-pcard-top"><span class="cs-pcard-ovr">${bp.ovr}</span><span class="cs-pcard-num">#${escH(bp.number)}</span></div>
+        ${portraitTag(p,112,'card')}
+        <strong>${escH(p.name)}</strong><span>${escH(ROLE_NAMES[r.role]||r.role)}</span><em>${escH(bp.archetype||'')}</em>
+        ${sig?'<b class="cs-pcard-badge">SIGNATURE CARD</b>':ring?'<b class="cs-pcard-badge">RING OF HONOR</b>':''}
+      </div>
+      <div class="cs-pcard-body">
+        <span class="eyebrow">BATTLE CARD</span>
+        <h3>${escH(ROLE_NAMES[r.role]||r.role)} · ${escH(depth)}</h3>
+        ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
+        ${duels.length?`<p class="cs-pcard-duels">Fights in: ${duels.map(x=>`<span>${escH(x)}</span>`).join('')}</p>`:''}
+        <div class="cs-pcard-traits">${D.TRAITS.map(k=>`<div class="${strong.has(k)?'key':''}"><span>${k==='iq'?'IQ':escH(k)}</span><i style="--v:${Math.max(0,Math.min(100,bp.traits[k]))}%"></i><b>${Math.round(bp.traits[k]/10)}</b></div>`).join('')}</div>
+        ${bp.cond.length?`<div class="cs-pcard-cond">${bp.cond.map(c=>`<span class="${c.v>0?'up':'down'}">${c.v>0?'+1':'−1'} ${escH(c.src)} <small>${when[c.when]}</small></span>`).join('')}</div>`:''}
+        <div class="cs-pcard-career">${career?`<div><span>Duels</span><b>${career.w}–${career.l}</b><small>${pct}% won</small></div><div><span>Highlight plays</span><b>${career.big}</b></div><div><span>Card games</span><b>${career.games}</b></div>`:'<p class="muted">No card games yet. His duels are counted once he plays one.</p>'}</div>
+        <p class="cs-pcard-note muted">Duel grades are his ratings ÷ 10 (key traits in gold). Conditions come from his health, wear, composure, morale and position.</p>
+      </div></section>`;
+  }
+  function injectPlayerCardStyles(){
+    if(document.getElementById('cardPlayerStyles'))return;
+    const st=document.createElement('style');st.id='cardPlayerStyles';st.textContent=`
+.cs-pcard{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;margin:0 0 16px;padding:14px;border-radius:14px;background:linear-gradient(135deg,#10172a,#1a1030);color:#eef2ff;border:1px solid #2f3a66}
+.cs-pcard.sig{border-color:#ffd34d;box-shadow:0 0 0 1px #ffd34d,0 0 24px rgba(255,211,77,.2)}
+.cs-pcard-face{position:relative;border-radius:12px;padding:10px;background:linear-gradient(170deg,var(--tc),#0b0f1c 82%);border:2px solid var(--tc2);display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
+.cs-pcard.sig .cs-pcard-face{border-color:#ffd34d}
+.cs-pcard-face canvas{width:112px;height:112px;border-radius:10px}
+.cs-pcard-top{align-self:stretch;display:flex;justify-content:space-between;align-items:center}
+.cs-pcard-ovr{font:800 28px 'Barlow Condensed',Impact,system-ui;color:#fff;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+.cs-pcard-num{font:800 16px 'Barlow Condensed',Impact,system-ui;background:rgba(0,0,0,.45);padding:2px 7px;border-radius:6px}
+.cs-pcard-face strong{font:800 18px 'Barlow Condensed',Impact,system-ui;margin-top:4px;color:#fff}
+.cs-pcard-face span{font-size:12px;color:#d7defa}.cs-pcard-face em{font-style:normal;font-size:12px;color:#ffe066;font-weight:700}
+.cs-pcard-badge{margin-top:6px;font-size:10px;letter-spacing:.12em;background:#ffd34d;color:#1a1300;padding:3px 8px;border-radius:999px}
+.cs-pcard-body h3{margin:2px 0 6px;color:#fff;font-size:18px}.cs-pcard-body .eyebrow{color:#9fb4ff;letter-spacing:.12em;font-size:11px}
+.cs-pcard-ability{margin:0 0 8px;font-size:13.5px;color:#dfe5ff}.cs-pcard-ability b{color:#ffe066}
+.cs-pcard-duels{margin:0 0 8px;font-size:12.5px;color:#aab6e8}.cs-pcard-duels span{display:inline-block;margin:2px 4px 0 0;padding:2px 8px;border-radius:999px;background:rgba(63,193,255,.14);color:#bfe9ff}
+.cs-pcard-traits{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:4px 14px}
+.cs-pcard-traits div{display:grid;grid-template-columns:86px 1fr 22px;gap:6px;align-items:center;font-size:12.5px;text-transform:capitalize;color:#c9d2f5}
+.cs-pcard-traits div.key span{color:#ffe066;font-weight:700}
+.cs-pcard-traits i{height:6px;border-radius:3px;background:rgba(255,255,255,.12);position:relative;overflow:hidden}
+.cs-pcard-traits i::after{content:'';position:absolute;inset:0;width:var(--v);background:linear-gradient(90deg,#3fc1ff,#7dffb0)}
+.cs-rcard .cs-pcard-traits i::before{content:'';position:absolute;top:0;bottom:0;left:var(--lo);width:calc(var(--v) - var(--lo));background:repeating-linear-gradient(90deg,rgba(255,255,255,.55) 0 3px,transparent 3px 6px);z-index:1}
+.cs-rcard .cs-pcard-traits i::after{width:var(--lo)}
+.cs-rcard .cs-pcard-traits div{grid-template-columns:86px 1fr 46px}.cs-rcard .cs-pcard-traits b{white-space:nowrap}
+.cs-rcard .cs-pcard-face{background:linear-gradient(170deg,#3a2f6b,#0b0f1c 82%);border-style:dashed}
+.cs-pcard-traits b{text-align:right;color:#fff}
+.cs-pcard-cond{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px}
+.cs-pcard-cond span{font-size:12px;padding:3px 8px;border-radius:6px;background:rgba(255,90,90,.15);color:#ffc4c4}.cs-pcard-cond span.up{background:rgba(61,255,134,.13);color:#b6ffd2}
+.cs-pcard-cond small{opacity:.75}
+.cs-pcard-career{margin-top:10px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.cs-pcard-career div{background:rgba(255,255,255,.06);border-radius:10px;padding:7px 10px}.cs-pcard-career span{display:block;font-size:11px;color:#aab6e8}
+.cs-pcard-career b{font-size:20px;color:#fff}.cs-pcard-career small{display:block;font-size:11px;color:#7dffb0}
+.cs-pcard-career p{grid-column:1/-1;margin:0}.cs-pcard .muted{color:#aab6e8}.cs-pcard-note{font-size:11.5px;margin:8px 0 0}
+@media (max-width:640px){.cs-pcard{grid-template-columns:minmax(0,1fr)}.cs-pcard-face{max-width:220px;justify-self:center;width:100%}}`;
+    document.head.appendChild(st);
+  }
+  if(typeof showPlayerProfile==='function'){
+    const showPlayerProfileBase=showPlayerProfile;
+    showPlayerProfile=function showPlayerProfileWithCard(id){
+      const add=()=>{try{
+        if(typeof document==='undefined'||typeof document.getElementById!=='function')return;
+        const hit=findPlayer(id),host=$('#playerDialogBody');if(!hit||!hit.active||!host||host.querySelector('#playerBattleCard'))return;
+        const html=playerCardHTML(hit.p,hit.team);if(!html)return;
+        injectPlayerCardStyles();host.insertAdjacentHTML('afterbegin',html);paintPortraits(host.querySelector('#playerBattleCard'));
+      }catch(err){console.error(err)}};
+      const out=showPlayerProfileBase(id);
+      if(out&&typeof out.then==='function')return out.then(v=>{add();return v});
+      add();return out;
+    };
+  }
+
+  // ---------------------------------------------------------------- the weekly newsletter
+  // Dynasty Lab's newsletter gets a Call Sheet section for the week: your card moments and the packs your
+  // opponents opened. Read-only over the card save.
+  if(typeof renderNewsletter==='function'){
+    const renderNewsletterBase=renderNewsletter;
+    renderNewsletter=function renderNewsletterWithCards(...args){
+      const out=renderNewsletterBase.apply(this,args);
+      try{
+        const cs=universe?.callSheet,body=typeof document!=='undefined'&&typeof document.getElementById==='function'?$('#newsletterBody'):null;
+        if(cs&&body&&!body.querySelector('#newsCallSheet')){
+          const [season,week]=String($('#newsWeek')?.value||'').split('|').map(Number);
+          const moments=(cs.moments||[]).filter(m=>m.year===season&&m.week===week);
+          const pulls=(cs.newsLog||[]).filter(n=>n.year===season&&n.week===week);
+          if(moments.length||pulls.length)body.insertAdjacentHTML('beforeend',`<div class="card" id="newsCallSheet"><div class="eyebrow">CALL SHEET</div><h3>Card battle notes</h3>
+            ${moments.map(m=>`<div class="news-item"><div class="${m.kind==='pog'?'strong':''}">${escH(m.text)}</div>${m.playerId?`<button type="button" class="linkish" data-player="${escH(m.playerId)}">Battle card</button>`:''}</div>`).join('')}
+            ${pulls.length?`<div class="news-item"><div class="strong">Opponents' packs</div><div class="compact muted">${pulls.map(n=>`${escH(n.team)} ${n.evolved?`evolved ${escH(cardName(n.evolved))}`:`pulled ${escH(cardName(n.card))}${n.rarity&&n.rarity!=='common'?` (${escH(n.rarity)})`:''}`}`).join(' · ')}</div></div>`:''}</div>`);
+          try{attachPlayerLinks()}catch(err){}
+        }
+      }catch(err){console.error(err)}
+      return out;
+    };
+    if(typeof TAB_RENDERERS==='object'&&TAB_RENDERERS)TAB_RENDERERS.newsletter=renderNewsletter;
+  }
+
+  // ---------------------------------------------------------------- recruit cards
+  // A recruit's card shows what he would bring to the card game: his projected role and archetype ability, his
+  // grades as scouted ranges (never the true values), how much of your playbook runs through his duels, and how
+  // he compares with your current starter. Ranges narrow as your scouting confidence rises.
+  function recruitCardHTML(r,u){
+    const AD=CS.adapter,D=CS.data;if(!AD||!D||!r||!u)return'';
+    const role=Object.keys(AD.ROLE_MAP).find(x=>(AD.POS_FALLBACK[x]||[])[0]===r.pos)||Object.keys(AD.ROLE_MAP).find(x=>(AD.POS_FALLBACK[x]||[]).includes(r.pos));if(!role)return'';
+    let conf=50;try{const dom=Object.entries(ensureScoutingIntel(r,u,true)||{}).filter(([k])=>k!=='upside').map(([,v])=>Number(v.confidence)).filter(Number.isFinite);if(dom.length)conf=dom.reduce((a,b)=>a+b,0)/dom.length}catch(err){}
+    const width=Math.max(1,Math.round((100-conf)/5)),est={};
+    for(const k of D.TRAITS){const t=Number(r[k])||Number(r.trueNow)||60;est[k]=Math.max(25,Math.min(99,Math.round(t+scoutHash(r,k,'card')*width)))}
+    const range=v=>[Math.max(25,v-width),Math.min(99,v+width)],g=v=>Math.round(v/10);
+    const bp=AD.toBattlePlayer({...r,...est,health:100,wear:0,morale:70,positionFamiliarity:{[r.pos]:100}},role),strong=new Set(D.STYLE_TRAITS[bp.archetype]||[]);
+    const lo=AD.toBattlePlayer({...r,...Object.fromEntries(D.TRAITS.map(k=>[k,range(est[k])[0]])),positionFamiliarity:{[r.pos]:100}},role).ovr,hi=AD.toBattlePlayer({...r,...Object.fromEntries(D.TRAITS.map(k=>[k,range(est[k])[1]])),positionFamiliarity:{[r.pos]:100}},role).ovr;
+    const offense=role in (D.OFF_ROLES||{}),pb=universe.callSheet?.playbook;
+    const deck=offense&&pb?[...pb.off.base,...pb.off.wrinkles]:[],inPlay=id=>Object.values(D.PLAYS[id]?.duels||{}).some(d=>(d.off||[]).includes(role)||(d.def||[]).includes(role));
+    const usage=offense?(deck.length?`In ${deck.filter(inPlay).length} of the ${deck.length} plays in your playbook`:''):(()=>{const all=Object.values(D.PLAYS).filter(p=>!p.signature&&!p.evolvedFrom);return`Fights in ${Math.round(all.filter(p=>inPlay(p.id)).length*100/Math.max(1,all.length))}% of the plays offenses run`})();
+    const starter=AD.lineupFromTeam(u).lineup[offense?'off':'def'][role];
+    const cmp=starter?(lo>starter.ovr?`Projects ahead of your starter ${starter.name} (${starter.ovr}) right away.`:hi<starter.ovr?`Behind your starter ${starter.name} (${starter.ovr}) for now; a development project.`:`Neck and neck with your starter ${starter.name} (${starter.ovr}).`):'You have no starter at this spot.';
+    const ability=D.SIGNATURES[bp.archetype]?.text||'',duels=duelsForRole(role);
+    return`<section class="cs-pcard cs-rcard" id="recruitBattleCard" aria-label="Recruit battle card">
+      <div class="cs-pcard-face" style="--tc:${escH(u.primary||'#2a3550')};--tc2:${escH(u.secondary||'#e8e2d0')}">
+        <div class="cs-pcard-top"><span class="cs-pcard-ovr">${lo===hi?lo:`${lo}–${hi}`}</span><span class="cs-pcard-num">${'★'.repeat(r.stars||0)}</span></div>
+        ${portraitTag(r,112,'card','recruit')}
+        <strong>${escH(r.name)}</strong><span>${escH(ROLE_NAMES[role]||role)}</span><em>${escH(bp.archetype||'')}</em>
+        <b class="cs-pcard-badge">PROSPECT</b>
+      </div>
+      <div class="cs-pcard-body">
+        <span class="eyebrow">PROSPECT CARD · SCOUTING ${Math.round(conf)}%</span>
+        <h3>Projects as: ${escH(ROLE_NAMES[role]||role)}</h3>
+        ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
+        ${duels.length?`<p class="cs-pcard-duels">Fights in: ${duels.map(x=>`<span>${escH(x)}</span>`).join('')}</p>`:''}
+        <div class="cs-pcard-traits">${D.TRAITS.map(k=>{const [a,b]=range(est[k]);return`<div class="${strong.has(k)?'key':''}"><span>${k==='iq'?'IQ':escH(k)}</span><i style="--v:${b}%;--lo:${a}%"></i><b>${g(a)===g(b)?g(a):`${g(a)}–${g(b)}`}</b></div>`}).join('')}</div>
+        <div class="cs-pcard-career"><div style="grid-column:1/-1"><span>In your card game</span><b style="font-size:15px">${escH(cmp)}</b>${usage?`<small>${escH(usage)}</small>`:''}</div></div>
+        <p class="cs-pcard-note muted">Ranges come from your scouting: scout him to narrow them. Card OVR uses the same formula as your roster.</p>
+      </div></section>`;
+  }
+  if(typeof showRecruitProfile==='function'){
+    const showRecruitProfileBase=showRecruitProfile;
+    showRecruitProfile=function showRecruitProfileWithCard(id){
+      const out=showRecruitProfileBase(id);
+      try{
+        if(typeof document!=='undefined'&&typeof document.getElementById==='function'){
+          const r=universe.recruits.find(x=>x.id===id),host=$('#recruitDialogBody');
+          if(r&&host&&!host.querySelector('#recruitBattleCard')){const html=recruitCardHTML(r,selected());if(html){injectPlayerCardStyles();host.insertAdjacentHTML('afterbegin',html);paintPortraits(host.querySelector('#recruitBattleCard'))}}
+        }
+      }catch(err){console.error(err)}
+      return out;
+    };
+  }
   const renderBase=render;
   render=function renderWithCardProgram(...args){
     const out=renderBase.apply(this,args);
@@ -360,8 +551,8 @@ function normalizeCallSheet(u){
   let host=null;
   globalThis.__callSheetDynasty={
     launch:buildLaunch,
-    record(state){
-      try{const out=recordGameBase({externalState:state});return{ok:true,result:out.result}}
+    record(state,tally){
+      try{const week=findUserGame()?.week;const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}return{ok:true,result:out.result}}
       catch(err){console.error(err);return{ok:false,error:err.message||String(err)}}
     },
     save(data){
@@ -387,6 +578,6 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();

@@ -173,6 +173,7 @@ function showTip(el,ev){
   tip.style.setProperty('--tc',team.colors[0]);
   tip.innerHTML=`<div class="tt-head"><canvas width="56" height="56"></canvas><div><b>${esc(p.name)}</b><span>#${esc(p.number)} · ${esc(p.pos||p.role)} · ${esc(CLASS_YR[p.year]||'')}</span><span>${esc(team.short)} ${esc(p.role)} · ${esc(p.archetype||'')}${p.ovr?` · <b>${g(p.ovr)}</b> OVR`:''}</span></div></div>
     <div class="tt-traits">${traits.map(([t,v])=>`<div class="${strong.has(t)?'key':''}"><span>${t==='iq'?'IQ':esc(t)}</span><i style="--v:${Math.max(0,Math.min(100,v))}%"></i><b>${g(v)}</b></div>`).join('')}</div>
+    ${(p.cond||[]).length?`<div class="tt-cond">${p.cond.map(c=>`<span class="${c.v>0?'up':'down'}">${c.v>0?'+1':'−1'} ${esc(c.src)}<small>${c.when==='late'?'4th quarter':c.when==='money'?'3rd & 4th down':'every snap'}</small></span>`).join('')}</div>`:''}
     ${notes.length?`<div class="tt-notes">${notes.map(n=>`<div>${esc(n)}</div>`).join('')}</div>`:''}
     ${b.fire[p.id]?'<div class="tt-fire">ON FIRE</div>':''}${el.classList.contains('sig')?'<div class="tt-sig">SIGNATURE CARD</div>':''}
     <div class="tt-line"><span>This game</span>${gameLine(b.players?.[p.id])}</div>${fog?`<div class="tt-fog">Film confidence ${DYN.scouting.confidence}%: grades are ranges</div>`:''}`;
@@ -556,7 +557,7 @@ function finalScreen(){
   $('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
   const won=b.game.score[b.user]>b.game.score[b.user==='home'?'away':'home'];
   if(!b._recorded){b._recorded=true;b._breakout=SG.candidate(b,b.user,save.playbook);save.playbook.record[won?'w':'l']++;save.games++;save.playbook.gamesPlayed=(save.playbook.gamesPlayed||0)+1;
-    if(DYN){b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)));for(const [root,n] of Object.entries(DYN.practiceReps||{}))EV.addReps(save.playbook,root,n)}
+    if(DYN){b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b));for(const [root,n] of Object.entries(DYN.practiceReps||{}))EV.addReps(save.playbook,root,n)}
     else{CL.recordCareers(save.world.userLineup,b.players);const op=save.world.programs[oppId()];if(op?.lineup)CL.recordCareers(op.lineup,b.players);save.pending={won,userTendency:b.tend[b.user]}}
     b._gained=EV.recordReps(save.playbook,b.log,b.user);writeSave()}
   const top=Object.values(b.players).filter(p=>p.side===b.user).sort((a,c)=>(c.passYds+c.rushYds*1.6+c.recYds*1.6+c.sacks*30+c.intDef*35)-(a.passYds+a.rushYds*1.6+a.recYds*1.6+a.sacks*30+a.intDef*35)).slice(0,3);

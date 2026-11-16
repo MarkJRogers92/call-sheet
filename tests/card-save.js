@@ -23,6 +23,8 @@ const P=require('../forks/call-sheet/core/packs.js');
   const nl={callSheet:{version:1,newsLog:[...log,{team:5},'x',null,{team:'Z',evolved:'inside_zone_plus',week:'3',junk:{a:1}}]}};n(nl);
   assert.equal(nl.callSheet.newsLog.length,40);assert.deepEqual(nl.callSheet.newsLog.at(-1),{team:'Z',evolved:'inside_zone_plus',week:3});
   assert.equal(nl.callSheet.newsLog[0].team,'T11');
+  const pl={callSheet:{version:1,players:{p1:{w:'7',l:3,big:-2,games:1,junk:1},p2:'x'},moments:[{year:2027,week:2,kind:'pog',text:'X',playerId:'p1'},{text:5}]}};n(pl);
+  assert.deepEqual(pl.callSheet.players,{p1:{w:7,l:3,big:0,games:1}});assert.equal(pl.callSheet.moments.length,1);
   // A playbook from a newer version refuses to load rather than being silently damaged.
   assert.throws(()=>n({callSheet:{version:99}}),/newer version/);
   // It runs as part of every load.

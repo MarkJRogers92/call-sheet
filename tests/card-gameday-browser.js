@@ -88,7 +88,32 @@ const shots=process.env.CARD_SHOTS||'';
     await page.waitForFunction(()=>document.querySelectorAll('#cardProgram .cpn-news').length>0,null,{timeout:10000});
     const news=await page.evaluate(()=>window.DynastyCardGameDay.news());
     assert.ok(news.length>0&&news.every(n=>n.year&&n.week),'news is saved with the week it happened');
+    // Every player has a card: his player page shows the battle card with his card career.
+    const pid=await page.evaluate(()=>{const me=window.__DL_TEST__.selected(),c=window.DynastyCardGameDay.meta().players;return Object.keys(c).find(id=>me.roster.some(p=>String(p.id)===id))});
+    assert.ok(pid,'card careers are saved for your players');
+    await page.locator('[data-client-tab="roster"]:visible, [data-tab="roster"]:visible').first().click();
+    await page.waitForTimeout(400);
+    // Selecting a roster row opens his player page.
+    const seen=await page.evaluate(()=>{const c=window.DynastyCardGameDay.meta().players;const el=[...document.querySelectorAll('[data-rd-player]')].find(e=>e.offsetParent&&c[e.dataset.rdPlayer]);if(el){el.id='csCareerRow';return el.dataset.rdPlayer}return null});
+    assert.ok(seen,'a roster player with a card career is listed');
+    await page.locator('#csCareerRow').click();await page.waitForSelector('#playerBattleCard',{timeout:5000});
+    assert.match(await page.locator('#playerBattleCard').innerText(),/Duels[\s\S]*Card games/,'the player page shows his card career from the coached game');
+    if(shots)await page.locator('#playerBattleCard').screenshot({path:`${shots}/c9-playercard.png`});
+    await page.keyboard.press('Escape');await page.locator('[data-client-tab="dashboard"]:visible, [data-tab="dashboard"]:visible').first().click();
     if(shots){await page.locator('#cardProgram').scrollIntoViewIfNeeded();await page.locator('#cardProgram').screenshot({path:`${shots}/c8-news.png`})}
+    // The weekly newsletter carries the card battle notes for the week.
+    await page.evaluate(()=>document.querySelector('[data-tab="newsletter"]').click());
+    await page.waitForSelector('#newsCallSheet',{timeout:8000});
+    assert.match(await page.locator('#newsCallSheet').innerText(),/Card Player of the Game|Opponents' packs/);
+    if(shots)await page.locator('#newsCallSheet').screenshot({path:`${shots}/c10-news.png`});
+    // Recruits have prospect cards: scouted ranges, projected role, and how they compare with your starter.
+    await page.evaluate(()=>document.querySelector('[data-tab="recruiting"]').click());
+    await page.evaluate(()=>document.querySelector('[data-recruit]').click());
+    await page.waitForSelector('#recruitBattleCard',{timeout:5000});
+    const rc=await page.locator('#recruitBattleCard').innerText();
+    assert.match(rc,/SCOUTING \d+%/i);assert.match(rc,/Projects as/);assert.match(rc,/starter|no starter/i);
+    if(shots)await page.locator('#recruitBattleCard').screenshot({path:`${shots}/c11-recruit.png`});
+    await page.keyboard.press('Escape');
     assert.deepEqual(errors,[],'no console errors');
     console.log('ok  Coach with Cards plays the real game, records it, saves the playbook and returns to the dynasty');
     console.log('ok  the Card Program panel shows your playbook and Around the League news; Card Settings save with the dynasty');

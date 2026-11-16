@@ -48,11 +48,25 @@ Rules every integration follows:
   sound, and an on/off switch for every integration. Escape or Cancel leaves the settings unchanged; Save writes them
   into the dynasty. Proven by `tests/card-gameday-browser.js`.
 
+### Every player has a card
+
+- **Field cards:** all 22 players are cards on the field. Hover for grades, conditions and this game's line;
+  green and red matchup glow before the snap, gold for duel winners after it.
+- **Player page:** every active player's page opens with his battle card: role and depth, archetype ability,
+  the seven duel grades, his conditions, and his card career.
+- **Card careers** (`callSheet.players`): duels won and lost, highlight plays and card games for your players,
+  from coached and simulated games alike (`CallSheet.battle.duelTally`).
+- **Prospect cards:** every recruit's page opens with his card: projected role and archetype ability, grades as
+  ranges sized by your scouting confidence (never the true values), how many of your plays run through his
+  duels, and whether he projects ahead of your current starter.
+- **Newsletter:** each week's issue gets a Call Sheet section with the card Player of the Game, highlight-play
+  makers (`callSheet.moments`) and the packs your opponents opened.
+
 ### Next integrations, by hook
 
 | Idea | Hook(s) | Reads (Dynasty Lab) | Writes |
 | --- | --- | --- | --- |
-| Recruit prospect cards with progressive reveal | presentation | `recruits[]`, scouting confidence | — (display) |
+| Bowl, conference title and playoff card battles | record path | postseason games (archive-only today) | a postseason recorder like `recordV2GameLabResult` |
 | Pitch with your playbook (interest bonus for archetype fit) | weekTick | recruit archetypes, your evolved cards | recruit interest through the existing pitch path |
 | Nemesis recruits (players you lost) | launch | recruiting history, opponent rosters | edge on that player's duels |
 | Signing-class pack reveal | offseason | commitments | presentation only |
@@ -79,9 +93,9 @@ Rules every integration follows:
 | Seven traits (`speed`…`versatility`), archetype (`style`) | Duel grades and archetype signatures | ✅ adapter |
 | Depth chart (`roleDepth`), injuries (`injuryWeeks`) | Who plays each battle role; injured players sit | ✅ adapter |
 | Class year, jersey, portrait seed | Player cards, portraits, Ring of Honor | ✅ adapter |
-| `health` / `wear` (fatigue) | Tired players take −1 on duels late in games | ○ |
-| `morale`, `composure` | Composure duels on 3rd down and in rivalry games | ○ |
-| `positionFamiliarity` | A player out of position takes −1 until familiar | ○ |
+| `health` / `wear` (fatigue) | Worn-down players (health under 80, or wear 60+) take −1 in the 4th quarter | ✅ adapter conditions |
+| `morale`, `composure` | Composure 85+ gives +1 on 3rd and 4th down, 50 or lower gives −1; morale 35 or lower gives −1 on those downs | ✅ adapter conditions |
+| `positionFamiliarity` | A player from outside the role's positions takes −1 until he's 70+ familiar (hybrid roles such as EDGE at 3-tech are fine) | ✅ adapter conditions |
 | Development and training focus | Traits change, so duels change. Training focus also gives mastery reps toward card evolution | ✅ / ○ |
 | Players of the Week, awards | Count toward signature-card breakouts | ○ |
 | Graduation, eligibility, portal transfers | Signature cards retire to the Ring of Honor (using `retired-numbers.js`); a transfer brings his signature card | ▶ |

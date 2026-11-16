@@ -30,6 +30,15 @@ const {loadEngine}=require('../tools/harness');
   const pb=u.callSheet.playbook;
   assert.equal(pb.gamesPlayed,1,'the simulated game was a card battle');
   assert.ok((pb.mastery.inside_zone||0)>=(before.inside_zone||0)+5,'practice reps and game reps reached the cards');
+  // Card careers: your players' duels from the simulated card game, and a Player of the Game moment for that week.
+  const careers=Object.entries(u.callSheet.players);
+  assert.ok(careers.length>=15&&careers.every(([id,c])=>me.roster.some(p=>String(p.id)===id)&&c.games===1&&c.w+c.l>0),'your starters have card careers');
+  assert.ok(u.callSheet.moments.some(m=>m.kind==='pog'&&m.week===g.week&&m.year===u.year),'the card Player of the Game is saved for that week');
+  // Player conditions from the dynasty reach the battle as labeled duel mods.
+  const AD=globalThis.CallSheet.adapter,qb=me.roster.find(p=>p.pos==='QB');
+  const worn=AD.toBattlePlayer({...qb,health:60,composure:95},'QB');
+  assert.ok(worn.cond.some(c=>/Worn down/.test(c.src)&&c.when==='late')&&worn.cond.some(c=>c.src==='Ice in his veins'),'health and composure become conditions');
+  assert.ok(AD.toBattlePlayer({...qb,positionFamiliarity:{}},'FCB').cond.some(c=>/Out of position/.test(c.src)),'a quarterback at corner is out of position');
   // Opponents built playbooks.
   const ai=u.callSheet.ai,tracked=Object.keys(ai);
   assert.ok(tracked.length>=5,`programs on the schedule have playbooks (${tracked.length})`);
