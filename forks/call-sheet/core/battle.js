@@ -490,7 +490,12 @@ function resolveSnap(b){
     const out=withRng(b,rng=>R.resolve(snap,rng,sit));
     Object.assign(result,{category:out.category,kind:out.kind,yards:out.yards,turnover:out.turnover||null,completed:out.completed,duelResults:out.duels,participants:out.participants});
     const before={down:g.down,distance:g.distance,field:g.fieldPosition,score:{...g.score}};
+    const evStart=g.events.length;
     Engine.applyScrimmage(g,{yards:out.yards,clock:out.clock,kind:out.engineKind,completed:out.completed,turnover:out.turnover});
+    // Tag the play the way Dynasty Lab's attribution expects (run/pass, completion, sack), plus who actually played it.
+    for(let i=g.events.length-1;i>=evStart;i--){const ev=g.events[i];if(!['scrimmage','interception','fumble'].includes(ev.type))continue;
+      ev.kind=out.engineKind;if(typeof out.completed==='boolean')ev.completed=out.completed;if(out.kind==='sack')ev.sack=true;
+      ev.card={play:play.id,call:call.id,category:out.category};break}
     recordStats(b,off,def,out,before,play);
     result.text=storyLine(b,off,def,play,out,before);
     result.events=[];

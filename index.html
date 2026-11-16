@@ -16469,10 +16469,12 @@ function v2StorePlayLog(gameId,state,attribution){
 }
 
 // v0.10.1 development-only recorded Game Engine 2 transaction runner.
-function v2RecordPrepared(g,home,away,homeProfile,awayProfile){
+// Call Sheet fork: `external` is a finished Game Engine 2 state from a card battle. It replaces the profile simulation
+// and goes through the same attribution, candidate, validation and rollback as every other recorded game.
+function v2RecordPrepared(g,home,away,homeProfile,awayProfile,external=null){
   const api=globalThis.DynastyGameEngineV2Lab,actors=globalThis.DynastyGameEngineV2Attribution,tx=globalThis.DynastyGameEngineV2Transaction;
   if(!api||!actors||!tx)throw new Error('Game Engine 2 development modules are unavailable.');
-  const key=v2GameLabKey(g),preview=api.simulate({gameId:`v0101-${key}`,seed:`v0101-${key}`,home,away,homeProfile,awayProfile,homeFieldRating:homeFieldFor(home),year:universe.year,week:g.week??universe.week+1});
+  const key=v2GameLabKey(g),preview=external?v2ExternalPreview(external,home,away):api.simulate({gameId:`v0101-${key}`,seed:`v0101-${key}`,home,away,homeProfile,awayProfile,homeFieldRating:homeFieldFor(home),year:universe.year,week:g.week??universe.week+1});
   const attribution=actors.attributeGame(preview.state,{home:v2AttributionContext(home),away:v2AttributionContext(away)});actors.attachEventSummary(attribution,preview.summary);preview.attribution=attribution;if(globalThis.DynastyGameEngineV2Lab?.withActors)preview.names=globalThis.DynastyGameEngineV2Lab.withActors(preview.names,attribution);
   const candidate=tx.buildCandidate({state:preview.state,attribution,homeTeam:home,awayTeam:away,starterIds:{home:v2StarterIds(home),away:v2StarterIds(away)},meta:{season:universe.year,week:g.week??universe.week+1,phase:universe.phase,label:'Regular season',venue:`${home.name} · ${home.city||''}`},conference:g.conf??home.conference===away.conference,homeOpponentOverall:awayProfile.overall,awayOpponentOverall:homeProfile.overall});
   return{api,tx,key,preview,candidate}
@@ -16490,6 +16492,13 @@ function v2RecordValidate(candidate,record,home,away,snapshot,g){
   }
   return{ok:errors.length===0,errors}
 }
+function v2ExternalPreview(state,home,away){
+  const adapter=globalThis.DynastyGameEngineV2Adapter;
+  if(!state||state.engine!=='v2'||state.status!=='final')throw new Error('A card battle must be final before it can be recorded.');
+  if(state.home?.name!==home.name||state.away?.name!==away.name)throw new Error('Card battle teams do not match the scheduled game.');
+  globalThis.DynastyGameEngineV2.validateGame(state);
+  return{state,summary:adapter.eventSummary(state),names:{home:home.name,away:away.name},seed:String(state.seed),gameId:String(state.gameId)};
+}
 function recordV2GameLabResult(options={}){
   const g=findUserGame();if(!g)throw new Error('No unsimulated user game is available for Game Engine 2.');
   if(universe.phase!=='regular')throw new Error('The v0.10.1 recorded v2 gate is limited to regular-season scheduled games.');
@@ -16498,7 +16507,7 @@ function recordV2GameLabResult(options={}){
   if(!options.advancingWeek&&hasPendingWeeklyDecisions())throw new Error('Resolve the Coach’s Desk decisions before playing this week.');
   recoverWeek();const home=T(g.home),away=T(g.away);if(!home||!away)throw new Error('Scheduled teams could not be resolved.');const rollback=v2RecordCapture(g,home,away);
   try{
-    advanceAcademicsForWeek(selected());const before=beginGame(home,away,false,{week:g.week,label:'Regular season'}),homeProfile=gameProfiles(home,away.name),awayProfile=gameProfiles(away,home.name),prepared=v2RecordPrepared(g,home,away,homeProfile,awayProfile),preview=prepared.preview,candidate=prepared.candidate;
+    advanceAcademicsForWeek(selected());const before=beginGame(home,away,false,{week:g.week,label:'Regular season'}),homeProfile=gameProfiles(home,away.name),awayProfile=gameProfiles(away,home.name),prepared=v2RecordPrepared(g,home,away,homeProfile,awayProfile,options.externalState||null),preview=prepared.preview,candidate=prepared.candidate;
     preview.transactionProof=prepared.tx.dryRunTransaction({candidate,homeTeam:home,awayTeam:away,homeGameplan:gameplanSnapshot(home,away.name),awayGameplan:gameplanSnapshot(away,home.name)});
     if(options.testFault==='afterDryRun')throw new Error('Injected v2 rollback fault after dry run.');
     v2RecordApplyPlayerStats(home,candidate.playerStats.home);v2RecordApplyPlayerStats(away,candidate.playerStats.away);const win=recordGame(home,away,candidate.hp,candidate.ap,candidate.conference,homeProfile,awayProfile);
