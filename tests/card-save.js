@@ -10,7 +10,7 @@ const P=require('../forks/call-sheet/core/packs.js');
   let u={callSheet:{version:1,playbook:pb,combos:['establish'],settings:{mode:'snap',control:'both',fast:true,sound:false},games:3,seenHelp:true}};
   u=JSON.parse(JSON.stringify(u));n(u);
   assert.deepEqual(u.callSheet.playbook.off.wrinkles,pb.off.wrinkles);assert.equal(u.callSheet.playbook.mastery.inside_zone,12);
-  assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false});assert.equal(u.callSheet.games,3);
+  assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false,integrations:{}});assert.equal(u.callSheet.games,3);
   // Damage is repaired or reset, never fatal.
   const bad={callSheet:{version:1,playbook:{off:{base:['inside_zone'],wrinkles:[3,'x']},def:{}},combos:'nope',settings:{mode:'warp'},games:-5}};
   n(bad);assert.equal(bad.callSheet.playbook,null,'a broken call sheet resets');assert.deepEqual(bad.callSheet.combos,[]);

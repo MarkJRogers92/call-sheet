@@ -156,9 +156,9 @@ function readHTML(){
   const pv=B.preview(b,req.side,{play:sel.play,tactics});if(!pv)return'';
   if(req.role==='off'){
     const bonus=pv.snap.duels.flatMap(d=>d.mods.filter(m=>m.src!=='Play design').map(m=>({...m,k:d.key})));
-    return`<div class="box"><h3>The read</h3><div class="exp">${pv.ev.yards.toFixed(1)}<small>yds expected</small></div>
+    return`<div class="box"><h3>The read</h3>${DYN&&fogSpread()?`<div class="mini" style="color:#9fe3ff">Film confidence ${DYN.scouting.confidence}%: their ratings are ranges. Scout them to sharpen.</div>`:''}<div class="exp">${pv.ev.yards.toFixed(1)}<small>yds expected</small></div>
       <div class="kpis"><span>1ST DOWN <b>${Math.round(pv.ev.first*100)}%</b></span><span>TURNOVER <b>${(pv.ev.turnover*100).toFixed(0)}%</b></span></div>
-      ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}</span><span class="chip ${d.chip}">${d.chip}</span></div>`).join('')}
+      ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}${(()=>{const dside=req.side===b.user?(b.user==='home'?'away':'home'):b.user,fg=fogGrade(d.defGrade,d.defNames[0],dside);return fg.fog?` <span class="muted">(${fg.text})</span>`:''})()}</span><span class="chip ${d.chip}${fogSpread()&&DYN?' fogchip':''}">${d.chip}${fogSpread()&&DYN?'?':''}</span></div>`).join('')}
       ${bonus.length?`<div class="bonus">${bonus.map(m=>`<span class="${m.v<0?'neg':''}">${m.k} ${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>`:''}</div>`;
   }
   const rows=pv.vs.sort((a,c)=>c.weight-a.weight);
@@ -328,7 +328,17 @@ async function quickKick(e){
   await FX.wait(200);
 }
 function initials(n){return n.split(' ').map(x=>x[0]).join('')}
+// Scouting fog (Dynasty Lab film confidence): below 82, opponent grades show as a range that always contains the
+// true grade; below 64 the range is wider. Your own players are always exact. The duel math never changes.
+function fogSpread(){const c=DYN?.scouting?.confidence;return c==null||c>=82?0:c>=64?1:2}
+function isOpponentSide(side){return!!DYN&&side!==b.user}
+function fogGrade(grade,pid,side){
+  const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return{text:String(grade),fog:false};
+  let h=0;for(const ch of String(pid))h=(h*31+ch.charCodeAt(0))>>>0;const lo=grade-(h%(sp+1));
+  return{text:`${lo}–${lo+sp}`,fog:true};
+}
 function fighterHTML(cls,names,roles,lineup,grade,color){
+  {const pl=lineup[roles[0]],side=cls==='o'?b.game.possession:(b.game.possession==='home'?'away':'home'),fg=fogGrade(grade,names[0],side);grade=fg.text}
   const p=lineup[roles[0]];const hot=p&&b.fire[p.id];
   return`<div class="fighter ${cls} ${hot?'burn':''}" style="--${cls==='o'?'oc':'dc'}:${color}"><canvas class="face" data-pid="${esc(p?p.id:'')}" data-side="${cls}" width="64" height="64" aria-label="${esc(names[0]||'')}"></canvas><div><div class="nm">${esc(names.join(' & '))}</div><div class="ar">${esc(p?p.archetype:'')}${hot?' · 🔥 ON FIRE':''}</div></div><div class="gr">${grade}</div></div>`;
 }
@@ -440,7 +450,7 @@ function finalScreen(){
   $('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
   const won=b.game.score[b.user]>b.game.score[b.user==='home'?'away':'home'];
   if(!b._recorded){b._recorded=true;b._breakout=SG.candidate(b,b.user,save.playbook);save.playbook.record[won?'w':'l']++;save.games++;save.playbook.gamesPlayed=(save.playbook.gamesPlayed||0)+1;
-    if(DYN){b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)))}
+    if(DYN){b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)));for(const [root,n] of Object.entries(DYN.practiceReps||{}))EV.addReps(save.playbook,root,n)}
     else{CL.recordCareers(save.world.userLineup,b.players);const op=save.world.programs[oppId()];if(op?.lineup)CL.recordCareers(op.lineup,b.players);save.pending={won,userTendency:b.tend[b.user]}}
     b._gained=EV.recordReps(save.playbook,b.log,b.user);writeSave()}
   const top=Object.values(b.players).filter(p=>p.side===b.user).sort((a,c)=>(c.passYds+c.rushYds*1.6+c.recYds*1.6+c.sacks*30+c.intDef*35)-(a.passYds+a.rushYds*1.6+a.recYds*1.6+a.sacks*30+a.intDef*35)).slice(0,3);
@@ -784,7 +794,9 @@ function sanitizePlaybook(pb){
 function dynastyStart(){
   registerSignatures();sanitizePlaybook(save.playbook);
   const AD=window.CallSheet.adapter;
-  b=B.create({home:AD.battleTeam(DYN.home,DYN.userSide==='home'?P.decksOf(save.playbook):null,DYN.program?.home),away:AD.battleTeam(DYN.away,DYN.userSide==='away'?P.decksOf(save.playbook):null,DYN.program?.away),
+  const opp=DYN.oppPlaybook?sanitizePlaybook(DYN.oppPlaybook):null;if(opp)SG.registerAll(opp);
+  const deckFor=side=>DYN.userSide===side?P.decksOf(save.playbook):(opp?P.decksOf(opp):null);
+  b=B.create({home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
     user:DYN.userSide,mode:save.settings.mode,control:save.settings.control,seed:DYN.seed,weather:DYN.weather||'clear',rivalry:!!DYN.rivalry,conditions:DYN.conditions||null});
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);$('#ticker').innerHTML='';

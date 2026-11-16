@@ -3,6 +3,62 @@
 The rule for the fork: **no parallel systems.** Every card-battle number comes from something Dynasty Lab already
 tracks, and every battle result flows back into Dynasty Lab's own records. Status: ✅ done · ▶ next · ○ planned.
 
+## The integration framework (`card-gameday.js`)
+
+Each connection is a small named **integration** registered with `registerCardIntegration` (or, from a
+presentation module, `DynastyCardGameDay.register`). It plugs into one or more hooks:
+
+| Hook | When it runs | Context | Typical use |
+| --- | --- | --- | --- |
+| `launch` | Building any battle: coached or simulated | `{cfg, g, home, away, me, opp, userSide}` | Add edges, fog, opponent decks, callouts to `cfg` |
+| `afterGame` | A card-simulated game has been recorded | `{b, userSide, me, opp, coached:false}` | Mastery, news, awards from the battle log |
+| `weekTick` | After every simulated week (`simWeek`) | `{week, year, news}` | AI playbooks, league-wide effects, news items |
+| `offseason` | After `runOffseason` | `{year}` | Graduation ceremonies, staff departures, signing-class packs |
+
+Rules every integration follows:
+- **No parallel systems.** Read Dynasty Lab's own data; write back only through Dynasty Lab's own paths
+  (`recordV2GameLabResult`, the save at `universe.callSheet`).
+- **Labeled effects only.** A duel bonus is an edge with a `src` the player can read in "The read" and the clash.
+- **Fail safe.** A throwing integration is logged and skipped. Tested by `tests/card-integrations.js`.
+- **Switchable.** `callSheet.settings.integrations[id]=false` turns it off; the save keeps the choice.
+- **Opt-in for the dynasty.** Nothing changes until `universe.callSheet` exists: the first Coach with Cards, or
+  `DynastyCardGameDay.enable()`. Base Dynasty Lab behavior and all 1,026 of its tests are untouched.
+
+### Registered integrations
+
+| id | Hooks | What it does |
+| --- | --- | --- |
+| `program-edges` | launch | Scheme fit (per side), weekly prep, home crowd, coordinator play-calling |
+| `signature-graduation` | launch | Signature cards retire to the Ring of Honor with graduates; transfers take theirs |
+| `scouting-fog` | launch | Film confidence below 82 shows opponent ratings as ranges in the read and the clash |
+| `practice-reps` | launch, afterGame | Each prep focus adds 5 mastery reps to the matching cards every week |
+| `ai-playbooks` | weekTick, launch | Programs on your schedule (and your rival) open packs, pick by identity and evolve; you face their decks |
+| `sim-with-cards` | (record wrapper) | Simulated games are card battles with your playbook, recorded with duel-true stats |
+
+### Next integrations, by hook
+
+| Idea | Hook(s) | Reads (Dynasty Lab) | Writes |
+| --- | --- | --- | --- |
+| Recruit prospect cards with progressive reveal | presentation | `recruits[]`, scouting confidence | — (display) |
+| Pitch with your playbook (interest bonus for archetype fit) | weekTick | recruit archetypes, your evolved cards | recruit interest through the existing pitch path |
+| Nemesis recruits (players you lost) | launch | recruiting history, opponent rosters | edge on that player's duels |
+| Signing-class pack reveal | offseason | commitments | presentation only |
+| Visible development stamps | afterGame / offseason | development receipts | card grade before and after |
+| Camp and position-battle auditions | presentation + camp | camp battles | depth chart through the existing camp path |
+| Coordinator card pools, cards leaving with staff | offseason | staff hires and departures | `callSheet.playbook` |
+| Position coaches speed evolution | afterGame | staff development ratings | mastery |
+| Facilities raise playbook capacity | offseason | `facilities` | `playbook.capacity` |
+| Booster pack (once a season) and admin mandates | weekTick | NIL, admin confidence, mandates | packs; confidence through existing events |
+| Players of the Week and awards feed breakouts | weekTick | `players-of-week.js`, awards | signature breakout eligibility |
+| Records broken mid-battle | afterGame | records | ceremonies through the existing system |
+| Bowl, playoff and title packs | weekTick (postseason) | bowls and playoff results | packs |
+| Battle moments in news and storylines | weekTick / afterGame | — | news events through the existing feed |
+| League-wide scouting of overused plays | weekTick | AI playbooks, your play log | an edge for opponents |
+| Retired numbers as Legacy cards | offseason | `retired-numbers.js` | Legacy card for a future player |
+| Coaching-tree cards | offseason | coaching tree | AI playbook of the new program |
+| Collection albums | presentation | history | — |
+| Duel moments in box scores and the archive | afterGame | archive record | play log annotations |
+
 ## People → duels
 
 | Dynasty Lab data | Battle effect | Status |

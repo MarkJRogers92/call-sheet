@@ -58,12 +58,13 @@ const PREP={pass_protection:{side:'off',flag:'protect'},run_blocking:{side:'off'
 const PREP_LABEL={pass_protection:'Pass Protection',run_blocking:'Run Blocking',explosive_pass:'Explosive Passing',run_fits:'Run Fits',coverage:'Coverage',pressure:'Pressure Package'};
 // info: {familiarity (0-100), prep:[focus ids for this opponent], home (bool)}. Every edge is labeled with its source.
 function programEdges(team,info={}){
-  const off=[],def=[],fam=Number(info.familiarity??100);
+  // familiarity: a number, or {off, def} (Dynasty Lab tracks each side's scheme install separately).
+  const off=[],def=[],famOf=side=>Number(typeof info.familiarity==='object'?info.familiarity?.[side]??100:info.familiarity??100),fam=famOf('off'),famD=famOf('def');
   const of=OFF_FIT[team.offScheme];
   if(of&&fam>=60)off.push({...of,v:1,src:`Scheme fit: ${team.offScheme}`});
   if(fam<40)off.push({duel:'K',v:-1,src:'Still installing the scheme'});
   const df=defFit(String(team.defScheme||''));
-  if(df&&fam>=60)def.push({...df,v:1,src:`Scheme fit: ${team.defScheme}`});
+  if(df&&famD>=60)def.push({...df,v:1,src:`Scheme fit: ${team.defScheme}`});
   for(const f of info.prep||[]){const p=PREP[f];if(!p)continue;const {side,...e}=p;(side==='off'?off:def).push({...e,v:1,src:`Weekly prep: ${PREP_LABEL[f]}`})}
   if(info.home&&Number(team.fan_support)>=75)def.push({thirdDown:true,flag:'qbRead',v:1,src:'Crowd noise'});
   return{off,def};
