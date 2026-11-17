@@ -361,5 +361,102 @@ const DEFAULT_DECKS={
 
 const RULES={seriesCommand:5,wrinkleRow:3,tacticHand:4,leanBase:4,redZone:80,twoMinute:120,fireStreak:3};
 
-return{STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
+// --- Program cards (rules v0.6) ------------------------------------------------------------------------
+// Not in random packs. Coaching-tree cards arrive with a coordinator's background, trick plays with milestones,
+// Giant Killer with an upset. Same duel model as every other card: talent still decides.
+Object.assign(PLAYS,{
+  counter_trey:{id:'counter_trey',side:'off',name:'Counter Trey',family:'run',cost:1,carrier:'RB',program:'Ground Pressure',
+    matchups:[{when:'pressure',duel:'K',v:1,src:'Flow went the wrong way'}],
+    text:'COACHING TREE · Step one way, pull the guard and tackle back the other. Punishes fast flow.',
+    duels:{
+      G:{label:'Guard and tackle pull',off:['RG','TE'],ot:['power','speed'],def:['SET','NT'],dt:['power','technique'],bias:1},
+      K:{label:'Counter step',off:['RB'],ot:['iq','speed'],def:['MIKE'],dt:['iq','speed'],bias:1},
+      F:{label:'Downhill',off:['RB'],ot:['power','speed'],def:['BOXS'],dt:['power','technique'],bias:0}},
+    results:{fail:[R(1,'run',[-1.5,1.5])],short:[R(1,'run',[3,1.2])],success:[R(1,'run',[6.5,1.8])],explosive:[R(1,'run',[14,6],{tail:.16})]}},
+  buck_sweep:{id:'buck_sweep',side:'off',name:'Buck Sweep',family:'run',cost:1,carrier:'RB',program:'Heavy Play Action',
+    matchups:[{when:'light',duel:'G',v:1,src:'Two guards pulling into a light box'}],
+    text:'COACHING TREE · Both guards pull and lead the back around the edge. An old Wing-T staple.',
+    duels:{
+      G:{label:'Guards on the move',off:['LG','RG'],ot:['speed','power'],def:['SET','WILL'],dt:['speed','power'],bias:1},
+      K:{label:'Read the pullers',off:['RB'],ot:['iq','speed'],def:['FCB'],dt:['technique','power'],bias:0},
+      F:{label:'Turn it up',off:['RB'],ot:['speed','versatility'],def:['FS'],dt:['speed','iq'],bias:0}},
+    results:{fail:[R(1,'run',[-2,1.6])],short:[R(1,'run',[2.5,1.3])],success:[R(1,'run',[6,2])],explosive:[R(1,'run',[15,6],{tail:.18})]}},
+  midline_option:{id:'midline_option',side:'off',name:'Midline Option',family:'run',cost:1,carrier:'QB',program:'Option Motion',needs:{role:'QB',trait:'speed',grade:6},
+    matchups:[{when:'man',duel:'F',v:1,src:'Man defenders turned and ran'}],
+    text:'COACHING TREE · Read the three-technique, keep it up the middle. Needs a QB who can run.',
+    duels:{
+      G:{label:'Read the 3-tech',off:['QB'],ot:['iq','composure'],def:['DT3'],dt:['iq','power'],bias:1,qbRead:true,qbRun:true},
+      K:{label:'Squeeze the gap',off:['QB'],ot:['power','iq'],def:['MIKE'],dt:['power','iq'],bias:0,qbRun:true},
+      F:{label:'Finish',off:['QB'],ot:['power','speed'],def:['BOXS'],dt:['power','speed'],bias:0}},
+    results:{fail:[R(1,'run',[-1,1.4])],short:[R(1,'run',[3,1.3])],success:[R(1,'run',[6.5,2])],explosive:[R(1,'run',[14,6],{tail:.18})]}},
+  choice_route:{id:'choice_route',side:'off',name:'Choice Route',family:'quick',cost:1,target:'SLOT',pass:true,program:'Tempo Spread',
+    matchups:[{when:'man',duel:'G',v:1,src:'He broke away from the man leverage'}],
+    text:'COACHING TREE · The slot reads the defender and breaks in, out or up. A run-and-shoot answer.',
+    duels:{
+      G:{label:'Read leverage',off:['SLOT'],ot:['iq','technique'],def:['NICKEL'],dt:['iq','technique'],bias:1,release:true},
+      K:{label:'See it together',off:['QB'],ot:['iq','composure'],def:['WILL'],dt:['iq','speed'],bias:0,qbRead:true},
+      F:{label:'After the catch',off:['SLOT'],ot:['speed','versatility'],def:['FS'],dt:['speed','technique'],bias:0}},
+    results:{fail:[R(.8,'inc',[0,0],{int:.04}),R(.2,'catch',[2,1.5])],short:[R(.45,'inc',[0,0],{int:.03}),R(.55,'catch',[4.5,1.5])],success:[R(.88,'catch',[8,2]),R(.12,'inc',[0,0],{int:.02})],explosive:[R(1,'catch',[15,6],{tail:.1})]}},
+  dagger:{id:'dagger',side:'off',name:'Dagger',family:'deep',cost:1,target:'X',pass:true,protection:true,program:'Vertical Strike',
+    matchups:[{when:'shell2',duel:'K',v:1,src:'The seam cleared the dig'}],
+    text:'COACHING TREE · The slot clears the safety, X runs the dig underneath him.',
+    duels:{
+      G:{label:'Protection',off:['LT','RT'],ot:['technique','power'],def:['RUSH','SET'],dt:['speed','technique'],bias:1,protect:true},
+      K:{label:'Win the dig',off:['X'],ot:['technique','speed'],def:['BCB'],dt:['technique','speed'],bias:0,separation:true},
+      F:{label:'Throw the window',off:['QB'],ot:['iq','composure'],def:['MIKE'],dt:['iq','speed'],bias:0,qbRead:true}},
+    results:{fail:[R(.3,'sack',[-7,2]),R(.45,'inc',[0,0],{int:.05}),R(.25,'catch',[4,2])],short:[R(.55,'inc',[0,0],{int:.05}),R(.45,'catch',[7,2])],success:[R(.72,'catch',[16,4]),R(.28,'inc',[0,0],{int:.04})],explosive:[R(1,'catch',[26,8],{tail:.15})]}},
+  smash:{id:'smash',side:'off',name:'Smash',family:'quick',cost:1,target:'Z',pass:true,program:'Rhythm Control',
+    matchups:[{when:'zone',duel:'K',v:1,src:'High-low on the corner'}],
+    text:'COACHING TREE · Hitch underneath, corner route over the top. Puts one zone defender in a bind.',
+    duels:{
+      G:{label:'Release',off:['Z'],ot:['technique','speed'],def:['FCB'],dt:['technique','speed'],bias:1,release:true},
+      K:{label:'Read the corner',off:['QB'],ot:['iq','technique'],def:['FCB'],dt:['iq','technique'],bias:0,qbRead:true},
+      F:{label:'Corner route',off:['Z'],ot:['speed','technique'],def:['FS'],dt:['speed','iq'],bias:0}},
+    results:{fail:[R(.8,'inc',[0,0],{int:.04}),R(.2,'catch',[3,1.5])],short:[R(.45,'inc',[0,0],{int:.03}),R(.55,'catch',[5,1.5])],success:[R(.85,'catch',[10,3]),R(.15,'inc',[0,0],{int:.03})],explosive:[R(1,'catch',[19,6],{tail:.1})]}},
+  flea_flicker:{id:'flea_flicker',side:'off',name:'Flea Flicker',family:'deep',cost:2,target:'X',pass:true,protection:true,trick:true,
+    matchups:[{when:'loaded',duel:'K',v:2,src:'The safeties bit on the handoff'}],
+    text:'TRICK · Hand off, pitch it back, throw it deep. Earned with a three-game winning streak. Once per game.',
+    duels:{
+      G:{label:'Sell the run',off:['RB'],ot:['iq','composure'],def:['MIKE'],dt:['iq','composure'],bias:1,fake:true},
+      K:{label:'Behind them',off:['X'],ot:['speed','technique'],def:['FS'],dt:['speed','iq'],bias:1,separation:true},
+      F:{label:'Pitch and throw',off:['QB'],ot:['composure','technique'],def:['RUSH'],dt:['speed','technique'],bias:0,qbRead:true}},
+    results:{fail:[R(.4,'sack',[-9,2]),R(.45,'inc',[0,0],{int:.08}),R(.15,'catch',[5,2])],short:[R(.6,'inc',[0,0],{int:.08}),R(.4,'catch',[12,3])],success:[R(.75,'catch',[28,6]),R(.25,'inc',[0,0],{int:.05})],explosive:[R(1,'catch',[42,12],{tail:.45})]}},
+  jet_reverse:{id:'jet_reverse',side:'off',name:'Jet Reverse',family:'constraint',punishes:'pressure',cost:2,carrier:'Z',trick:true,
+    matchups:[{when:'pressure',duel:'K',v:2,src:'Pursuit overran the reverse'}],
+    text:'TRICK · Jet motion one way, the receiver takes it back the other. Earned with a postseason win. Once per game.',
+    duels:{
+      G:{label:'Fake the jet',off:['RB'],ot:['iq','speed'],def:['SET'],dt:['iq','composure'],bias:1},
+      K:{label:'The exchange',off:['Z'],ot:['speed','versatility'],def:['WILL'],dt:['speed','iq'],bias:1},
+      F:{label:'Beat them to the edge',off:['Z'],ot:['speed','composure'],def:['BCB'],dt:['speed','technique'],bias:0}},
+    results:{fail:[R(1,'run',[-5,2])],short:[R(1,'run',[3,2])],success:[R(1,'run',[13,4])],explosive:[R(1,'run',[30,12],{tail:.4})]}}
+});
+Object.assign(CALLS,{
+  quarters_match:{id:'quarters_match',side:'def',name:'Match Quarters',family:'zone',cost:1,box:'normal',shell:2,coverage:'zone',pressure:0,counters:['deep','run'],look:{pressureShown:false},program:'Match Quarters',
+    text:'COACHING TREE · Four deep, but the safeties fit the run when the receivers stay home.'},
+  double_eagle:{id:'double_eagle',side:'def',name:'Double Eagle',family:'pressure',cost:1,box:'loaded',shell:1,coverage:'man',pressure:1,counters:['run','quick'],look:{pressureShown:true},program:'Odd Front Control',
+    text:'COACHING TREE · Cover the center and both guards, walk a linebacker down. Suffocates the run.'},
+  fire_zone:{id:'fire_zone',side:'def',name:'Fire Zone',family:'pressure',cost:1,box:'normal',shell:1,coverage:'zone',pressure:1,counters:['quick','deep'],look:{pressureShown:false},program:'Pressure Multiple',
+    effects:[{flag:'qbRead',v:1,src:'A dropped end in the throwing lane'}],
+    text:'COACHING TREE · Five rush from anywhere, an end drops into the passing lane. QB reads −1 for them.'},
+  wide_nine:{id:'wide_nine',side:'def',name:'Wide Nine',family:'pressure',cost:1,box:'light',shell:1,coverage:'zone',pressure:1,counters:['deep'],look:{pressureShown:false},program:'Four-Down Attack',
+    effects:[{flag:'protect',v:1,src:'Wide-nine rush angles'},{flag:'run',duel:'G',v:-1,src:'Wide ends open the middle'}],
+    text:'COACHING TREE · Ends align outside the tight end and fly. Pressure +1, but softer at the point of attack.'},
+  man_free:{id:'man_free',side:'def',name:'Man Free Press',family:'man',cost:2,box:'normal',shell:1,coverage:'man',pressure:0,counters:['quick','deep'],look:{pressureShown:true},program:'Aggressive Man',
+    effects:[{flag:'separation',v:1,src:'Pressed and squeezed'}],
+    text:'COACHING TREE · Everyone pressed, one free safety. +1 against separation.'},
+  bluff_zero:{id:'bluff_zero',side:'def',name:'Bluff Zero',family:'zone',cost:2,box:'loaded',shell:2,coverage:'zone',pressure:0,counters:['quick','deep'],look:{pressureShown:true},trick:true,
+    effects:[{flag:'qbRead',v:2,src:'Showed zero, dropped eight'}],
+    text:'TRICK · Show all-out pressure, drop eight. Earned by holding a winner to 7 points or fewer. Once per game.'}
+});
+Object.assign(TACTICS,{
+  giant_killer:{id:'giant_killer',side:'off',name:'Giant Killer',cost:2,icon:'🪨',effects:[{duel:'K',v:1}],text:'Earned by upsetting a top-10 team. +1 on the Key duel of any play.'}
+});
+Object.assign(RARITY,{counter_trey:'rare',buck_sweep:'rare',midline_option:'rare',choice_route:'rare',dagger:'rare',smash:'rare',flea_flicker:'rare',jet_reverse:'rare',
+  quarters_match:'rare',double_eagle:'rare',fire_zone:'rare',wide_nine:'rare',man_free:'rare',bluff_zero:'rare',giant_killer:'rare'});
+// Which program card each coordinator background teaches (Dynasty Lab scheme names).
+const SCHEME_CARDS={'Ground Pressure':'counter_trey','Heavy Play Action':'buck_sweep','Option Motion':'midline_option','Tempo Spread':'choice_route','Vertical Strike':'dagger','Rhythm Control':'smash','Multiple':'smash',
+  'Match Quarters':'quarters_match','Split-Safety Control':'quarters_match','Odd Front Control':'double_eagle','Contain & Rally':'double_eagle','Pressure Multiple':'fire_zone','Four-Down Attack':'wide_nine','Aggressive Man':'man_free'};
+const PROGRAM_CARDS=['counter_trey','buck_sweep','midline_option','choice_route','dagger','smash','flea_flicker','jet_reverse','quarters_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero','giant_killer'];
+
+return{SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
 });

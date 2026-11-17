@@ -147,7 +147,33 @@ function awardAchievements(pb,b,side){
   }
   return gained;
 }
+// Packs earned away from a game (signing day, boosters). Cards are drawn when the pack is earned and stored with it,
+// so reopening never rerolls. weights: {category: weight}; categories are a play's family, a call's family, or
+// offTactic / defTactic. bonusRare raises the rare odds. The pick goes to the collection, never over the deck limits.
+function categoryOf(c){const d=cardDef(c.id)||{};return c.kind==='tactic'?(c.side==='off'?'offTactic':'defTactic'):d.family||'other'}
+function rewardPack(pb,{seed,weights={},n=4,bonusRare=0,worldTaken=[],title='Reward Pack',subtitle='',type='reward'}={}){
+  const rng=DynastyRng.create(`reward:${seed}`),used=new Set(),cards=[];
+  for(let i=0;i<n;i++){
+    const roll=rng.next(),rarity=roll<.03+bonusRare/4?'legendary':roll<.22+bonusRare?'rare':'common';
+    let list=POOL.filter(c=>c.kind!=='upgrade'&&!used.has(c.id)&&eligible(pb,c,worldTaken));
+    const exact=list.filter(c=>c.rarity===rarity);if(exact.length)list=exact;
+    if(!list.length)break;
+    const w=list.map(c=>.25+(weights[categoryOf(c)]||0)),total=w.reduce((a,b)=>a+b,0);let r=rng.next()*total,pick=list[list.length-1];
+    for(let j=0;j<list.length;j++){r-=w[j];if(r<=0){pick=list[j];break}}
+    used.add(pick.id);cards.push(pick.id);
+  }
+  return{type,title,subtitle,cards};
+}
+// Put an earned card straight into the collection (stored, ready to equip).
+function grantCard(pb,id,how={}){
+  const c=cardDef(id);if(!c)throw new Error(`Unknown card ${id}`);
+  const side=c.side,pile=D.TACTICS[id]?'tactics':'wrinkles';
+  ensureCollection(pb)[side][pile].push(id);
+  if(D.rarityOf(id)==='legendary'&&!pb.legendaries.includes(id))pb.legendaries.push(id);
+  (pb.history??=[]).push({id,kind:how.kind||'program',side,...(how.why?{why:String(how.why).slice(0,80)}:{})});
+  return{side,pile};
+}
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

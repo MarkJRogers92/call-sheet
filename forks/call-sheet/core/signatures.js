@@ -60,14 +60,25 @@ function build(spec){
     default:return{kind:'tactic',side:'def',def:{...base,side:'def',name:`${L} Robber`,icon:'🦅',effects:[{flag:'qbRead',v:2}],text:`${who} sits in the throwing lane. Their QB read duels −2.`}};
   }
 }
+// Legacy signatures: a retired number's fainter echo on the current starter. Every edge one step smaller (floor 0).
+function buildAny(spec){
+  const b=build(spec);if(!spec.legacy)return b;
+  const def=JSON.parse(JSON.stringify(b.def,(k,v)=>typeof v==='function'?undefined:v));
+  for(const e of def.effects||[])e.v=Math.max(0,(e.v||0)-1);def.effects=(def.effects||[]).filter(e=>e.v>0);
+  for(const d of Object.values(def.duels||{}))d.bias=Math.max(0,(d.bias||0)-1);
+  def.name=`${spec.last} · ${spec.legacy.last} Legacy`;def.legacy=spec.legacy;
+  def.text=`LEGACY of #${spec.legacy.number??''} ${spec.legacy.name} · ${def.text} (A fainter edge than the original.)`;
+  return{...b,def};
+}
 function register(spec){
-  const b=build(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
+  const b=buildAny(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
   table[spec.id]=b.def;D.RARITY[spec.id]='signature';return b;
 }
 function registerAll(pb){for(const s of [...(pb?.signatures||[]),...(pb?.reserveSignatures||[])])register(s)}
 function specFor(player,info={}){
   const template=templateFor(player),b=build({template,role:player.role,last:lastName(player.name),name:player.name,id:'x'});
-  return{id:`sig_${player.id}`,template,playerId:player.id,name:player.name,last:lastName(player.name),role:player.role,pos:player.pos,archetype:player.archetype,number:player.number,portraitSeed:player.portraitSeed,
+  const legacy=info.legacy&&typeof info.legacy==='object'?{playerId:String(info.legacy.playerId),name:String(info.legacy.name||'').slice(0,60),last:String(info.legacy.last||'').slice(0,40),number:info.legacy.number??null}:null;
+  return{id:`${legacy?'leg':'sig'}_${player.id}`,...(legacy?{legacy}:{}),template,playerId:player.id,name:player.name,last:lastName(player.name),role:player.role,pos:player.pos,archetype:player.archetype,number:player.number,portraitSeed:player.portraitSeed,
     side:b.side,pile:b.kind==='tactic'?'tactics':'wrinkles',earned:info.earned||'',season:info.season||1,colors:info.colors||null};
 }
 // Who broke out in this game? A dominant share of his duels, or catching fire again and again.
@@ -100,5 +111,5 @@ function add(pb,spec,replaceIndex){
   return{full:false};
 }
 
-return{SLOTS,COOLDOWN,templateFor,build,register,registerAll,specFor,breakouts,candidate,add,lastName};
+return{SLOTS,COOLDOWN,templateFor,build,buildAny,register,registerAll,specFor,breakouts,candidate,add,lastName};
 });
