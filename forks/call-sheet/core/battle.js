@@ -38,6 +38,9 @@ function create(opts){
     box:{home:blankBox(),away:blankBox()},players:{},personnel:{},backfieldMode:{home:'auto',away:'auto'},
     telemetry:{decisions:{plan:0,snap:0,info:0,fourth:0},snaps:0,series:0,userSnaps:0,lineCounts:{},cardsPlayed:0},
     rng:DynastyRng.create(`${seed}:cards`).snapshot()};
+  // Game-day form: every team is a little sharp or a little flat on a given day (its own seeded stream, so nothing
+  // else shifts). Talent still decides each duel; form is what lets an underdog win on a good day.
+  {const fr=DynastyRng.create(`${seed}:form`);b.form={};for(const side of ['home','away'])b.form[side]=Math.round(Math.max(-2*FORM_SIGMA,Math.min(2*FORM_SIGMA,fr.gauss()*FORM_SIGMA))*100)/100}
   for(const side of ['home','away']){
     b.piles[side]={off:freshPiles(b,b.decks[side].off),def:freshPiles(b,b.decks[side].def)};
     const t=b.teams[side];
@@ -92,7 +95,10 @@ function seriesKeyOf(g){return`${g.drive}:${g.possession}:${g.fieldPosition+g.di
 // The person controls a side's snaps when it is their team and the control setting covers that unit.
 // Program edges (scheme fit, weekly prep, home crowd): each team's offensive edges help its offense, its
 // defensive edges help its defense. They come from the Dynasty Lab program via the adapter.
-function edgesFor(b,offSide){return{offEdges:b.teams[offSide]?.edges?.off||[],defEdges:b.teams[other(offSide)]?.edges?.def||[]}}
+// Form joins each side's edges on every duel, labeled, once it is big enough to notice.
+const FORM_SIGMA=Number(globalThis.__CS_FORM_SIGMA)||.5;
+function formEdge(b,side){const f=b.form?.[side]||0;if(Math.abs(f)<.15)return[];const t=b.teams[side];return[{v:f,src:`${t?.short||t?.name||side} ${f>0?'sharp':'flat'} today`}]}
+function edgesFor(b,offSide){const def=other(offSide);return{offEdges:[...(b.teams[offSide]?.edges?.off||[]),...formEdge(b,offSide)],defEdges:[...(b.teams[def]?.edges?.def||[]),...formEdge(b,def)]}}
 function isUser(b,side){
   if(b.user!==side||!b.game.possession)return false;
   if(b.control==='both')return true;
@@ -148,7 +154,9 @@ function halftime(b){
   for(const side of ['home','away']){
     const t=b.tend[side];for(const k of Object.keys(t))t[k]=Math.floor(t[k]/2);
     if(b.hands[side]){const p=b.piles[side][b.hands[side].role];p.wrinkle.discard.push(...b.hands[side].wrinkles);p.tactic.discard.push(...b.hands[side].tactics);b.hands[side]=null}
-    b.piles[side]={off:freshPiles(b,b.decks[side].off),def:freshPiles(b,b.decks[side].def)};
+    {// Trick plays are once per game: copies already used stay out of the second-half reshuffle.
+      const used=[...(b.exhausted?.[side]||[])],keep=deck=>({...deck,wrinkles:deck.wrinkles.filter(id=>{const k=used.indexOf(id);if(k<0)return true;used.splice(k,1);return false})});
+      b.piles[side]={off:freshPiles(b,keep(b.decks[side].off)),def:freshPiles(b,keep(b.decks[side].def))}}
   }
   b.seriesKey=null;b.log.push({type:'halftime',text:'Halftime. Tendencies cool off, decks reshuffle.'});
 }
@@ -235,7 +243,7 @@ function aiOffense(b,side,look,opts={}){
     for(const ts of subsets(tacs,2)){
       const cost=p.cost+ts.reduce((s,t)=>s+t.cost,0);if(cost>cap)continue;
       if(ts.some(t=>R.tacticBlocked(t.card,p.card,team.lineup.off)))continue;
-      const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off:team.lineup.off,def,play:p.card,...knownEffects(b,p.card),call,offTactics:ts.map(t=>t.id),situation:sit,lean:look.lean.confirmed?look.lean.value:null,heat:look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
+      const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off:team.lineup.off,def,play:p.card,...knownEffects(b,p.card,call),call,offTactics:ts.map(t=>t.id),situation:sit,lean:look.lean.confirmed?look.lean.value:null,heat:look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
       const ev=R.evaluate(snap,sit);
       const isRun=!p.card.pass;
       lines.push({play:p.id,tactics:ts.map(t=>t.id),u:utility(ev,sit)-cost*(sit.down>=3?.2:.55)-(p.base?0:.15)+(isRun?balance:-balance)});
@@ -258,7 +266,7 @@ function aiDefense(b,side,opts={}){
       for(const f of OFF_FAMILIES){
         if(weights[f]<.02)continue;const reps=REP_PLAYS[f].filter(id=>!R.playBlocked(D.PLAYS[id],offTeam.lineup.off));let best=-99;
         for(const id of reps){
-          const snap=R.buildSnap({weather:b.weather,...edgesFor(b,other(side)),off:offTeam.lineup.off,def:team.lineup.def,play:D.PLAYS[id],...knownEffects(b,D.PLAYS[id]),call:p.card,defTactics:ts.map(t=>t.id),situation:sit,lean,heat});
+          const snap=R.buildSnap({weather:b.weather,...edgesFor(b,other(side)),off:offTeam.lineup.off,def:team.lineup.def,play:D.PLAYS[id],...knownEffects(b,D.PLAYS[id],p.card),call:p.card,defTactics:ts.map(t=>t.id),situation:sit,lean,heat});
           best=Math.max(best,utility(R.evaluate(snap,sit),sit));
         }
         u+=weights[f]*(best===-99?0:best);
@@ -495,12 +503,18 @@ function falseStart(b,side){
   b.snap=null;b.fourthGo=false;
 }
 
-function comboFor(b,play){
-  const root=play.evolvedFrom||play.upgradeOf||play.id;
-  const fams=b.drive?.key===`${b.game.drive}:${offSide(b)}`?b.drive.fams:[];
-  return root==='pa_boot'&&fams.length>=2&&fams.slice(-2).every(f=>'run')?{id:'establish',name:'Establish the Run',duel:'K',v:1,reward:'+1 Command'}:null;
+// The first combo (rules v0.8, data.COMBOS) this play/call would complete, from this drive's memory. Offense combos
+// need only the play; defense combos also need the call (null when only the offense is known).
+function comboFor(b,play,call=null){
+  if(!play)return null;
+  const mine=b.drive?.key===`${b.game.drive}:${offSide(b)}`,dr=mine?b.drive:{};
+  const c={play,call,root:play.evolvedFrom||play.upgradeOf||play.id,fams:dr.fams||[],plays:dr.plays||[],calls:dr.calls||[],results:dr.results||[]};
+  // Each team completes each combo at most once per half (overtime is its own half).
+  const half=b.game.period<=2?1:b.game.period<=4?2:3,usedBy=side=>b.comboLog?.[side]?.[half]||[];
+  const hit=(D.COMBOS||[]).find(x=>!usedBy(x.side==='def'?defSide(b):offSide(b)).includes(x.id)&&(x.side==='off'||call)&&x.test(c));
+  return hit?{id:hit.id,name:hit.name,duel:hit.duel,v:hit.v,side:hit.side,reward:hit.reward}:null;
 }
-function knownEffects(b,play){return{fire:b.fire,workload:b.workload||{},combo:comboFor(b,play)}}
+function knownEffects(b,play,call=null){return{fire:b.fire,workload:b.workload||{},combo:comboFor(b,play,call)}}
 
 // ---------------------------------------------------------------- resolution
 function rollPenalty(b,play){
@@ -518,13 +532,14 @@ function resolveSnap(b){
   const play=D.PLAYS[s.off.play],call=D.CALLS[s.def.play],sit=situation(b);
   const lean=leanFor(b),heat=heatFor(b);
   // Drive memory for combos.
-  const dkey=`${g.drive}:${off}`;if(b.drive.key!==dkey)b.drive={key:dkey,fams:[],firsts:0};
-  const fams=b.drive.fams,combo=comboFor(b,play);
+  const dkey=`${g.drive}:${off}`;if(b.drive.key!==dkey)b.drive={key:dkey,fams:[],plays:[],calls:[],results:[],combos:[],firsts:0};
+  b.drive.plays??=[];b.drive.calls??=[];b.drive.results??=[];b.drive.combos??=[];
+  const fams=b.drive.fams,combo=comboFor(b,play,call);
   const hurried=s.off.tactics.includes('hurry_up')&&s.def.tactics.length>0;
   // Coordinators skip the checkdown on long 3rd and 4th downs; the person chooses (Auto or Primary only).
   const read=s.off.read||(s.userCalled&&isUser(b,off)?'auto':sit.down>=3&&sit.distance>=8?'primary':'auto');
   const momentum=b.momentum?.side===off&&b.momentum.left>0;
-  const snap=R.buildSnap({weather:b.weather,...edgesFor(b,off),off:b.teams[off].lineup.off,def:b.teams[def].lineup.def,play,call,offTactics:s.off.tactics,defTactics:hurried?[]:s.def.tactics,situation:sit,lean,heat,motionConfirmed:s.motionConfirmed,read,momentum,...knownEffects(b,play)});
+  const snap=R.buildSnap({weather:b.weather,...edgesFor(b,off),off:b.teams[off].lineup.off,def:b.teams[def].lineup.def,play,call,offTactics:s.off.tactics,defTactics:hurried?[]:s.def.tactics,situation:sit,lean,heat,motionConfirmed:s.motionConfirmed,read,momentum,...knownEffects(b,play,call)});
   b.telemetry.snaps++;b.seriesSnap++;
   const lineKey=`${play.id}${s.off.tactics.length?'+'+[...s.off.tactics].sort().join('+'):''}`;b.telemetry.lineCounts[lineKey]=(b.telemetry.lineCounts[lineKey]||0)+1;
   // Tendencies move whether or not a flag flies.
@@ -556,8 +571,10 @@ function resolveSnap(b){
     result.text=storyLine(b,off,def,play,out,before);
     result.events=[];
     if(hurried)result.events.push({type:'hurry',side:off,name:'Hurry-up',reward:'their adjustments never got in'});
-    fams.push(play.family);
-    if(combo){result.events.push({type:'combo',...combo,side:off});if(b.hands[off])b.hands[off].command=Math.min(D.RULES.seriesCommand,b.hands[off].command+1)}
+    fams.push(play.family);b.drive.plays.push(play.evolvedFrom||play.upgradeOf||play.id);
+    b.drive.calls.push({pressure:call.pressure,shell:call.shell,shown:!!call.look?.pressureShown});b.drive.results.push({family:play.family,yards:out.yards|0});
+    for(const k of ['plays','calls','results'])if(b.drive[k].length>6)b.drive[k].splice(0,b.drive[k].length-6);
+    if(combo){b.drive.combos.push(combo.id);const earner=combo.side==='def'?def:off,half=g.period<=2?1:g.period<=4?2:3;((b.comboLog??={})[earner]??={})[half]=[...(b.comboLog[earner][half]||[]),combo.id];result.events.push({type:'combo',...combo,side:earner});if(b.hands[earner])b.hands[earner].command=Math.min(D.RULES.seriesCommand,b.hands[earner].command+1)}
     if(g.possession===off&&g.down===1&&g.score[off]===before.score[off]&&!out.turnover){
       b.drive.firsts++;
       if(b.drive.firsts===3){b.bonusCommand[off]=1;result.events.push({type:'combo',id:'chain_gang',name:'Chain Gang',reward:'+1 Command next series',side:off})}
@@ -642,13 +659,13 @@ function preview(b,side,choice){
   if(role==='off'){
     const play=D.PLAYS[choice.play];if(!play)return null;
     const call=presumedCall(b.snap.look);
-    const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off:b.teams[side].lineup.off,def:b.teams[other(side)].lineup.def,play,...knownEffects(b,play),call,offTactics:choice.tactics||[],situation:sit,lean:leanFor(b),heat:heatFor(b),motionConfirmed:b.snap.motionConfirmed});
+    const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off:b.teams[side].lineup.off,def:b.teams[other(side)].lineup.def,play,...knownEffects(b,play,call),call,offTactics:choice.tactics||[],situation:sit,lean:leanFor(b),heat:heatFor(b),motionConfirmed:b.snap.motionConfirmed});
     return{snap,ev:R.evaluate(snap,sit),against:call};
   }
   const call=D.CALLS[choice.play];if(!call)return null;
   const fam=b.snap.offLook.family.confirmed?b.snap.offLook.family.value:null,w=offFamilyWeights(b,fam),out=[];
   for(const f of OFF_FAMILIES){if(w[f]<.02)continue;const id=REP_PLAYS[f].find(x=>!R.playBlocked(D.PLAYS[x],b.teams[other(side)].lineup.off));if(!id)continue;
-    const snap=R.buildSnap({weather:b.weather,...edgesFor(b,other(side)),off:b.teams[other(side)].lineup.off,def:b.teams[side].lineup.def,play:D.PLAYS[id],...knownEffects(b,D.PLAYS[id]),call,defTactics:choice.tactics||[],situation:sit,lean:leanFor(b),heat:heatFor(b)});
+    const snap=R.buildSnap({weather:b.weather,...edgesFor(b,other(side)),off:b.teams[other(side)].lineup.off,def:b.teams[side].lineup.def,play:D.PLAYS[id],...knownEffects(b,D.PLAYS[id],call),call,defTactics:choice.tactics||[],situation:sit,lean:leanFor(b),heat:heatFor(b)});
     out.push({family:f,weight:w[f],play:id,snap,ev:R.evaluate(snap,sit)})}
   return{vs:out};
 }

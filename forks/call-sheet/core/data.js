@@ -404,7 +404,7 @@ Object.assign(PLAYS,{
       G:{label:'Protection',off:['LT','RT'],ot:['technique','power'],def:['RUSH','SET'],dt:['speed','technique'],bias:1,protect:true},
       K:{label:'Win the dig',off:['X'],ot:['technique','speed'],def:['BCB'],dt:['technique','speed'],bias:0,separation:true},
       F:{label:'Throw the window',off:['QB'],ot:['iq','composure'],def:['MIKE'],dt:['iq','speed'],bias:0,qbRead:true}},
-    results:{fail:[R(.3,'sack',[-7,2]),R(.45,'inc',[0,0],{int:.05}),R(.25,'catch',[4,2])],short:[R(.55,'inc',[0,0],{int:.05}),R(.45,'catch',[7,2])],success:[R(.72,'catch',[16,4]),R(.28,'inc',[0,0],{int:.04})],explosive:[R(1,'catch',[26,8],{tail:.15})]}},
+    results:{fail:[R(.3,'sack',[-7,2]),R(.47,'inc',[0,0],{int:.05}),R(.23,'catch',[4,2])],short:[R(.58,'inc',[0,0],{int:.05}),R(.42,'catch',[7,2])],success:[R(.66,'catch',[14,4]),R(.34,'inc',[0,0],{int:.04})],explosive:[R(1,'catch',[23,8],{tail:.12})]}},
   smash:{id:'smash',side:'off',name:'Smash',family:'quick',cost:1,target:'Z',pass:true,program:'Rhythm Control',
     matchups:[{when:'zone',duel:'K',v:1,src:'High-low on the corner'}],
     text:'COACHING TREE · Hitch underneath, corner route over the top. Puts one zone defender in a bind.',
@@ -494,10 +494,32 @@ Object.assign(TACTICS,{
 Object.assign(RARITY,{sideline_out:'common',spike:'common',wishbone_dive:'common',power_lead:'common',timeout_settle:'common',timeout_ice:'common'});
 const DRILL_CARDS=['sideline_out','spike'];
 
+// --- Combos (rules v0.8) -------------------------------------------------------------------------------
+// Real sequencing: set something up, then make them pay. Each is checked before a snap from this drive's memory
+// (c.fams / c.plays / c.calls / c.results, oldest first) and gives one labeled +1 (v is from the offense's point of
+// view, so defensive combos are negative) plus +1 Command to the side that earned it. Each team completes each combo at most once per half.
+const lastN=(a,n)=>a.length>=n?a.slice(-n):null;
+const COMBOS=[
+  {id:'establish',name:'Establish the Run',side:'off',duel:'K',v:1,how:'Run, run, then play-action (PA Boot)',reward:'Key +1 and +1 Command',
+    test:c=>c.root==='pa_boot'&&!!lastN(c.fams,2)?.every(f=>f==='run')},
+  {id:'shot_after_run',name:'Shot After the Run',side:'off',duel:'F',v:1,how:'Run, run, then a deep pass',reward:'Finish +1 and +1 Command',
+    test:c=>c.play.family==='deep'&&!c.play.trick&&!!lastN(c.fams,2)?.every(f=>f==='run')},
+  {id:'sell_the_slant',name:'Sell the Slant',side:'off',duel:'K',v:1,how:'Two quick passes, then a deep pass',reward:'Key +1 and +1 Command',
+    test:c=>c.play.family==='deep'&&!c.play.trick&&!!lastN(c.fams,2)?.every(f=>f==='quick')},
+  {id:'screen_the_heat',name:'Screen the Heat',side:'off',duel:'G',v:1,how:'A screen right after they blitzed',reward:'Gate +1 and +1 Command',
+    test:c=>['screen','jailbreak','tunnel','rpo_bubble'].includes(c.root)&&!!c.calls.length&&c.calls.at(-1).pressure>0},
+  {id:'counter_the_flow',name:'Counter the Flow',side:'off',duel:'G',v:1,how:'An outside run, then a counter',reward:'Gate +1 and +1 Command',
+    test:c=>['counter_trey','counter','split_zone'].includes(c.root)&&['outside_zone','buck_sweep','jet_sweep','toss_crack','jet_reverse'].includes(c.plays.at(-1))},
+  {id:'show_and_bail',name:'Show and Bail',side:'def',duel:'K',v:-1,how:'Defense: blitz, then show the same look and drop into a two-deep shell',reward:'Their Key −1 and +1 Command',
+    test:c=>!!c.call&&c.call.shell===2&&c.call.pressure===0&&!!c.call.look?.pressureShown&&!!c.calls.length&&c.calls.at(-1).pressure>0},
+  {id:'wall_up',name:'Wall Up',side:'def',duel:'G',v:-1,how:'Defense: stuff two runs in a row, then they run again',reward:'Their Gate −1 and +1 Command',
+    test:c=>!!c.call&&c.play.family==='run'&&!!lastN(c.results,2)?.every(r=>r.family==='run'&&r.yards<=2)}
+];
+
 // Which program card each coordinator background teaches (Dynasty Lab scheme names).
 const SCHEME_CARDS={'Ground Pressure':'counter_trey','Heavy Play Action':'buck_sweep','Option Motion':'midline_option','Tempo Spread':'choice_route','Vertical Strike':'dagger','Rhythm Control':'smash','Multiple':'smash',
   'Match Quarters':'cover4_match','Split-Safety Control':'cover4_match','Odd Front Control':'double_eagle','Contain & Rally':'double_eagle','Pressure Multiple':'fire_zone','Four-Down Attack':'wide_nine','Aggressive Man':'man_free'};
 const PROGRAM_CARDS=['counter_trey','buck_sweep','midline_option','choice_route','dagger','smash','flea_flicker','jet_reverse','cover4_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero','giant_killer'];
 
-return{DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
+return{COMBOS,DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
 });

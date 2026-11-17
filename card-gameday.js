@@ -808,7 +808,7 @@ function normalizeCallSheet(u){
   // Next, Game Day and the matchup's Open Game Day all coach your game as a card battle. Classic Game Day stays one
   // click away on the matchup card; Sim Week still lets your coordinators play it. Card Settings can turn this off.
   const CARD_DEFAULT=registerCardIntegration({id:'cards-default',label:'Card battles are your game day',
-    about:'Next and Game Day coach your game as a card battle. Turn off to make Next simulate; Coach with Cards and Classic Game Day stay on the matchup card.',hooks:{}});
+    about:'Card battles are how you play your games: Next and Game Day coach them as card battles, and the classic versions are hidden. Turn off to bring back Classic Game Day, Watch and the classic roster view.',hooks:{}});
   function cardGameIsDefault(){return!!universe&&!!selected()&&integrationOn(CARD_DEFAULT)&&!!globalThis.CallSheetBundle}
   // A game to coach right now (or a card battle to resume).
   function coachableGame(){
@@ -892,11 +892,11 @@ function normalizeCallSheet(u){
   const POS_ORDER=['QB','RB','WR','TE','OT','OG','C','EDGE','DT','LB','CB','S','K','P'];
   // Roster: a card grid (default) or the classic table, filtered by the same position menu.
   function paintRosterCards(){
-    const host=document.querySelector('#roster');if(!host)return;
+    const host=document.querySelector('#roster');if(!host)return;try{applyCardMode()}catch(err){}
     // Classic is Dynasty Lab's own roster layout (position board plus its folding full table), left untouched.
     let grid=host.querySelector('#rosterCards'),table=host.querySelector('.table-wrap'),board=host.querySelector('#rosterPositionBoard'),toggle=host.querySelector('#rosterViewToggle');
     if(!pagesOn()){grid?.remove();toggle?.remove();host.classList.remove('cs-cards-view');return}
-    const meta=cardMeta(),view=meta.rosterView==='classic'?'classic':'cards',me=selected(),f=document.querySelector('#positionFilter')?.value||'ALL';
+    const meta=cardMeta(),view=meta.rosterView==='classic'&&!cardGameIsDefault()?'classic':'cards',me=selected(),f=document.querySelector('#positionFilter')?.value||'ALL';
     if(!toggle){host.querySelector('.section-head')?.insertAdjacentHTML('beforeend','<div id="rosterViewToggle" class="cs-view-toggle" role="group" aria-label="Roster view"><button type="button" data-roster-view="cards">Cards</button><button type="button" data-roster-view="classic">Classic</button></div>');toggle=host.querySelector('#rosterViewToggle');
       toggle.querySelectorAll('[data-roster-view]').forEach(b=>b.onclick=()=>{cardMeta().rosterView=b.dataset.rosterView;try{autosaveAfter('game')}catch(err){}paintRosterCards()})}
     toggle.querySelectorAll('[data-roster-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.rosterView===view)));
@@ -989,6 +989,25 @@ function normalizeCallSheet(u){
   if(typeof TAB_RENDERERS==='object'&&TAB_RENDERERS)for(const [view,paint] of [['depth',paintDepthCards],['newsletter',paintNewsCards]]){
     const base=TAB_RENDERERS[view];if(typeof base!=='function')continue;
     TAB_RENDERERS[view]=function(){const out=base.apply(this,arguments);try{paint()}catch(err){console.error(err)}return out};
+  }
+
+  // ============================================================== 11. card mode hides the classic versions
+  // With card battles as the game day (the default), the non-card versions are not shown at all: Classic Game Day,
+  // Watch, the live classic coach, the matchup's Open Game Day duplicate, and the roster's Classic view. Turning
+  // "Card battles are your game day" off in Card Settings brings every one of them back.
+  function applyCardMode(){
+    if(typeof document==='undefined'||typeof document.body?.classList?.toggle!=='function'||typeof document.createElement!=='function'||!document.head)return; // headless runs
+    const on=cardGameIsDefault();document.body.classList.toggle('cs-card-mode',on);
+    if(!document.getElementById('cardModeStyles')){const st=document.createElement('style');st.id='cardModeStyles';
+      st.textContent=`body.cs-card-mode [data-coach-live],body.cs-card-mode #coachLiveGame,body.cs-card-mode #watchDetailedGame,body.cs-card-mode #broadcastFeature [data-sports-tab="gamelab"],body.cs-card-mode #rosterViewToggle{display:none!important}`;
+      document.head.appendChild(st)}
+    // Game Day page: lead with the card battle.
+    const head=document.querySelector('#gamelab > .section-head');if(!head)return;
+    const sub=head.querySelector('.muted'),row=head.querySelector('.button-row');
+    if(sub){sub.dataset.classic??=sub.textContent;sub.textContent=on?'Coach your game as a card battle, or let your coordinators sim it with your playbook.':sub.dataset.classic}
+    let btn=row?.querySelector('[data-coach-cards]');
+    if(on&&row&&!btn)row.insertAdjacentHTML('afterbegin','<button type="button" class="bi-primary" data-coach-cards id="gamelabCoachCards">Coach with Cards</button>');
+    else if(!on)btn?.remove();
   }
 
   // ============================================================== 4. the Card Program panel and settings
@@ -1101,7 +1120,7 @@ function normalizeCallSheet(u){
       meta.settings.fast=f.has('fast');meta.settings.sound=f.has('sound');
       for(const x of INTEGRATIONS)meta.settings.integrations[x.id]=f.has('int:'+x.id);
       try{autosaveAfter('game')}catch(err){console.error(err)}
-      closeCardSettings(true);paintCardProgram();try{setStatus('Card settings saved.')}catch(err){}
+      closeCardSettings(true);try{applyCardMode()}catch(err){}paintCardProgram();try{setStatus('Card settings saved.')}catch(err){}
     });
     el.querySelector('[data-cps-cancel]').addEventListener('click',()=>closeCardSettings(true));
     el.addEventListener('click',e=>{if(e.target===el)closeCardSettings(true)});
@@ -1303,6 +1322,7 @@ function normalizeCallSheet(u){
   const renderBase=render;
   render=function renderWithCardProgram(...args){
     const out=renderBase.apply(this,args);
+    try{applyCardMode()}catch(err){console.error(err)}
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
@@ -1346,7 +1366,7 @@ function normalizeCallSheet(u){
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
-    setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,returnBorrowed,albumProgress,checkAlbums,markArchive,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    setIntegration(id,on){cardMeta().settings.integrations[id]=!!on;try{applyCardMode()}catch(err){}},
+    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),applyCardMode,cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,returnBorrowed,albumProgress,checkAlbums,markArchive,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();

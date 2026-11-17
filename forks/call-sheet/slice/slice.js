@@ -253,7 +253,7 @@ function hotHTML(){
   if(!hot.length)return'';
   return`<div class="box"><h3>On fire</h3>${hot.length?hot.map(({p,s})=>`<div class="hot"><span class="flame"></span>${esc(p.name)} <span class="mini">${esc(teamOf(s).short)} ${p.role}</span></div>`).join(''):'<div class="mini">Win every duel for three straight snaps to catch fire: +1 until you lose one.</div>'}</div>`;
 }
-const COMBOS=[{id:'establish',name:'Establish the Run',how:'Run, run, then PA Boot in one drive',reward:'Key +1 and +1 Command'},{id:'chain_gang',name:'Chain Gang',how:'Three first downs in one drive',reward:'+1 Command next series'}];
+const COMBOS=[...(D.COMBOS||[]).map(c=>({id:c.id,name:c.name,how:c.how,reward:c.reward})),{id:'chain_gang',name:'Chain Gang',how:'Three first downs in one drive',reward:'+1 Command next series'}];
 function comboHTML(){if(!save.combos.length)return'';return`<div class="box"><h3>Combo book</h3>${COMBOS.map(c=>{const f=save.combos.includes(c.id);return`<div class="combo ${f?'found':''}"><b>${f?esc(c.name):'? ? ?'}</b><br>${f?esc(c.how)+' · '+esc(c.reward):'Undiscovered'}</div>`}).join('')}</div>`}
 const fmtEdge=n=>`${n>0?'+':''}${Number(n.toFixed(1))}`;
 function duelMath(d,offense=true){
@@ -356,7 +356,8 @@ function renderHand(){
     const c=p.card,notch=lean&&(c.punishes===lean||(c.id==='vertical_shot'&&lean==='quick'));
     const el=card(p.id,{cost:p.cost,base:p.base,blocked:!!p.blocked,selected:sel.play===p.id,why:p.blocked,notch,mastery:req.side===b.user?EV.progress(save.playbook,p.id):null});
     const n=o.plays.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*4}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);el.style.zIndex=i;
-    if(role==='off'&&B.comboFor(b,c)){el.insertAdjacentHTML('beforeend','<span class="setup-ready">SET UP · KEY +1</span>');el.title='Establish the Run is ready'}
+    {// Defense never sees their committed play: the marker asks "would this call complete a combo if they run or pass?"
+    const cb=role==='off'?B.comboFor(b,c):(B.comboFor(b,D.PLAYS.inside_zone,c)||B.comboFor(b,D.PLAYS.quick_slant,c));if(cb&&cb.side===(role==='off'?'off':'def')){el.insertAdjacentHTML('beforeend',`<span class="setup-ready">SET UP · ${cb.duel==='G'?'GATE':cb.duel==='F'?'FINISH':'KEY'} +1</span>`);el.title=`${cb.name} is ready${cb.id==='wall_up'?' if they run':''}`}}
     wirePlayCard(el,p);fanP.appendChild(el);
   });
   const cmd=document.createElement('div');cmd.className='cmd';

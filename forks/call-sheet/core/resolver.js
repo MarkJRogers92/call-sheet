@@ -186,13 +186,15 @@ function buildSnap(ctx){
     for(const [r,dr] of [['RB','WILL'],['TE','MIKE']]){
       const o=off[r],dd=def[dr];if(r===play.target||!o||!dd)continue;
       const og=((o.traits?.speed??50)+(o.traits?.technique??50))/20,dg=((dd.traits?.speed??50)+(dd.traits?.iq??50))/20;
-      const m=clamp(Math.round(og-dg)+(call.coverage==='zone'?1:0)+(call.pressure>=2?1:0)-(ot.has('max_protect')?1:0),-3,3),p=D.WIN_CHANCE[String(m)]*.6;
+      const m=clamp(Math.round(og-dg)+(call.coverage==='zone'?1:0)+(call.pressure>=2?1:0)-(ot.has('max_protect')?1:0),-3,3),p=D.WIN_CHANCE[String(m)]*CHECKDOWN_RATE;
       if(!checkdown||p>checkdown.p)checkdown={role:r,name:o.name,defRole:dr,p,margin:m,yards:4+Math.max(0,m)};
     }
   }
   return{play,call,duels,flags,checkdown,offTactics:[...ot],defTactics:[...dt],bracketRole:brRole};
 }
 
+// Share of matchup win chance a checkdown converts (the QB still has to find him). Tuned with tools/sim-report.js.
+const CHECKDOWN_RATE=Number(globalThis.__CS_CHECKDOWN_RATE)||.3;
 function categoryProbs(snap){
   const [g,k,f]=snap.duels.map(d=>d.p);
   let fail=1-g,expl=g*k*f,succ=g*(k*(1-f)+(1-k)*f),short=g*(1-k)*(1-f);
@@ -219,7 +221,7 @@ function evaluate(snap,situation){
       const pr=pc*r.w/wsum;let mean=r.yards[0]+(r.tail?r.tail*14:0);if(snap.flags.burner&&cat==='explosive')mean*=1.25;
       const sd=Math.max(.8,r.yards[1]+(r.tail?6:0));
       const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
-      const cd=r.kind==='inc'&&snap.checkdown?snap.checkdown.p:0;
+      const cd=r.kind==='inc'&&snap.checkdown&&cat!=='fail'?snap.checkdown.p:0;
       if(cd){yards+=pr*cd*snap.checkdown.yards;first+=pr*cd*(1-phi((need-.5-snap.checkdown.yards)/1.5))}
       to+=pr*((1-cd)*intP+(r.kind==='sack'?.07:0)+(r.kind==='run'&&(cat==='fail'||cat==='short')?.022:0));
       if(r.kind==='sack')sack+=pr;
@@ -246,8 +248,10 @@ function resolve(snap,rng,situation){
   if(kind==='scramble')yards=Math.max(yards,2+rng.next()*5);
   const intRoll=rng.next(),fumRoll=rng.next(),clockRoll=rng.next();
   yards=Math.round(yards);
-  let checkdown=null;
-  if(kind==='inc'&&snap.checkdown&&rng.next()<snap.checkdown.p){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
+  // An interception on the first read ends it; only a pass that simply fell incomplete can become a checkdown.
+  let checkdown=null;const firstReadPicked=kind==='inc'&&intRoll<(r.int||0)*(snap.flags.ballHawk?1.5:1);
+  // Only when the protection held (the first duel won): a pressured QB has no time to come back to the back.
+  if(kind==='inc'&&wins[0]&&!firstReadPicked&&snap.checkdown&&rng.next()<snap.checkdown.p){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
   const play=snap.play,out={category:cat,kind,wins,duels:snap.duels.map((d,i)=>({key:d.key,label:d.label,won:wins[i],margin:d.margin,offNames:d.offNames,defNames:d.defNames}))};
   if(kind==='inc'){
     const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);

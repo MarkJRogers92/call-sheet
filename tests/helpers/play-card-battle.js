@@ -21,8 +21,8 @@ async function playCardBattle(page,{timeout=120000}={}){
   while(Date.now()<until&&!await frame.$('.slot.pickable'))await tick();
   await (await frame.$$('.slot.pickable'))[0].click({force:true});
   while(Date.now()<until){
-    const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}
-    const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}
+    const cut=await frame.$('.cutme');if(cut){await cut.click({force:true}).catch(()=>{});await page.waitForTimeout(900);continue}
+    const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true}).catch(()=>{});await page.waitForTimeout(2000);continue}
     if(await frame.$('#home'))break;await page.waitForTimeout(200);
   }
   await frame.click('#home',{force:true});

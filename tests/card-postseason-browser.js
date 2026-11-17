@@ -61,14 +61,15 @@ async function openFrame(page){
     assert.equal((await page.evaluate(()=>window.__DL_TEST__.v2PostseasonAudit())).userV2,1,'resuming does not record again');
     await frame.click('#openPack',{force:true});
     for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
-    const packTitle=await frame.locator('#modal .big').first().innerText();
+    // A breakout screen can come first; read the title that sits with the pack itself.
+    const packTitle=await frame.evaluate(()=>document.querySelector('#pk')?.closest('.mwrap')?.querySelector('.big')?.textContent.trim()||'');
     assert.equal(packTitle,won?'BOWL PACK':'FILM STUDY PACK');
     await frame.click('#pk',{force:true});
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}
     const slots=(await frame.$$('.slot.pickable')).length;assert.equal(slots,won?5:3);
     if(shots)await page.screenshot({path:`${shots}/p2-pack.png`});
     await (await frame.$$('.slot.pickable'))[0].click({force:true});
-    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
+    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true}).catch(()=>{});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true}).catch(()=>{});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());

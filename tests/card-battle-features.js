@@ -12,7 +12,7 @@ const modsOf=(snap,key)=>snap.duels.find(d=>d.key===key).mods.map(m=>m.src);
 
 test('pass plays check down to the back or tight end when the first read is covered, unless told not to',()=>{
   const snap=snapFor('quick_slant','cover3');
-  assert.ok(snap.checkdown&&['RB','TE'].includes(snap.checkdown.role)&&snap.checkdown.p>0&&snap.checkdown.p<.6);
+  assert.ok(snap.checkdown&&['RB','TE'].includes(snap.checkdown.role)&&snap.checkdown.p>0&&snap.checkdown.p<.3);
   assert.equal(snapFor('quick_slant','cover3',{read:'primary'}).checkdown,null);
   assert.equal(snapFor('statue_left','cover3').checkdown,null,'run plays have no read');
   assert.equal(snapFor('hook_ladder','cover3').checkdown,null,'trick plays have no checkdown');
@@ -20,7 +20,7 @@ test('pass plays check down to the back or tight end when the first read is cove
   assert.ok(zone>=man,'zone leaves the checkdown more open than man');
   let downs=0,incs=0;
   for(let i=0;i<400;i++){const out=R.resolve(snap,Rng.create(`cd-${i}`));if(out.checkdown){downs++;assert.equal(out.kind,'catch');assert.equal(out.participants.target,snap.checkdown.role)}if(out.kind==='inc')incs++}
-  assert.ok(downs>10&&incs>downs/3,`checkdowns happen but do not erase incompletions (${downs} checkdowns, ${incs} incompletions)`);
+  assert.ok(downs>=2&&incs>downs*5,`checkdowns happen but do not erase incompletions (${downs} checkdowns, ${incs} incompletions)`);
   assert.ok(R.evaluate(snap,{down:1,distance:10}).yards>R.evaluate(snapFor('quick_slant','cover3',{read:'primary'}),{down:1,distance:10}).yards);
 });
 
@@ -48,7 +48,7 @@ test('full battles: drill cards only in the last two minutes, momentum follows t
     }
   }
   assert.ok(drill>0,'drill cards get used');assert.ok(momentumOk>0,'takeaways happen');
-  assert.ok(checkdowns>passes*.02&&checkdowns<passes*.25,`checkdown rate ${checkdowns}/${passes}`);
+  assert.ok(checkdowns>passes*.004&&checkdowns<passes*.05,`checkdown rate ${checkdowns}/${passes}`);
 });
 
 test('the person can refuse the checkdown; drill cards are refused outside the drill',()=>{

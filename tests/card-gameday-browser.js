@@ -101,7 +101,7 @@ const shots=process.env.CARD_SHOTS||'';
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}
     if(shots)await page.screenshot({path:`${shots}/c5-pack.png`});
     await (await frame.$$('.slot.pickable'))[0].click({force:true});
-    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
+    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true}).catch(()=>{});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true}).catch(()=>{});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
