@@ -521,6 +521,16 @@ Object.assign(PLAYS,{
       F:{label:'High point',off:['X'],ot:['power','composure'],def:['BCB'],dt:['power','composure'],bias:0}},
     results:{fail:[R(.85,'inc',[0,0],{int:.05}),R(.15,'catch',[3,2])],short:[R(.6,'inc',[0,0],{int:.04}),R(.4,'catch',[6,2])],success:[R(.75,'catch',[11,3]),R(.25,'inc',[0,0],{int:.03})],explosive:[R(1,'catch',[20,6],{tail:.1})]}}
 });
+Object.assign(PLAYS,{
+  quick_kick:{id:'quick_kick',side:'off',name:'Quick Kick',family:'constraint',cost:1,quickKick:true,thirdOnly:true,
+    text:'OLD SCHOOL · Punt on 3rd down from a running formation. Nobody is back to return it, so it rolls. 3rd down only.',
+    duels:{
+      G:{label:'Line up to run',off:['C'],ot:['technique'],def:['NT'],dt:['technique'],bias:2},
+      K:{label:'Direct snap',off:['RB'],ot:['composure'],def:['MIKE'],dt:['iq'],bias:2},
+      F:{label:'Boot it',off:['RB'],ot:['power'],def:['FS'],dt:['speed'],bias:2}},
+    results:{fail:[R(1,'run',[0,0])],short:[R(1,'run',[0,0])],success:[R(1,'run',[0,0])],explosive:[R(1,'run',[0,0])]}}
+});
+RARITY.quick_kick='rare';
 Object.assign(TACTICS,{
   kill_kill:{id:'kill_kill',side:'off',name:'Kill, Kill',cost:1,icon:'🔁',effects:[{flag:'countered',duel:'K',v:1}],text:'Two plays called in the huddle. If their call is built to stop yours, the QB checks to the other one: +1 on the Key duel.'},
   onside_kick:{id:'onside_kick',side:'off',name:'Onside Kick',cost:0,icon:'🦶',special:'onside',text:'Special teams. Plays itself: late in the 4th, trailing, your next kickoff is an onside try. Recovery depends on your hands team. Once per game.'},

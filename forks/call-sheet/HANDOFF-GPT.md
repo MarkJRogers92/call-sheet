@@ -43,7 +43,10 @@ Built (tests in `npm test`): `card-special-teams.js`, `card-eras.js`, `card-dyna
   their coach (`callSheet.schemeGrants`), Program History album (`callSheet.milestones`), Walk-On badge, spring game.
 - **Collecting**: cosmetic foil/gold finishes (`packs.rollFinish`, `playbook.finishes`), team-colored card backs, Ring of
   Honor binder in the Card Program.
-- Not built: quick kick (needs a punt mid-snap; low value).
+- Gaps closed after: Quick Kick (`quickKick`, `thirdOnly`, punts inside resolveSnap), drill timeouts stop the clock
+  (trailing offense or trailing defense, logged), walk-on breakouts (10%/week once a walk-on starts, once ever), spring
+  game standout -> `callSheet.springStandout` -> added to DL's spring camp battles via the `buildCampBattles` wrapper,
+  trophy case in the Card Program. Tests: `tests/card-gaps.js`. Two-way players remain a tactic/era (one position each in DL).
 
 ## Balance, combos, card mode, visuals — November 17, 2026
 

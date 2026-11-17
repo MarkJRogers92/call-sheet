@@ -599,6 +599,12 @@ function resolveSnap(b){
     Engine.applyScrimmage(g,{penalty:{kind:pen.kind},clock:pen.spec.dead?4:8});
     b.box[against].penalties++;b.box[against].penaltyYds+=pen.spec.yards||5;
     result.penalty={kind:pen.kind,label:pen.spec.label,against};result.text=`Flag: ${pen.spec.label} on ${b.teams[against].short}.`;
+  }else if(play.quickKick){
+    // Quick kick: punt from a running formation on 3rd down; with nobody back, it rolls (+8 yards, plus the punter).
+    const pe=punterEdge(b,off),from=g.fieldPosition;Engine.punt(g,{netAdjust:8+pe.netAdjust});b.box[off].punts++;
+    Object.assign(result,{category:'kick',kind:'punt',yards:0,turnover:null,completed:false,duelResults:snap.duels.map(()=>({won:true})),participants:{}});
+    result.text=`${play.name}: ${b.teams[off].short} quick-kicks from the ${yardLine(from)} on 3rd down.`;result.events=[];
+    fams.push(play.family);b.drive.plays.push(play.id);
   }else{
     const out=withRng(b,rng=>R.resolve(snap,rng,sit));
     if(b.momentum?.side===off)b.momentum.left=0;
@@ -606,6 +612,12 @@ function resolveSnap(b){
     Object.assign(result,{category:out.category,kind:out.kind,yards:out.yards,turnover:out.turnover||null,completed:out.completed,duelResults:out.duels,participants:out.participants});
     const before={down:g.down,distance:g.distance,field:g.fieldPosition,score:{...g.score}};
     const evStart=g.events.length;armSpecials(b,off);
+    // Two-minute drill: a trailing or tied offense (or a trailing defense) burns a timeout to stop a running clock.
+    let timeoutNote='';
+    if(drillOn(b)&&!out.turnover&&out.kind!=='inc'&&out.clock>10&&g.timeouts){
+      const offBehind=g.score[off]<=g.score[def],defBehind=g.period===4&&g.score[def]<g.score[off],who=offBehind&&g.timeouts[off]>0?off:defBehind&&g.timeouts[def]>0?def:null;
+      if(who){g.timeouts[who]--;out.clock=Math.min(out.clock,6);timeoutNote=` ${b.teams[who].short} calls timeout (${g.timeouts[who]} left).`}
+    }
     Engine.applyScrimmage(g,{yards:out.yards,clock:out.clock,kind:out.engineKind,completed:out.completed,turnover:out.turnover});
     const specialNotes=settleSpecials(b,off,evStart);
     // Tag the play the way Dynasty Lab's attribution expects (run/pass, completion, sack), plus who actually played it.
@@ -616,7 +628,7 @@ function resolveSnap(b){
         sacker:id(Df,P.sacker),tackler:out.kind==='sack'||out.turnover==='interception'?null:id(Df,P.defender),interceptor:out.turnover==='interception'?id(Df,P.defender):null}};break}
     b.workload??={};for(const p of [...Object.values(b.teams[off].lineup.off),...Object.values(b.teams[def].lineup.def)])b.workload[p.id]=(b.workload[p.id]||0)+1;
     recordStats(b,off,def,out,before,play);
-    result.text=storyLine(b,off,def,play,out,before)+(specialNotes.length?` ${specialNotes.join('. ')}.`:'');
+    result.text=storyLine(b,off,def,play,out,before)+(specialNotes.length?` ${specialNotes.join('. ')}.`:'')+timeoutNote;
     if(specialNotes.length)result.special=specialNotes;
     result.events=[];
     if(hurried)result.events.push({type:'hurry',side:off,name:'Hurry-up',reward:'their adjustments never got in'});

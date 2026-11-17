@@ -34,6 +34,7 @@ const rootPlay=p=>p.evolvedFrom||p.upgradeOf||p.id;
 function playBlocked(play,lineup,sit=null){
   const sig=signatureBlocked(play,lineup);if(sig)return sig;
   if(play.fourthOnly&&sit&&sit.down!==4)return'4th down only';
+  if(play.thirdOnly&&sit&&sit.down!==3)return'3rd down only';
   const n=play.needs;
   if(n&&traitGrade(lineup[n.role],n.trait)<n.grade)return`Needs a ${n.role} with ${n.trait} ${n.grade}+`;
   return null;

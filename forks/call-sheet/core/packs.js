@@ -13,7 +13,7 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 
 // Every card a pack can hold. kind: play (offense wrinkle) | call (defense wrinkle) | tactic | upgrade.
 const POOL=[
-  ...['deep_cross','pa_boot','screen','power','read_option','draw','four_verts','vertical_shot','statue_left','rpo_bubble','hb_wheel','qb_draw','hook_ladder','wishbone_dive','power_lead','fake_punt','fake_field_goal','fade_route','spinner','buck_lateral','triple_option','split_veer','shallow_cross','curl_flat'].map(id=>({id,kind:'play',side:'off'})),
+  ...['deep_cross','pa_boot','screen','power','read_option','draw','four_verts','vertical_shot','statue_left','rpo_bubble','hb_wheel','qb_draw','hook_ladder','wishbone_dive','power_lead','fake_punt','fake_field_goal','fade_route','quick_kick','spinner','buck_lateral','triple_option','split_veer','shallow_cross','curl_flat'].map(id=>({id,kind:'play',side:'off'})),
   ...['motion','max_protect','route_adjust','seal_block','hard_count','check_with_me','hurry_up','audible','timeout_settle','kill_kill','onside_kick','swinging_gate','two_way_star'].map(id=>({id,kind:'tactic',side:'off'})),
   ...[['inside_zone_plus','inside_zone'],['quick_slant_plus','quick_slant'],['pa_boot_plus','pa_boot']].map(([id,replaces])=>({id,kind:'upgrade',side:'off',replaces})),
   ...['zone_pressure','two_man','robber','sim_pressure','bear','corner_blitz','cover2_trap','cover0','midnight_mirage','tampa2','ghost_blitz','forty_six','zone_blitz'].map(id=>({id,kind:'call',side:'def'})),

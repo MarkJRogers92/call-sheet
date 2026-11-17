@@ -71,6 +71,7 @@ function normalizeCallSheet(u){
   cs.rewardKeys=(Array.isArray(cs.rewardKeys)?cs.rewardKeys:[]).filter(k=>typeof k==='string').map(k=>k.slice(0,60)).slice(-120);
   if(cs.gradeSnap!==undefined){const g=cs.gradeSnap;cs.gradeSnap=g&&typeof g==='object'&&g.grades&&typeof g.grades==='object'?{year:ci(g.year),grades:Object.fromEntries(Object.entries(g.grades).filter(([k,v])=>k.length<64&&Number.isFinite(Number(v))).slice(0,200).map(([k,v])=>[k,ci(v)]))}:undefined;if(!cs.gradeSnap)delete cs.gradeSnap}
   cs.cardStreak=ci(cs.cardStreak);
+  if(cs.springStandout!==undefined){const x=cs.springStandout,str=v=>String(v??'').slice(0,60);cs.springStandout=x&&typeof x==='object'&&x.id!=null?{year:ci(x.year),roleId:str(x.roleId),role:str(x.role),id:str(x.id),name:str(x.name),starterId:str(x.starterId),starterName:str(x.starterName),score:str(x.score)}:null}
   cs.milestones=[...new Set((Array.isArray(cs.milestones)?cs.milestones:[]).filter(x=>['bowl_win','conf_title','unbeaten','national_title'].includes(x)))];
   cs.honors=Object.fromEntries(Object.entries(cs.honors&&typeof cs.honors==='object'?cs.honors:{}).filter(([k,v])=>k.length<64&&Number.isFinite(Number(v))).slice(0,200).map(([k,v])=>[k,ci(v)]));
   cs.schemeGrants=Object.fromEntries(Object.entries(cs.schemeGrants&&typeof cs.schemeGrants==='object'?cs.schemeGrants:{}).filter(([k,v])=>k.length<60&&v&&typeof v==='object'&&v.coachId!=null).slice(0,20).map(([k,v])=>[k,{coachId:String(v.coachId).slice(0,40),name:String(v.name||'').slice(0,60)}]));
@@ -706,7 +707,12 @@ function normalizeCallSheet(u){
   if(typeof buildCampBattles==='function'){
     const buildCampBattlesBase=buildCampBattles;
     buildCampBattles=function buildCampBattlesWithCards(t,phase){
-      const out=buildCampBattlesBase(t,phase);if(!peopleOn()||t?.id!==selected()?.id)return out;
+      const out=buildCampBattlesBase(t,phase);if(t?.id!==selected()?.id)return out;
+      const ss=universe.callSheet?.springStandout;
+      if(ss&&ss.year===universe.year&&String(phase).toLowerCase()==='spring'&&!out.some(x=>x.roleId===ss.roleId)&&(t.roster||[]).some(p=>String(p.id)===String(ss.id))){
+        out.push({roleId:ss.roleId,label:`${ROLE_NAMES[ss.role]||ss.role} (spring game)`,candidates:[{id:ss.id,name:ss.name,score:100},{id:ss.starterId,name:ss.starterName,score:99}],recommended:ss.id,gap:1,phase:'Spring',cardAudition:{winnerId:ss.id,winner:ss.name,score:ss.score,loser:ss.starterName},auditionDecided:true});
+      }
+      if(!peopleOn())return out;
       for(const b of out){try{const a=campAudition(b,t);if(!a)continue;b.cardAudition=a;
         // Only a close battle (gap 5 or less) can swing on the audition, and only between the top two.
         if(b.gap<=5&&a.winnerId!==b.recommended&&b.candidates.slice(0,2).some(c=>c.id===a.winnerId)){b.recommended=a.winnerId;b.auditionDecided=true;
@@ -1047,7 +1053,7 @@ function normalizeCallSheet(u){
         const fav=bowlTheme(ctx.cfg.label,ctx.cfg.stage);if(fav){ctx.cfg.packFavor=fav.cards;ctx.cfg.packFavorWhy=fav.why}
         const t=trophyEdge(ctx.me,ctx.opp);if(t){const prog=ctx.cfg.program??={home:{enabled:false},away:{enabled:false}},side=ctx.userSide;prog[side]??={enabled:false};prog[side].extra??={off:[],def:[]};
           prog[side].extra.off=(prog[side].extra.off||[]).concat([t]);prog[side].extra.def=(prog[side].extra.def||[]).concat([t])}},
-      weekTick(){honorTiers();coachDepartures();programMilestones()},
+      weekTick(ctx){honorTiers();coachDepartures();programMilestones();walkOnBreakouts(ctx)},
       offseason(){honorTiers();coachDepartures();programMilestones();springGame()}
     }});
   const momentsOn=()=>!!universe?.callSheet&&integrationOn(MOMENTS);
@@ -1103,6 +1109,21 @@ function normalizeCallSheet(u){
   }
   // Walk-ons who become starters get the Walk-On frame on their card.
   const isWalkOn=p=>/walk-on/i.test(String(p?.origin||''))||Number(p?.recruitment?.stars)>0&&Number(p.recruitment.stars)<=2;
+  // A walk-on who earns a starting job can break out: a 10% chance each week until he gets his card (once ever).
+  function walkOnBreakouts(ctx){
+    const me=selected();if(!momentsOn()||!me||universe.phase!=='regular')return;const meta=cardMeta(),pb=userPlaybook();meta.rewardKeys??=[];
+    for(const p of me.roster||[]){
+      if(!isWalkOn(p)||battleRoleOf(p,me)?.depth!==0||hasCard(pb,p.id))continue;const key=`walkon:${p.id}`;if(meta.rewardKeys.includes(key))continue;
+      if(DynastyRng.create(`walkon:${universe.year}:${ctx?.week??universe.week}:${p.id}`).next()>=.1)continue;
+      meta.rewardKeys.push(key);if(giveSignature(p,me,{earned:'Walk-on to starter'},'Walk-on breakout'))rewardMoment(`${p.name} walked on and earned his spot. Now he has a signature card.`);
+    }
+  }
+  // The trophy case: rivalry trophies you hold, as cards in the Card Program.
+  function trophyCaseHTML(){
+    const me=selected(),r=me?.rivalry;if(!momentsOn()||!r||String(r.series?.holderId)!==String(me.id))return'';
+    const rival=universe.teams.find(t=>String(t.id)===String(r.rivalId));
+    return`<details class="cpn-albums"><summary>Trophy case · 1</summary><div class="cs-ring"><article class="cs-face r-legendary"><span class="cs-face-origin">rivalry trophy</span><b class="cs-face-name">${escH(r.trophy||'Rivalry trophy')}</b><small class="cs-face-type">held over ${escH(rival?.name||'your rival')}</small><p class="cs-face-text">In our building. In the rivalry game: +½ on the Key duel on 3rd and 4th down, both ways.${r.series?.w!=null?` Series ${r.series.w}–${r.series.l}.`:''}</p></article></div></details>`;
+  }
   // The spring game: first team against second team, a real card battle; everyone gets reps, a backup can shine.
   function springGame(){
     const me=selected();if(!momentsOn()||!me||universe.offseason?.phase!=='spring')return;const meta=cardMeta();
@@ -1115,7 +1136,11 @@ function normalizeCallSheet(u){
       for(const id of [...pb.off.base,...pb.def.base])CS.evolution.addReps(pb,CS.evolution.rootOf(id),3);
       const tally=CS.battle.duelTally(b),firstIds=new Set([...Object.values(first.lineup.off),...Object.values(first.lineup.def)].map(x=>String(x.id)));
       const star=Object.entries(tally).filter(([id])=>!firstIds.has(String(id))).sort((a,c)=>(c[1].w-c[1].l)-(a[1].w-a[1].l))[0];
-      rewardMoment(`Spring game: Blue ${b.game.score.home}, White ${b.game.score.away}. Base plays +3 reps${star?`; ${star[1].name} stood out for the second team (${star[1].w}–${star[1].l} in duels)`:''}.`);
+      // A backup who outdueled the starter at his spot becomes a real camp recommendation (applied through camp).
+      let rec='';
+      if(star){const role=[...Object.entries(second.lineup.off),...Object.entries(second.lineup.def)].find(([,p])=>String(p.id)===String(star[0]))?.[0],starter=role?(first.lineup.off[role]||first.lineup.def[role]):null,st=starter?tally[starter.id]:null;
+        if(role&&starter&&String(starter.id)!==String(star[0])&&(!st||(star[1].w-star[1].l)>(st.w-st.l))){meta.springStandout={year:universe.year,roleId:CS.adapter.ROLE_MAP[role]||role,role,id:star[0],name:star[1].name,starterId:starter.id,starterName:starter.name,score:`${star[1].w}–${star[1].l}`};rec=` He outdueled ${starter.name}, so the staff recommends him at ${ROLE_NAMES[role]||role} in spring camp`}}
+      rewardMoment(`Spring game: Blue ${b.game.score.home}, White ${b.game.score.away}. Base plays +3 reps${star?`; ${star[1].name} stood out for the second team (${star[1].w}–${star[1].l} in duels)`:''}.${rec}`);
     }catch(err){console.error(err)}
   }
 
@@ -1150,7 +1175,7 @@ function normalizeCallSheet(u){
       <button type="button" class="cpn-btn" data-card-deck>Build Deck</button><button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>${(cs.rewardPacks||[]).length?`<button type="button" class="cpn-btn cpn-reward" data-reward-pack>Open ${escH(cs.rewardPacks[0].title)}${cs.rewardPacks.length>1?` (+${cs.rewardPacks.length-1} more)`:''}</button>`:''}
       <div class="cpn-stats">${stats}</div>${cs.activeBattle?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':postCoachHTML()}
       <p class="cpn-foot" data-card-connections>Facilities ${Math.round(selected().facilities||0)} · Deck limits ${pb?.capacity?.wrinkles||14} plays / ${pb?.capacity?.tactics||14} tactics${maxTeach?` · Coaching: up to +${maxTeach}% mastery on used cards`:""}<br>${escH(selected().offScheme)} / ${escH(selected().defScheme)} · Weekly preparation sharpens matching duels and mastery.</p>
-      ${upgradesHTML()}${albumsHTML()}${ringHTML()}
+      ${upgradesHTML()}${albumsHTML()}${ringHTML()}${trophyCaseHTML()}
       <div class="cpn-league"><span class="eyebrow">AROUND THE LEAGUE</span>${news}</div>
       <p class="cpn-foot muted">${escH(MODES.find(m=>m[0]===cs.settings.mode)?.[1]||'Key downs')} · ${escH(CONTROLS.find(c=>c[0]===cs.settings.control)?.[1]||'Offense')} · ${on}/${INTEGRATIONS.length} connections on</p>
     </section>`;
@@ -1476,6 +1501,6 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on;try{applyCardMode()}catch(err){}},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),applyCardMode,cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,addRingForTest:entry=>{if(!globalThis.__DL_TEST__)return;const pb=userPlaybook();(pb.ringOfHonor??=[]).push({id:`sig_${entry.playerId}`,...entry})},returnBorrowed,albumProgress,checkAlbums,markArchive,bowlTheme,honorTiers,trophyEdge,coachDepartures,programMilestones,springGame,isWalkOn,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),applyCardMode,cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,addRingForTest:entry=>{if(!globalThis.__DL_TEST__)return;const pb=userPlaybook();(pb.ringOfHonor??=[]).push({id:`sig_${entry.playerId}`,...entry})},returnBorrowed,albumProgress,checkAlbums,markArchive,trophyCaseHTML,walkOnBreakouts,bowlTheme,honorTiers,trophyEdge,coachDepartures,programMilestones,springGame,isWalkOn,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();
