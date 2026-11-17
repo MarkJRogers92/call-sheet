@@ -96,7 +96,7 @@ const shots=process.env.CARD_SHOTS||'';
     assert.ok(after.played>before.played,'the scheduled game is now played');
     // Pack, then home.
     await frame.click('#openPack',{force:true});
-    for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
+    for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const skip=await frame.$('#boSkip');if(skip){await skip.click({force:true}).catch(()=>{});continue}const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
     await frame.click('#pk',{force:true});
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}
     if(shots)await page.screenshot({path:`${shots}/c5-pack.png`});

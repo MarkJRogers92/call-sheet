@@ -571,16 +571,27 @@ function normalizeCallSheet(u){
   }
   const rankSnapshot=opp=>({opp:Number(opp?.rank)||99,me:Number(selected()?.rank)||99});
   // The Card Program's reward packs: pick one card for the collection.
+  const reducedMotion=()=>{try{return !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches}catch(err){return false}};
   function openRewardPack(){
     const meta=cardMeta(),pack=(meta.rewardPacks||[])[0];if(!pack)return;
     const dialog=document.createElement('dialog');dialog.id='rewardPack';dialog.setAttribute('aria-label',pack.title);
-    const card=id=>{const c=CS.packs.cardDef(id)||{},r=CS.data.rarityOf(id);return`<article class="rp-card rp-${escH(r)}"><b>${escH(c.name||id)}</b><small>${escH(r)} · ${c.cost??0} Command · ${escH(c.family||'Tactic')}${c.trick?' · Once per game':''}</small><p>${escH(c.text||'')}</p><button type="button" data-take="${escH(id)}">Add to collection</button></article>`};
-    dialog.innerHTML=`<style>#rewardPack{width:min(900px,94vw);padding:22px;border:1px solid #66592e;border-radius:16px;background:#10151f;color:#f2efe5;font:15px system-ui}#rewardPack::backdrop{background:#03060bd9}#rewardPack h2{margin:0 0 4px;color:#ffd76a}.rp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin:14px 0}.rp-card{display:flex;flex-direction:column;gap:6px;padding:12px;border:1px solid #2c3448;border-radius:12px;background:#171e2c}.rp-card p{flex:1;margin:0;color:#c9cfdc;font-size:13px}.rp-card small{color:#aab6e8;text-transform:capitalize}.rp-rare{border-color:#4b8fe0}.rp-legendary{border-color:#ffcc33}.rp-card button,#rewardPack [data-later]{padding:8px;border-radius:8px;border:1px solid #66592e;background:#2a2412;color:#ffd76a;cursor:pointer}</style>
-      <h2>${escH(pack.title)}</h2><p>${escH(pack.subtitle||'')}</p><div class="rp-cards">${pack.cards.map(card).join('')}</div><button type="button" data-later>Open later</button>`;
+    const UI=CS.playbookUI;UI?.injectFaceCSS?.();
+    const card=id=>UI?.faceHTML?UI.faceHTML(id,{footer:`<button type="button" data-take="${escH(id)}">Add to collection</button>`}):`<article><b>${escH(CS.packs.cardDef(id)?.name||id)}</b><button type="button" data-take="${escH(id)}">Add to collection</button></article>`;
+    const wrapText={booster:'BOOSTER',signing:'SIGNING<br>DAY',album:'ALBUM'}[pack.type]||'REWARD';
+    dialog.innerHTML=`<style>#rewardPack{width:min(900px,94vw);padding:22px;border:1px solid #66592e;border-radius:16px;background:#10151f;color:#f2efe5;font:15px system-ui}#rewardPack::backdrop{background:#03060bd9}#rewardPack h2{margin:0 0 4px;color:#ffd76a}
+.rp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:16px 0}.rp-cards[hidden]{display:none}.rp-cards .cs-face{animation:rpIn .45s cubic-bezier(.2,1.3,.4,1) both}.rp-cards .cs-face:nth-child(2){animation-delay:.12s}.rp-cards .cs-face:nth-child(3){animation-delay:.24s}.rp-cards .cs-face:nth-child(4){animation-delay:.36s}.rp-cards .cs-face:nth-child(5){animation-delay:.48s}
+@keyframes rpIn{from{opacity:0;transform:rotateY(80deg) translateY(16px)}to{opacity:1;transform:none}}
+.rp-cards .cs-face button,#rewardPack [data-later]{margin-top:6px;padding:9px;border-radius:8px;border:1px solid #66592e;background:#2a2412;color:#ffd76a;cursor:pointer;font-weight:700}
+.rp-wrap{display:grid;place-items:center;gap:6px;width:180px;height:250px;margin:18px auto;border-radius:16px;border:2px solid #ffd84d;cursor:pointer;color:#1a1200;font:900 28px/1 system-ui;letter-spacing:.06em;background:linear-gradient(160deg,#ffe58a,#c8901a);box-shadow:0 14px 40px rgba(0,0,0,.5),inset 0 0 0 6px rgba(255,255,255,.18);animation:rpBob 1.6s ease-in-out infinite}
+.rp-wrap small{font:700 12px system-ui;letter-spacing:.14em}.rp-wrap.rp-signing{background:linear-gradient(160deg,#9ad8ff,#2a62b8);color:#04122a;border-color:#cfeaff}.rp-wrap.rp-album{background:linear-gradient(160deg,#e3c3ff,#6a35b8);color:#170630;border-color:#f0dcff}
+.rp-wrap.ripped{animation:rpRip .35s ease-in forwards}@keyframes rpBob{50%{transform:translateY(-6px) rotate(-1deg)}}@keyframes rpRip{to{opacity:0;transform:scale(1.35) rotate(4deg)}}
+@media (prefers-reduced-motion:reduce){.rp-wrap,.rp-cards .cs-face{animation:none!important}}</style>
+      <h2>${escH(pack.title)}</h2><p>${escH(pack.subtitle||'')}</p><button type="button" class="rp-wrap rp-${escH(pack.type||'reward')}" data-rip>${wrapText}<small>TAP TO OPEN</small></button><div class="rp-cards" hidden>${pack.cards.map(card).join('')}</div><button type="button" data-later>Open later</button>`;
     document.body.appendChild(dialog);
     const close=()=>{dialog.close();dialog.remove();paintCardProgram()};
     dialog.addEventListener('cancel',e=>{e.preventDefault();close()});
     dialog.querySelector('[data-later]').onclick=close;
+    const rip=dialog.querySelector('[data-rip]');rip.onclick=()=>{rip.classList.add('ripped');setTimeout(()=>{rip.remove();dialog.querySelector('.rp-cards').hidden=false},reducedMotion()?0:330)};
     dialog.querySelectorAll('[data-take]').forEach(el=>el.onclick=()=>{const r=takeRewardCard(pack.key,el.dataset.take);if(r.ok)close();else setStatus(r.error)});
     dialog.showModal();
   }

@@ -60,9 +60,10 @@ async function openFrame(page){
     await frame.waitForSelector('#openPack',{timeout:20000});
     assert.equal((await page.evaluate(()=>window.__DL_TEST__.v2PostseasonAudit())).userV2,1,'resuming does not record again');
     await frame.click('#openPack',{force:true});
-    for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
+    for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const skip=await frame.$('#boSkip');if(skip){await skip.click({force:true}).catch(()=>{});continue}const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
     // A breakout screen can come first; read the title that sits with the pack itself.
-    const packTitle=await frame.evaluate(()=>document.querySelector('#pk')?.closest('.mwrap')?.querySelector('.big')?.textContent.trim()||'');
+    await frame.waitForFunction(()=>[...document.querySelectorAll('#modal .big')].some(e=>/PACK$/.test(e.textContent.trim())),null,{timeout:15000});
+    const packTitle=await frame.evaluate(()=>[...document.querySelectorAll('#modal .big')].map(e=>e.textContent.trim()).find(t=>/PACK$/.test(t))||'');
     assert.equal(packTitle,won?'BOWL PACK':'FILM STUDY PACK');
     await frame.click('#pk',{force:true});
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}

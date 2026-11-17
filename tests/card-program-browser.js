@@ -19,6 +19,9 @@ const shots=process.env.CARD_SHOTS||'';
       if(shots)await panel.screenshot({path:`${shots}/program-${view.name}.png`});
       await open.click();
       const dialog=page.locator('#rewardPack');await dialog.waitFor();
+      // The pack comes wrapped: rip it open, then the card faces appear.
+      assert.equal(await dialog.locator('[data-take]').first().isVisible(),false,'cards stay hidden until the pack is opened');
+      await dialog.locator('[data-rip]').click({force:true});await dialog.locator('.rp-cards .cs-face').first().waitFor();
       const cards=await dialog.locator('[data-take]').count();assert.equal(cards,4,'a big booster drive opens four cards');
       const overflow=await page.evaluate(()=>{const d=document.querySelector('#rewardPack').getBoundingClientRect();return d.right>window.innerWidth+1||d.left<-1});
       assert.equal(overflow,false,'the pack fits the screen');

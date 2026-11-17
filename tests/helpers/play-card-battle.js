@@ -16,7 +16,7 @@ async function playCardBattle(page,{timeout=120000}={}){
     const f=await frame.$('#modal [data-o]');if(f)await f.click({force:true}).catch(()=>{});await tick();
   }
   await frame.click('#openPack',{force:true});
-  while(Date.now()<until&&!await frame.$('#pk')){const tp=await frame.$('#toPack');if(tp)await tp.click({force:true}).catch(()=>{});await tick()}
+  while(Date.now()<until&&!await frame.$('#pk')){const skip=await frame.$('#boSkip');if(skip){await skip.click({force:true}).catch(()=>{});continue}const tp=await frame.$('#toPack');if(tp)await tp.click({force:true}).catch(()=>{});await tick()}
   await frame.click('#pk',{force:true});
   while(Date.now()<until&&!await frame.$('.slot.pickable'))await tick();
   await (await frame.$$('.slot.pickable'))[0].click({force:true});

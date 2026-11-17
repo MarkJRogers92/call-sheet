@@ -27,7 +27,23 @@ portal transfer/reserve/save continuity, postseason stat/reward recording, and f
 Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
 (Superseded Nov 17 — see the next section.)
 
-## The card game is the game — November 17, 2026 (latest)
+## Balance, combos, card mode, visuals — November 17, 2026 (latest)
+
+- **Balance** (`tools/balance-report.js`, `tools/sim-report.js`, guards in `tests/card-balance.js`): game-day form
+  (`battle.js` `FORM_SIGMA`, seeded per game, labeled "X sharp/flat today") so a 12-point talent gap wins ~92%, not
+  100%. Checkdowns roll the interception first, need the protection to hold, `CHECKDOWN_RATE` .3 (~1.5% of passes).
+  Trick plays are truly once per game (the halftime reshuffle used to bring them back). Dagger toned down.
+  Latest numbers: `tools/latest-report.txt`, `tools/latest-balance.txt`.
+- **Combos** (`data.COMBOS`, `battle.comboFor(b,play,call)`, `tests/card-combos.js`): Establish the Run fixed (it fired
+  after any two plays); six new recipes, two defensive; each once per half per team.
+- **Card mode** (default): classic versions are hidden (Classic Game Day, Watch, the duplicate Open Game Day, classic
+  roster view); Game Day leads with Coach with Cards. `applyCardMode()` runs on render, roster paint and setting changes.
+- **Visuals**: battle cards carry origin ribbons (Legacy, coaching tree, two-minute drill, trick, weather, milestone) and
+  a Legacy frame; the deck editor and reward packs use shared card faces (`playbookUI.faceHTML`); reward packs open from a
+  wrapper. The breakout screen now names the right postseason pack.
+- Round-2 ideas from football history: `IDEAS-2.md`.
+
+## The card game is the game — November 17, 2026
 
 Mark: in this fork the card battle IS the game, and cards belong everywhere in Dynasty Lab.
 

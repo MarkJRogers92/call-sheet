@@ -749,7 +749,7 @@ async function breakoutScreen(won){
   const r=holder.getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+100,{n:140,speed:12,colors:['#ffd84d','#fff6d5','#000','#e5c766']});
   await FX.anim(cel,[{opacity:0,transform:'scale(0) rotate(-30deg)'},{opacity:1,transform:'scale(1.15)'},{transform:'none'}],{duration:600,easing:'cubic-bezier(.2,1.4,.4,1)'});
   $('#rays').classList.remove('on');
-  const done=()=>{b._breakoutResolved=true;writeSave();$('#boBtns').innerHTML=`<button class="btn go" id="toPack">${won?(b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>`;$('#toPack').onclick=()=>packScreen(won)};
+  const done=()=>{b._breakoutResolved=true;writeSave();$('#boBtns').innerHTML=`<button class="btn go" id="toPack">${won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>`;$('#toPack').onclick=()=>packScreen(won)};
   if(!full){SG.add(pb,spec);done();return}
   $('#boSlots').innerHTML=`<p class="statline">ALL ${SG.SLOTS} SIGNATURE SLOTS ARE FULL. <b>Replace one</b>, or let this card go.</p><div class="pbgrid" id="boOld"></div><button class="btn" id="boSkip">LET IT GO</button>`;
   pb.signatures.forEach((sg,i)=>{const w=document.createElement('div');w.className='cutme';w.appendChild(card(sg.id,{small:true}));w.onclick=()=>{S.burn();SG.add(pb,spec,i);$('#boSlots').innerHTML=`<p class="statline">${esc(sg.name)}'s card retires. <b>${esc(p.name)}</b> takes the slot.</p>`;done()};$('#boOld').appendChild(w)});
