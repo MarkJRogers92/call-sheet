@@ -1,5 +1,37 @@
 # Call Sheet: handoff
 
+## Continuation checkpoint — November 16, 2026
+
+The unfinished program-integration batch has been recovered and completed on `card-battles`.
+This section supersedes the integration status in the older sections below.
+
+- Recruiting: active playbook/archetype compatibility contributes up to 3 points through the existing
+  recruiting pitch. It uses public archetype strengths, never hidden true ratings. Prospect cards explain the fit.
+- Coaching: coordinator development and the existing development-coaching relationship modifier add up to
+  30% mastery to plays actually used. Coached and simulated games share the same accounting; battle saves
+  preserve the launch-time training rates.
+- Facilities: ratings 75 and 90 unlock 16 and 18 play/tactic slots respectively. Earned capacity persists.
+- Development: player cards explain the latest camp trait gain and affected plays without stacking a second bonus.
+- Transfers: signatures move with the real player ID between user and AI programs. Portal entrants retain
+  their signatures while temporarily absent from rosters. A full destination stores the incoming signature.
+- Deck editor: earned evolutions can be selected between games; signatures can be stored/equipped while
+  retaining the three-active limit. Cancel discards the draft.
+- Postseason simulation: the user's conference, bowl and playoff games can use the card engine, real-player
+  attribution, mastery, achievements, packs and signature breakouts. Both launch-time program changes and
+  recorded game/reward changes roll back when the transaction fails. Neutral games do not get home crowd edges.
+
+New module: `forks/call-sheet/core/program.js`. New registered regression suite: `tests/card-program.js`.
+The six tests cover facility thresholds/toggles, recruiting pitch and hidden-rating independence, mastery limits,
+portal transfer/reserve/save continuity, postseason stat/reward recording, and fault-injected rollback.
+
+Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
+Do not describe that UI as implemented. Alternate passing targets, additional combo recipes and the older
+optional integration wishlist remain future work, not prerequisites for this program-integration batch.
+
+Keep using the existing `card-battles` branch and the existing Site `appgprj_6afb8523e61481918d4881852b228a49`.
+Do not replace the Site, change its audience, merge `main`, or modify the base `Football` repository.
+Publication and verification details for this continuation are in `DYNASTY-CARD-HANDOFF-2026-11-16.md` at the repository root.
+
 **For:** the next agent continuing this work (GPT or Claude). **Owner:** Mark. **Date:** 2026-11-16.
 
 Call Sheet is a fork of **Dynasty Lab** (a college football dynasty sim). It adds an arcade card battler, in the

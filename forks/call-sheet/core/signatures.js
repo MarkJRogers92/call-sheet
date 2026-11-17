@@ -64,7 +64,7 @@ function register(spec){
   const b=build(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
   table[spec.id]=b.def;D.RARITY[spec.id]='signature';return b;
 }
-function registerAll(pb){for(const s of pb?.signatures||[])register(s)}
+function registerAll(pb){for(const s of [...(pb?.signatures||[]),...(pb?.reserveSignatures||[])])register(s)}
 function specFor(player,info={}){
   const template=templateFor(player),b=build({template,role:player.role,last:lastName(player.name),name:player.name,id:'x'});
   return{id:`sig_${player.id}`,template,playerId:player.id,name:player.name,last:lastName(player.name),role:player.role,pos:player.pos,archetype:player.archetype,number:player.number,portraitSeed:player.portraitSeed,
@@ -90,7 +90,7 @@ const COOLDOWN=3;
 function candidate(b,side,pb){
   const games=pb.gamesPlayed??((pb.record?.w||0)+(pb.record?.l||0));
   if(pb.lastSignatureGame!=null&&games-pb.lastSignatureGame<COOLDOWN)return null;
-  const have=new Set((pb.signatures||[]).map(s=>s.playerId));
+  const have=new Set([...(pb.signatures||[]),...(pb.reserveSignatures||[])].map(s=>s.playerId));
   return breakouts(b,side).find(t=>!have.has(t.p.id))||null;
 }
 function add(pb,spec,replaceIndex){

@@ -69,7 +69,7 @@ function threshold(pb,rootId){
   return pb[side].base.some(id=>rootOf(id)===rootId)?BASE_REPS:WRINKLE_REPS;
 }
 // Count reps from a finished battle for the side `side` (home/away) into the playbook.
-function recordReps(pb,log,side){
+function recordReps(pb,log,side,training={}){
   pb.mastery??={};const gained={};
   for(const e of log){
     if(e.type!=='snap'||e.penalty)continue;
@@ -77,6 +77,7 @@ function recordReps(pb,log,side){
     const r=rootOf(id);if(!TREE[r])continue;
     pb.mastery[r]=(pb.mastery[r]||0)+1;gained[r]=(gained[r]||0)+1;
   }
+  for(const [root,n] of Object.entries(gained)){const bonus=Math.floor(n*Math.max(0,Math.min(.3,Number(training[root])||0)));if(bonus){pb.mastery[root]+=bonus;gained[root]+=bonus}}
   return gained;
 }
 function addReps(pb,rootId,n){pb.mastery??={};pb.mastery[rootId]=(pb.mastery[rootId]||0)+n}

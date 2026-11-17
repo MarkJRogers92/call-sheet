@@ -138,9 +138,9 @@ function advanceWeek(world,userPb,userResult){
 // sign their classes, and signature cards of graduating players go to the Ring of Honor. Returns what the
 // person needs to see: who left, how much the returners grew, and the open spots with prospects.
 function retireSignatures(pb,gone){
-  const ids=new Set(gone.map(g=>g.player.id)),kept=[],retired=[];
-  for(const sg of pb.signatures||[])(ids.has(sg.playerId)?retired:kept).push(sg);
-  pb.signatures=kept;(pb.ringOfHonor??=[]).push(...retired.map(sg=>({...sg,career:CL.careerLine(gone.find(g=>g.player.id===sg.playerId).player)})));
+  const ids=new Set(gone.map(g=>g.player.id)),retired=[];
+  for(const pile of ['signatures','reserveSignatures'])pb[pile]=(pb[pile]||[]).filter(sg=>{if(!ids.has(sg.playerId))return true;retired.push(sg);return false});
+  (pb.ringOfHonor??=[]).push(...retired.map(sg=>({...sg,career:CL.careerLine(gone.find(g=>g.player.id===sg.playerId).player)})));
   return retired;
 }
 function startOffseason(world,userPb,userName){
