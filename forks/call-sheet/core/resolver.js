@@ -123,7 +123,9 @@ function buildSnap(ctx){
     for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
     for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
     // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.
-    const edgeHits=e=>hits(e)&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
+    // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). play: one card (or anything evolved/upgraded from it).
+    const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
+    const edgeHits=e=>hits(e)&&whenOn(e.when)&&(!e.play||[play.id,play.evolvedFrom,play.upgradeOf].includes(e.play))&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
     for(const e of ctx.offEdges||[])if(edgeHits(e))add(e.v,e.src);
     for(const e of ctx.defEdges||[])if(edgeHits(e))add(-e.v,e.src);
     for(const e of play.effects||[])if(hits(e))add(e.v,e.src||play.name);

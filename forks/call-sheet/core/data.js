@@ -431,7 +431,7 @@ Object.assign(PLAYS,{
     results:{fail:[R(1,'run',[-5,2])],short:[R(1,'run',[3,2])],success:[R(1,'run',[13,4])],explosive:[R(1,'run',[30,12],{tail:.4})]}}
 });
 Object.assign(CALLS,{
-  quarters_match:{id:'quarters_match',side:'def',name:'Match Quarters',family:'zone',cost:1,box:'normal',shell:2,coverage:'zone',pressure:0,counters:['deep','run'],look:{pressureShown:false},program:'Match Quarters',
+  cover4_match:{id:'cover4_match',side:'def',name:'Cover 4 Match',family:'zone',cost:1,box:'normal',shell:2,coverage:'zone',pressure:0,counters:['deep','run'],look:{pressureShown:false},program:'Match Quarters',
     text:'COACHING TREE · Four deep, but the safeties fit the run when the receivers stay home.'},
   double_eagle:{id:'double_eagle',side:'def',name:'Double Eagle',family:'pressure',cost:1,box:'loaded',shell:1,coverage:'man',pressure:1,counters:['run','quick'],look:{pressureShown:true},program:'Odd Front Control',
     text:'COACHING TREE · Cover the center and both guards, walk a linebacker down. Suffocates the run.'},
@@ -452,11 +452,11 @@ Object.assign(TACTICS,{
   giant_killer:{id:'giant_killer',side:'off',name:'Giant Killer',cost:2,icon:'🪨',effects:[{duel:'K',v:1}],text:'Earned by upsetting a top-10 team. +1 on the Key duel of any play.'}
 });
 Object.assign(RARITY,{counter_trey:'rare',buck_sweep:'rare',midline_option:'rare',choice_route:'rare',dagger:'rare',smash:'rare',flea_flicker:'rare',jet_reverse:'rare',
-  quarters_match:'rare',double_eagle:'rare',fire_zone:'rare',wide_nine:'rare',man_free:'rare',bluff_zero:'rare',giant_killer:'rare'});
+  cover4_match:'rare',double_eagle:'rare',fire_zone:'rare',wide_nine:'rare',man_free:'rare',bluff_zero:'rare',giant_killer:'rare'});
 // Which program card each coordinator background teaches (Dynasty Lab scheme names).
 const SCHEME_CARDS={'Ground Pressure':'counter_trey','Heavy Play Action':'buck_sweep','Option Motion':'midline_option','Tempo Spread':'choice_route','Vertical Strike':'dagger','Rhythm Control':'smash','Multiple':'smash',
-  'Match Quarters':'quarters_match','Split-Safety Control':'quarters_match','Odd Front Control':'double_eagle','Contain & Rally':'double_eagle','Pressure Multiple':'fire_zone','Four-Down Attack':'wide_nine','Aggressive Man':'man_free'};
-const PROGRAM_CARDS=['counter_trey','buck_sweep','midline_option','choice_route','dagger','smash','flea_flicker','jet_reverse','quarters_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero','giant_killer'];
+  'Match Quarters':'cover4_match','Split-Safety Control':'cover4_match','Odd Front Control':'double_eagle','Contain & Rally':'double_eagle','Pressure Multiple':'fire_zone','Four-Down Attack':'wide_nine','Aggressive Man':'man_free'};
+const PROGRAM_CARDS=['counter_trey','buck_sweep','midline_option','choice_route','dagger','smash','flea_flicker','jet_reverse','cover4_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero','giant_killer'];
 
 return{SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
 });

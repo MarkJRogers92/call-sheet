@@ -71,6 +71,8 @@ function normalizeCallSheet(u){
   cs.rewardKeys=(Array.isArray(cs.rewardKeys)?cs.rewardKeys:[]).filter(k=>typeof k==='string').map(k=>k.slice(0,60)).slice(-120);
   if(cs.gradeSnap!==undefined){const g=cs.gradeSnap;cs.gradeSnap=g&&typeof g==='object'&&g.grades&&typeof g.grades==='object'?{year:ci(g.year),grades:Object.fromEntries(Object.entries(g.grades).filter(([k,v])=>k.length<64&&Number.isFinite(Number(v))).slice(0,200).map(([k,v])=>[k,ci(v)]))}:undefined;if(!cs.gradeSnap)delete cs.gradeSnap}
   cs.cardStreak=ci(cs.cardStreak);
+  cs.installFocus=typeof cs.installFocus==='string'&&cs.installFocus.length<60?cs.installFocus:null;
+  cs.filmLog=(Array.isArray(cs.filmLog)?cs.filmLog:[]).filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),plays:Object.fromEntries(Object.entries(x.plays&&typeof x.plays==='object'?x.plays:{}).filter(([k,v])=>k.length<60&&Number.isFinite(Number(v))).slice(0,60).map(([k,v])=>[k,ci(v)]))}));
   cs.lastWeekNews=(Array.isArray(cs.lastWeekNews)?cs.lastWeekNews:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string').slice(0,60);
 }
 
@@ -233,8 +235,9 @@ function normalizeCallSheet(u){
       news.push({team:team.name,card:pick.id,rarity:pick.rarity});
     }
     for(const id of pb.off.base.concat(pb.def.base))CS.evolution.addReps(pb,CS.evolution.rootOf(id),4);
-    const ready=CS.evolution.ready(pb)[0];
-    if(ready){const [a,b]=ready.options,pick=CS.world.fit(spec,a)>=CS.world.fit(spec,b)?a:b;CS.evolution.evolve(pb,ready.rootId,pick);news.push({team:team.name,evolved:pick})}
+    const lineup=CS.adapter.lineupFromTeam(team).lineup,ready=CS.evolution.ready(pb,{lineup})[0];
+    if(ready){const open=ready.options.filter(id=>!ready.locks?.[id]);
+      if(open.length){const pick=open.length>1&&CS.world.fit(spec,open[1])>CS.world.fit(spec,open[0])?open[1]:open[0];CS.evolution.evolve(pb,ready.rootId,pick,{lineup});news.push({team:team.name,evolved:pick})}}
     return news;
   }
   registerCardIntegration({id:'ai-playbooks',label:'Opponents build playbooks',about:'Programs on your schedule open packs, pick by identity and evolve cards every week, and play you with them.',
@@ -364,6 +367,7 @@ function normalizeCallSheet(u){
       if(breakout){const sg=CS.signatures.specFor(breakout.p,{season:universe.year,earned:sim.cfg.label});if(pb.signatures.length<CS.signatures.SLOTS)CS.signatures.add(pb,sg);else{(pb.reserveSignatures??=[]).push(sg);pb.lastSignatureGame=pb.gamesPlayed;CS.signatures.register(sg)}}
       (cardMeta().moments??=[]).push({year:universe.year,week:sim.week,kind:'reward',text:`${sim.cfg.label}: ${pack.title}${picked?' — '+(CS.packs.cardDef(picked.id)?.name||picked.id)+' added to the collection':''}.`});
       try{addCardCareer(CS.battle.duelTally(sim.b),sim.week)}catch(err){console.error(err)}
+      try{noteUsage(sim.b.game,sim.cfg.userSide)}catch(err){console.error(err)}
       {const us=sim.b.game.score[sim.cfg.userSide],them=sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];programAwards({won,us,them,postseason:!!sim.postseason,ranks:sim.ranks,oppName:opp?.name,opp})}
       runHook('afterGame',{b:sim.b,userSide:sim.cfg.userSide,me,opp,coached:false});
   }
@@ -421,6 +425,7 @@ function normalizeCallSheet(u){
         const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true}
         try{addCardCareer(p.tally,options.week)}catch(err){console.error(err)}
         const side=String(home.id)===String(selected().id)?'home':'away',us=Number(p.state?.score?.[side])||0,them=Number(p.state?.score?.[side==='home'?'away':'home'])||0;
+        try{noteUsage(p.state,side)}catch(err){console.error(err)}
         programAwards({won:us>them,us,them,postseason:true,ranks:p.ranks,oppName:p.oppName,opp:side==='home'?away:home});
         meta.recordedBattleSeed=p.seed;meta.lastPostseasonGameId=out?.result?.gameId||out?.record?.id||null;delete meta.pendingPostseason;
       }};
@@ -674,6 +679,58 @@ function normalizeCallSheet(u){
     return`<p class="cs-pcard-note"><b>Visit pitch:</b> show him ${escH(fit.plays.slice(0,3).join(', '))} — the cards in your playbook built on his strengths.</p>`;
   }
 
+  // ============================================================== 7. card upgrades: install weeks, film wear, eras
+  // Install focus: one card a week gets extra reps (and a fresh install clears opponents' film on it).
+  // Film wear: a play you leaned on over your last three games gives opponents a labeled film edge on it.
+  // Eras: each season the league leans one way; cards that fit get a half-point edge for every team.
+  const ERAS=[
+    {id:'option',name:'Option Era',about:'Run plays +0.5 on the Key duel',off:[{family:'run',duel:'K',v:.5}]},
+    {id:'airraid',name:'Air Raid Era',about:'Quick passes +0.5 on the Key duel',off:[{family:'quick',duel:'K',v:.5}]},
+    {id:'vertical',name:'Vertical Era',about:'Deep passes +0.5 on the Key duel',off:[{family:'deep',duel:'K',v:.5}]},
+    {id:'misdirection',name:'Misdirection Era',about:'Constraint plays +0.5 on the Key duel',off:[{family:'constraint',duel:'K',v:.5}]},
+    {id:'blitz',name:'Blitz Era',about:'Pressure calls +0.5 on Protection duels',def:[{pressureCall:true,flag:'protect',v:.5}]}
+  ];
+  const UPGRADES=registerCardIntegration({id:'card-upgrades',label:'Install weeks, film wear and eras',
+    about:'Pick a card to install each week for extra reps, opponents scout plays you overuse, and each season’s era favors one style of card for everyone.',
+    hooks:{
+      launch(ctx){if(!upgradesOn())return;const prog=ctx.cfg.program??={home:{enabled:false},away:{enabled:false}},era=eraFor(universe.year);
+        for(const side of ['home','away']){prog[side]??={enabled:false};prog[side].era={off:(era.off||[]).map(e=>({...e,src:era.name})),def:(era.def||[]).map(e=>({...e,src:era.name}))}}
+        const opp=ctx.userSide==='home'?'away':'home',worn=wornPlays();if(worn.length){prog[opp].extra??={off:[],def:[]};prog[opp].extra.def=(prog[opp].extra.def||[]).concat(worn.map(w=>({play:w.id,duel:'K',v:1,src:`Film on your ${w.name}`})))}},
+      weekTick(){installWeek()}
+    }});
+  const upgradesOn=()=>!!universe?.callSheet&&integrationOn(UPGRADES);
+  function eraFor(year){return ERAS[Math.floor(DynastyRng.create(`era:${year}`).next()*ERAS.length)]}
+  const WEAR_GAMES=3,WEAR_AT=30;
+  function noteUsage(state,side){
+    if(!upgradesOn()||!state?.events)return;const meta=cardMeta(),plays={};
+    for(const e of state.events)if(e.card?.play&&e.team===side){const r=CS.evolution.rootOf(e.card.play);plays[r]=(plays[r]||0)+1}
+    meta.filmLog=(meta.filmLog||[]).concat([{year:universe.year,week:universe.week|0,plays}]).slice(-WEAR_GAMES);
+  }
+  function wornPlays(){
+    const totals={};for(const g of universe.callSheet?.filmLog||[])for(const [id,n] of Object.entries(g.plays||{}))totals[id]=(totals[id]||0)+n;
+    return Object.entries(totals).filter(([,n])=>n>=WEAR_AT).sort((a,b)=>b[1]-a[1]).slice(0,2).map(([id,n])=>({id,n,name:CS.packs.cardDef(id)?.name||id}));
+  }
+  function installable(){
+    const pb=universe.callSheet?.playbook;if(!pb)return[];const EV=CS.evolution,out=[];
+    for(const side of ['off','def'])for(const id of new Set([...pb[side].base,...pb[side].wrinkles])){const r=EV.rootOf(id),pr=EV.progress(pb,id);if(pr&&!out.some(x=>x.root===r))out.push({root:r,name:CS.packs.cardDef(r)?.name||r,...pr})}
+    return out;
+  }
+  const INSTALL_REPS=6;
+  function installWeek(){
+    if(!upgradesOn())return;const meta=cardMeta(),root=meta.installFocus;if(!root)return;
+    if(!installable().some(x=>x.root===root)){meta.installFocus=null;return}
+    CS.evolution.addReps(userPlaybook(),root,INSTALL_REPS);
+    for(const g of meta.filmLog||[])if(g.plays?.[root])g.plays[root]=0;
+  }
+  function setInstallFocus(root){const meta=cardMeta();meta.installFocus=root&&installable().some(x=>x.root===root)?root:null;try{autosaveAfter('game')}catch(err){}return meta.installFocus}
+  function upgradesHTML(){
+    if(!upgradesOn())return'';const era=eraFor(universe.year),list=installable(),focus=universe.callSheet.installFocus,worn=wornPlays();
+    return`<div class="cpn-upgrades"><p class="cpn-foot"><b>${universe.year}: ${escH(era.name)}</b> · ${escH(era.about)} for every team.</p>
+      ${list.length?`<label class="cpn-foot">Install this week (+${INSTALL_REPS} reps): <select data-install><option value="">None</option>${list.map(x=>`<option value="${escH(x.root)}" ${x.root===focus?'selected':''}>${escH(x.name)} · ${x.reps}/${x.need}</option>`).join('')}</select></label>`:''}
+      ${worn.length?`<p class="cpn-foot">Opponents have film on ${worn.map(w=>escH(w.name)).join(' and ')} (Key −1). Mix it up, or install it again to reset.</p>`:''}</div>`;
+  }
+  if(typeof document!=='undefined'&&typeof document.addEventListener==='function')document.addEventListener('change',e=>{const el=e.target.closest?.('[data-install]');if(el){setInstallFocus(el.value||null);paintCardProgram()}});
+
   // ============================================================== 4. the Card Program panel and settings
   // A panel on This Week, under the next-matchup card: your playbook at a glance, what other programs pulled and
   // evolved (Around the League), and Card Settings. Shown only once the dynasty uses cards.
@@ -705,6 +762,7 @@ function normalizeCallSheet(u){
       <button type="button" class="cpn-btn" data-card-deck>Build Deck</button><button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>${(cs.rewardPacks||[]).length?`<button type="button" class="cpn-btn cpn-reward" data-reward-pack>Open ${escH(cs.rewardPacks[0].title)}${cs.rewardPacks.length>1?` (+${cs.rewardPacks.length-1} more)`:''}</button>`:''}
       <div class="cpn-stats">${stats}</div>${cs.activeBattle?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':postCoachHTML()}
       <p class="cpn-foot" data-card-connections>Facilities ${Math.round(selected().facilities||0)} · Deck limits ${pb?.capacity?.wrinkles||14} plays / ${pb?.capacity?.tactics||14} tactics${maxTeach?` · Coaching: up to +${maxTeach}% mastery on used cards`:""}<br>${escH(selected().offScheme)} / ${escH(selected().defScheme)} · Weekly preparation sharpens matching duels and mastery.</p>
+      ${upgradesHTML()}
       <div class="cpn-league"><span class="eyebrow">AROUND THE LEAGUE</span>${news}</div>
       <p class="cpn-foot muted">${escH(MODES.find(m=>m[0]===cs.settings.mode)?.[1]||'Key downs')} · ${escH(CONTROLS.find(c=>c[0]===cs.settings.control)?.[1]||'Offense')} · ${on}/${INTEGRATIONS.length} connections on</p>
     </section>`;
@@ -972,7 +1030,7 @@ function normalizeCallSheet(u){
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
-  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){const cg=currentCardGame();if(cg&&cardMeta().activeBattle?.seed===battleSeed(cg)){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
+  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){const cg=currentCardGame();if(cg&&cardMeta().activeBattle?.seed===battleSeed(cg)){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{lineup:CS.adapter.lineupFromTeam(selected()).lineup,onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
 
   let host=null;
   globalThis.__callSheetDynasty={
@@ -984,6 +1042,7 @@ function normalizeCallSheet(u){
       if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key)}
       try{const g=findUserGame(),week=g?.week,me=selected(),userSide=g&&g.home===me.name?'home':'away',opp=g?T(userSide==='home'?g.away:g.home):null,ranks=rankSnapshot(opp);
         const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
+        try{noteUsage(state,userSide)}catch(err){console.error(err)}
         try{const us=Number(state?.score?.[userSide])||0,them=Number(state?.score?.[userSide==='home'?'away':'home'])||0;programAwards({won:us>them,us,them,postseason:false,ranks,oppName:opp?.name,opp})}catch(err){console.error(err)}
         return{ok:true,result:out.result}}
       catch(err){console.error(err);return{ok:false,error:err.message||String(err)}}
@@ -1011,6 +1070,6 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();

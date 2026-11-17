@@ -69,7 +69,7 @@ test('a retired number gives the starter a fainter Legacy signature that survive
 test('program cards work in a full simulated battle',async()=>{
   const {CS}=await setup(925),D=CS.data,Ro=CS.roster;
   const deck={off:{base:D.DEFAULT_DECKS.off.base,wrinkles:['counter_trey','buck_sweep','choice_route','dagger','smash','flea_flicker','jet_reverse','midline_option'],tactics:['giant_killer','motion','max_protect','route_adjust']},
-    def:{base:D.DEFAULT_DECKS.def.base,wrinkles:['quarters_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero'],tactics:D.DEFAULT_DECKS.def.tactics}};
+    def:{base:D.DEFAULT_DECKS.def.base,wrinkles:['cover4_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero'],tactics:D.DEFAULT_DECKS.def.tactics}};
   const b=CS.battle.simulate({home:{...Ro.preset('ground'),decks:deck},away:Ro.preset('aerial'),seed:'program-cards'});
   assert.equal(b.game.status,'final');assert.ok(!b.final.engineError);
   const used=new Set(b.log.filter(x=>x.type==='snap').flatMap(x=>[x.play,x.call]));

@@ -81,6 +81,9 @@ function programEdges(team,info={}){
   if(df&&famD>=60)def.push({...df,v:1,src:`Scheme fit: ${team.defScheme}`});
   for(const f of info.prep||[]){const p=PREP[f];if(!p)continue;const {side,...e}=p;(side==='off'?off:def).push({...e,v:1,src:`Weekly prep: ${PREP_LABEL[f]}`})}
   if(info.home&&Number(team.fan_support)>=75)def.push({thirdDown:true,flag:'qbRead',v:1,src:'Crowd noise'});
+  // The season's era (same for everyone) and dynasty storylines such as opponents' film on overused plays.
+  for(const e of info.era?.off||[])off.push({...e});for(const e of info.era?.def||[])def.push({...e});
+  for(const e of info.extra?.off||[])off.push({...e});for(const e of info.extra?.def||[])def.push({...e});
   return{off,def};
 }
 function staffCommand(team){

@@ -60,6 +60,29 @@ const TREE={
 for(const [rootId,branches] of Object.entries(TREE)){
   for(const [id,name,o] of branches){if(D.PLAYS[rootId])branchPlay(rootId,id,name,o);else branchCall(rootId,id,name,o)}
 }
+// Development gates: a branch unlocks when the player who runs it has grown into it (grade = rating ÷ 10, from the
+// current depth chart). Reps make a card ready; development decides which branches you can take.
+const NEEDS={
+  duo:{role:'LG',trait:'power',grade:7,label:'left guard power'},split_zone:{role:'TE',trait:'versatility',grade:6,label:'tight end versatility'},
+  jet_sweep:{role:'RB',trait:'speed',grade:8,label:'running back speed'},toss_crack:{role:'Z',trait:'power',grade:6,label:'Z receiver power'},
+  slant_flat:{role:'SLOT',trait:'technique',grade:7,label:'slot technique'},glance_rpo:{role:'QB',trait:'iq',grade:6,label:'quarterback IQ'},
+  snag:{role:'TE',trait:'iq',grade:6,label:'tight end IQ'},stick_nod:{role:'QB',trait:'composure',grade:7,label:'quarterback poise'},
+  pa_throwback:{role:'Z',trait:'technique',grade:7,label:'Z receiver technique'},pa_shot:{role:'QB',trait:'composure',grade:7,label:'quarterback poise'},
+  mesh_cross:{role:'SLOT',trait:'speed',grade:7,label:'slot speed'},yankee:{role:'X',trait:'speed',grade:8,label:'X receiver speed'},
+  jailbreak:{role:'LG',trait:'speed',grade:6,label:'left guard mobility'},tunnel:{role:'SLOT',trait:'versatility',grade:6,label:'slot versatility'},
+  counter:{role:'RG',trait:'power',grade:7,label:'right guard power'},power_read:{role:'QB',trait:'speed',grade:7,label:'quarterback speed'},
+  quarters_match:{role:'FS',trait:'iq',grade:7,label:'free safety IQ'},cover6:{role:'BOXS',trait:'power',grade:6,label:'box safety power'},
+  cover1_rat:{role:'MIKE',trait:'iq',grade:7,label:'middle linebacker IQ'},cover1_press:{role:'FCB',trait:'technique',grade:7,label:'field corner technique'},
+  cover3_buzz:{role:'BOXS',trait:'speed',grade:6,label:'box safety speed'},cover3_cloud:{role:'FCB',trait:'power',grade:6,label:'field corner power'},
+  bear_stack:{role:'NT',trait:'power',grade:8,label:'nose tackle power'},spill:{role:'WILL',trait:'speed',grade:7,label:'weak linebacker speed'},
+  creeper:{role:'MIKE',trait:'iq',grade:7,label:'middle linebacker IQ'},fire_zone_x:{role:'RUSH',trait:'speed',grade:8,label:'rush end speed'}
+};
+// lineup: {off, def} battle players. Without one (the sandbox), nothing is locked.
+function lockReason(branchId,lineup){
+  const n=NEEDS[branchId];if(!n||!lineup)return null;
+  const p=lineup.off?.[n.role]||lineup.def?.[n.role],g=p?Math.floor((Number(p.traits?.[n.trait])||0)/10):0;
+  return g>=n.grade?null:`Needs ${n.label} ${n.grade}+ (${p?`${p.name} is ${g}`:'nobody at that spot'})`;
+}
 // Measured: a base play gets ~10-16 reps a game and a heavily used wrinkle up to ~15, so both evolve after
 // roughly 3 games of real use. That makes an evolution a regular event, not a constant one.
 const BASE_REPS=40,WRINKLE_REPS=24;
@@ -82,19 +105,20 @@ function recordReps(pb,log,side,training={}){
 }
 function addReps(pb,rootId,n){pb.mastery??={};pb.mastery[rootId]=(pb.mastery[rootId]||0)+n}
 // Cards whose reps reached the threshold and that the program still holds.
-function ready(pb){
+function ready(pb,opts={}){
   pb.mastery??={};pb.evolved??={};const out=[];
   for(const [rootId,reps] of Object.entries(pb.mastery)){
     if(pb.evolved[rootId]||!TREE[rootId])continue;
     const side=D.PLAYS[rootId]?'off':'def',holds=[...pb[side].base,...pb[side].wrinkles,...(pb.reserve?.[side]?.wrinkles||[])].some(id=>rootOf(id)===rootId);
-    if(holds&&reps>=threshold(pb,rootId))out.push({rootId,side,options:TREE[rootId].map(([id])=>id)});
+    if(holds&&reps>=threshold(pb,rootId)){const options=TREE[rootId].map(([id])=>id);out.push({rootId,side,options,locks:Object.fromEntries(options.map(id=>[id,lockReason(id,opts.lineup)]))})}
   }
   return out;
 }
 function progress(pb,id){const r=rootOf(id);if(!TREE[r]||pb.evolved?.[r])return null;return{reps:pb.mastery?.[r]||0,need:threshold(pb,r)}}
 // Replace every copy (and its upgrade) with the chosen branch.
-function evolve(pb,rootId,branchId){
+function evolve(pb,rootId,branchId,opts={}){
   if(!TREE[rootId]?.some(([id])=>id===branchId))throw new Error('Not a branch of that card.');
+  const locked=lockReason(branchId,opts.lineup);if(locked)throw new Error(locked);
   const side=D.PLAYS[rootId]?'off':'def';
   for(const pile of ['base','wrinkles'])pb[side][pile]=pb[side][pile].map(id=>rootOf(id)===rootId?branchId:id);
   if(pb.reserve?.[side])pb.reserve[side].wrinkles=pb.reserve[side].wrinkles.map(id=>rootOf(id)===rootId?branchId:id);
@@ -104,5 +128,5 @@ function evolve(pb,rootId,branchId){
 }
 const branchTag=id=>(D.PLAYS[id]||D.CALLS[id])?.branch||'';
 
-return{TREE,BASE_REPS,WRINKLE_REPS,rootOf,recordReps,addReps,ready,progress,evolve,branchTag};
+return{NEEDS,lockReason,TREE,BASE_REPS,WRINKLE_REPS,rootOf,recordReps,addReps,ready,progress,evolve,branchTag};
 });

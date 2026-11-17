@@ -67,7 +67,7 @@ async function openFrame(page){
     const slots=(await frame.$$('.slot.pickable')).length;assert.equal(slots,won?5:3);
     if(shots)await page.screenshot({path:`${shots}/p2-pack.png`});
     await (await frame.$$('.slot.pickable'))[0].click({force:true});
-    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
+    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());

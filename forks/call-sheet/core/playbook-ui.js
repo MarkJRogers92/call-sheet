@@ -1,7 +1,7 @@
 // Shared pregame collection/deck editor for the sandbox and Dynasty Lab.
 (function(root){
 'use strict';
-function open(pb,{onSave=()=>{},onClose=()=>{}}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null}={}){
   const {packs:P,data:D}=root.CallSheet,draft=JSON.parse(JSON.stringify(pb));P.ensureCollection(draft);root.CallSheet.signatures?.registerAll(draft);draft.reserveSignatures??=[];
   let side='off',message='';
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -23,7 +23,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{}}={}){
 </style><h2>Build your deck</h2><p class="de-muted">Your collection keeps every earned card. Choose four reliable base calls, then shape the plays and tactics you draw. Stored cards can be equipped again any time between games.</p>
 <nav><button type="button" data-side="off" class="${side==='off'?'de-gold':''}">Offense</button><button type="button" data-side="def" class="${side==='def'?'de-gold':''}">Defense</button></nav>
 <p class="de-error" role="status">${esc(message)}</p>
-${(root.CallSheet.evolution?.ready(draft)||[]).map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}</h3><p class="de-muted">Your practice and game reps earned a permanent upgrade. It takes effect when you save this deck.</p><div class="de-cards">${r.options.map(id=>`<article>${info(id)}<button type="button" data-evolve="${r.rootId}:${id}">Choose ${esc(P.cardDef(id).name)}</button></article>`).join('')}</div></section>`).join('')}
+${(root.CallSheet.evolution?.ready(draft,{lineup})||[]).map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}</h3><p class="de-muted">Your practice and game reps earned a permanent upgrade. It takes effect when you save this deck.</p><div class="de-cards">${r.options.map(id=>`<article>${info(id)}${r.locks?.[id]?`<small class="de-lock">🔒 ${esc(r.locks[id])}</small><button type="button" disabled>Locked</button>`:`<button type="button" data-evolve="${r.rootId}:${id}">Choose ${esc(P.cardDef(id).name)}</button>`}</article>`).join('')}</div></section>`).join('')}
 <h3>Always available · 4 base calls</h3><p class="de-muted">Keep at least one free, unrestricted call. Trick plays and player signatures stay in the draw pile.</p>
 <div class="de-base">${deck.base.map((id,i)=>`<label>Base ${i+1}<select data-base="${i}" aria-label="Base ${i+1}">${owned.filter(x=>!table[x]?.trick&&!table[x]?.signature).map(x=>`<option value="${esc(x)}" ${x===id?'selected':''}>${esc(P.cardDef(x).name)} · ${P.cardDef(x).cost} Command</option>`).join('')}</select></label>`).join('')}</div>
 <h3>Active play pile · ${deck.wrinkles.length}/${draft.capacity.wrinkles}</h3><p class="de-muted">Draw 3 each series. Extra copies make a play appear more often.</p>${list('wrinkles',false)}
@@ -37,7 +37,7 @@ ${draft.reserveSignatures.length?`<h3>Stored signatures</h3><p class="de-muted">
     dialog.querySelectorAll('[data-side]').forEach(el=>el.onclick=()=>{side=el.dataset.side;message='';paint()});
     const act=fn=>{try{fn();message=''}catch(e){message=e.message}const scroll=dialog.scrollTop;paint();dialog.scrollTop=scroll};
     dialog.querySelectorAll('[data-move]').forEach(el=>el.onclick=()=>act(()=>{const [pile,i,equip]=el.dataset.move.split(':');P.moveCard(draft,side,pile,Number(i),equip==='1')}));
-    dialog.querySelectorAll('[data-evolve]').forEach(el=>el.onclick=()=>act(()=>{const [rootId,branch]=el.dataset.evolve.split(':');root.CallSheet.evolution.evolve(draft,rootId,branch)}));
+    dialog.querySelectorAll('[data-evolve]').forEach(el=>el.onclick=()=>act(()=>{const [rootId,branch]=el.dataset.evolve.split(':');root.CallSheet.evolution.evolve(draft,rootId,branch,{lineup})}));
     dialog.querySelectorAll('[data-base]').forEach(el=>el.onchange=()=>act(()=>P.setBase(draft,side,Number(el.dataset.base),el.value)));
     for(const [attr,from,to] of [['sigStore','signatures','reserveSignatures'],['sigEquip','reserveSignatures','signatures']])dialog.querySelectorAll(attr==='sigStore'?'[data-sig-store]':'[data-sig-equip]').forEach(el=>el.onclick=()=>act(()=>{if(to==='signatures'&&draft.signatures.length>=3)throw new Error('Store an active signature first.');const i=draft[from].findIndex(sg=>sg.id===el.dataset[attr]);if(i>=0)draft[to].push(draft[from].splice(i,1)[0])}));
     dialog.querySelector('[data-save]').onclick=()=>{if(P.overCapacity(draft)){message='Store cards until both decks fit their limits.';paint();return}onSave(draft);close()};

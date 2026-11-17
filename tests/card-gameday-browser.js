@@ -29,7 +29,7 @@ const shots=process.env.CARD_SHOTS||'';
     // Program wiring: both teams arrive with their scheme edges and staff, labeled by source.
     const prog=await frame.evaluate(()=>{const b=window.__slice.b;return['home','away'].map(sd=>({edges:b.teams[sd].edges,cmd:b.teams[sd].coach.commandBonus}))});
     assert.ok(prog.every(t=>t.edges&&Array.isArray(t.edges.off)&&Array.isArray(t.edges.def)&&t.cmd),'program edges and staff bonuses are attached');
-    assert.ok(prog.flatMap(t=>[...t.edges.off,...t.edges.def]).every(e=>/^(Scheme fit|Weekly prep|Crowd noise|Still installing)/.test(e.src)),'every program edge names its source');
+    assert.ok(prog.flatMap(t=>[...t.edges.off,...t.edges.def]).every(e=>/^(Scheme fit|Weekly prep|Crowd noise|Still installing|Film on your )|^[A-Z][A-Za-z ]+ Era$/.test(e.src)),'every program edge names its source');
     // Every player on the field is a card with his real face; hovering shows his grades and game line.
     const field=await frame.evaluate(()=>({cards:document.querySelectorAll('#field .pl').length,faces:[...document.querySelectorAll('#field .pl .pface')].filter(i=>i.getAttribute('href')).length}));
     assert.equal(field.cards,22,'22 player cards on the field');assert.ok(field.faces>=20,'field cards carry portraits');
@@ -101,7 +101,7 @@ const shots=process.env.CARD_SHOTS||'';
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}
     if(shots)await page.screenshot({path:`${shots}/c5-pack.png`});
     await (await frame.$$('.slot.pickable'))[0].click({force:true});
-    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
+    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());

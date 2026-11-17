@@ -691,9 +691,11 @@ async function cutScreen(over,added){
     const again=P.overCapacity(pb);if(again)cutScreen(again,added);else afterPack();
   };g.appendChild(w)});
 }
+// In a dynasty, branches unlock with the players who run them (the battle's real lineup). The sandbox has no gates.
+const evoReady=pb=>EV.ready(pb,{lineup:DYN&&b?b.teams[b.user].lineup:null}).filter(x=>x.options.some(id=>!x.locks?.[id]));
 async function afterPack(){
   await FX.wait(900);
-  const r=EV.ready(save.playbook);
+  const r=evoReady(save.playbook);
   if(r.length){evolutionScreen(r[0]);return}
   afterWeek();
 }
@@ -909,12 +911,13 @@ function evolutionScreen(r){
   m.innerHTML=`<div class="mwrap"><p class="big gold">EVOLUTION</p>
     <p class="statline"><b>${esc(P.cardDef(held).name)}</b> has <b>${pb.mastery[from]}</b> reps. Your program has mastered it. <b>Choose its future.</b> This is permanent.</p>
     <div class="evo"><div class="evoRoot" id="evoRoot"></div></div>
-    <div class="branches">${r.options.map(id=>`<div class="branch" data-b="${id}"><div class="btag">${esc(EV.branchTag(id).toUpperCase())}</div></div>`).join('')}</div></div>`;
+    <div class="branches">${r.options.map(id=>`<div class="branch${r.locks?.[id]?' locked':''}" data-b="${id}" ${r.locks?.[id]?`title="${esc(r.locks[id])}" style="opacity:.55"`:''}><div class="btag">${esc(EV.branchTag(id).toUpperCase())}${r.locks?.[id]?` · 🔒 ${esc(r.locks[id])}`:''}</div></div>`).join('')}</div></div>`;
   m.classList.add('on');
   const root=card(held,{});$('#evoRoot').appendChild(root);
   $('#rays').classList.add('on');S.fire();
   m.querySelectorAll('.branch').forEach((w,i)=>{const c=card(w.dataset.b,{});w.appendChild(c);
     FX.anim(w,[{opacity:0,transform:`translate(${i?'-':''}160px,-160px) scale(.3)`},{opacity:1,transform:'none'}],{duration:520,delay:300+i*160,easing:'cubic-bezier(.2,1.4,.4,1)'});
+    if(w.classList.contains('locked'))return;
     w.onclick=async()=>{
       m.querySelectorAll('.branch').forEach(x=>x.onclick=null);
       S.fanfare();FX.anim($('#flash'),[{opacity:.9},{opacity:0}],450);FX.shake(m,1.6);
@@ -922,10 +925,10 @@ function evolutionScreen(r){
       m.querySelectorAll('.branch').forEach(x=>{if(x!==w)FX.anim(x,[{opacity:1},{opacity:0,transform:'scale(.7) translateY(40px)'}],400)});
       FX.anim($('#evoRoot'),[{opacity:1,filter:'brightness(1)'},{opacity:0,filter:'brightness(3)',transform:'scale(1.3)'}],450);
       await FX.anim(w,[{transform:'none'},{transform:'scale(1.25) translateY(-20px)'}],{duration:500,easing:'cubic-bezier(.2,1.4,.4,1)'});
-      EV.evolve(pb,from,w.dataset.b);writeSave();
+      EV.evolve(pb,from,w.dataset.b,{lineup:DYN&&b?b.teams[b.user].lineup:null});writeSave();
       w.insertAdjacentHTML('beforeend','<div class="evostamp">EVOLVED</div>');
       await FX.wait(1300);$('#rays').classList.remove('on');
-      const more=EV.ready(pb);if(more.length)evolutionScreen(more[0]);else afterWeek();
+      const more=evoReady(pb);if(more.length)evolutionScreen(more[0]);else afterWeek();
     };
   });
 }
