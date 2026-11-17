@@ -94,6 +94,8 @@ function battleTeam(team,decks,info){
   const backs=(team.roster||[]).filter(p=>p.pos==='RB'&&available(p)&&!occupied.has(String(p.id))&&String(p.id)!==lineup.off.RB?.id)
     .sort((a,b)=>{const rank=p=>{const i=depth.indexOf(String(p.id));return i<0?Infinity:i};return rank(a)-rank(b)||(b.trueNow||0)-(a.trueNow||0)});
   const backfield=[...(lineup.off.RB?[lineup.off.RB]:[]),...backs.map(p=>toBattlePlayer(p,'RB'))];
+  // Per-player edges from dynasty storylines (info.conds = {playerId: [{v, when, src}]}), labeled like any condition.
+  for(const p of [...Object.values(lineup.off),...Object.values(lineup.def),...backfield])for(const c of info?.conds?.[p.id]||[])if(!p.cond.some(x=>x.src===c.src))p.cond.push({v:Math.max(-1,Math.min(1,Number(c.v)||0)),when:['any','late','money'].includes(c.when)?c.when:'any',src:String(c.src).slice(0,60)});
   const programOn=info?.enabled!==false;
   coach.commandBonus=programOn?staffCommand(team):{off:0,def:0};
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],

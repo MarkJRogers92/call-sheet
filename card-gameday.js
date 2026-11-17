@@ -68,7 +68,8 @@ function normalizeCallSheet(u){
   cs.rewardPacks=(Array.isArray(cs.rewardPacks)?cs.rewardPacks:[]).filter(x=>x&&typeof x==='object'&&typeof x.key==='string').slice(-8)
     .map(x=>({key:x.key.slice(0,60),year:ci(x.year),type:typeof x.type==='string'?x.type.slice(0,20):'reward',title:typeof x.title==='string'?x.title.slice(0,60):'Reward Pack',subtitle:typeof x.subtitle==='string'?x.subtitle.slice(0,160):'',cards:(Array.isArray(x.cards)?x.cards:[]).filter(anyCard).slice(0,6)}))
     .filter(x=>x.cards.length);
-  cs.rewardKeys=(Array.isArray(cs.rewardKeys)?cs.rewardKeys:[]).filter(k=>typeof k==='string').map(k=>k.slice(0,60)).slice(-60);
+  cs.rewardKeys=(Array.isArray(cs.rewardKeys)?cs.rewardKeys:[]).filter(k=>typeof k==='string').map(k=>k.slice(0,60)).slice(-120);
+  if(cs.gradeSnap!==undefined){const g=cs.gradeSnap;cs.gradeSnap=g&&typeof g==='object'&&g.grades&&typeof g.grades==='object'?{year:ci(g.year),grades:Object.fromEntries(Object.entries(g.grades).filter(([k,v])=>k.length<64&&Number.isFinite(Number(v))).slice(0,200).map(([k,v])=>[k,ci(v)]))}:undefined;if(!cs.gradeSnap)delete cs.gradeSnap}
   cs.cardStreak=ci(cs.cardStreak);
   cs.lastWeekNews=(Array.isArray(cs.lastWeekNews)?cs.lastWeekNews:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string').slice(0,60);
 }
@@ -363,7 +364,7 @@ function normalizeCallSheet(u){
       if(breakout){const sg=CS.signatures.specFor(breakout.p,{season:universe.year,earned:sim.cfg.label});if(pb.signatures.length<CS.signatures.SLOTS)CS.signatures.add(pb,sg);else{(pb.reserveSignatures??=[]).push(sg);pb.lastSignatureGame=pb.gamesPlayed;CS.signatures.register(sg)}}
       (cardMeta().moments??=[]).push({year:universe.year,week:sim.week,kind:'reward',text:`${sim.cfg.label}: ${pack.title}${picked?' — '+(CS.packs.cardDef(picked.id)?.name||picked.id)+' added to the collection':''}.`});
       try{addCardCareer(CS.battle.duelTally(sim.b),sim.week)}catch(err){console.error(err)}
-      {const us=sim.b.game.score[sim.cfg.userSide],them=sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];programAwards({won,us,them,postseason:!!sim.postseason,ranks:sim.ranks,oppName:opp?.name})}
+      {const us=sim.b.game.score[sim.cfg.userSide],them=sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];programAwards({won,us,them,postseason:!!sim.postseason,ranks:sim.ranks,oppName:opp?.name,opp})}
       runHook('afterGame',{b:sim.b,userSide:sim.cfg.userSide,me,opp,coached:false});
   }
   const simWeekBase=simWeek;
@@ -420,7 +421,7 @@ function normalizeCallSheet(u){
         const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true}
         try{addCardCareer(p.tally,options.week)}catch(err){console.error(err)}
         const side=String(home.id)===String(selected().id)?'home':'away',us=Number(p.state?.score?.[side])||0,them=Number(p.state?.score?.[side==='home'?'away':'home'])||0;
-        programAwards({won:us>them,us,them,postseason:true,ranks:p.ranks,oppName:p.oppName});
+        programAwards({won:us>them,us,them,postseason:true,ranks:p.ranks,oppName:p.oppName,opp:side==='home'?away:home});
         meta.recordedBattleSeed=p.seed;meta.lastPostseasonGameId=out?.result?.gameId||out?.record?.id||null;delete meta.pendingPostseason;
       }};
     };
@@ -472,7 +473,7 @@ function normalizeCallSheet(u){
   function queueRewardPack(key,pack){
     const meta=cardMeta();meta.rewardPacks??=[];meta.rewardKeys??=[];
     if(meta.rewardKeys.includes(key)||!pack.cards.length)return false;
-    meta.rewardKeys.push(key);meta.rewardKeys=meta.rewardKeys.slice(-60);
+    meta.rewardKeys.push(key);meta.rewardKeys=meta.rewardKeys.slice(-120);
     meta.rewardPacks.push({key,year:universe.year,type:pack.type,title:pack.title,subtitle:pack.subtitle,cards:pack.cards});meta.rewardPacks=meta.rewardPacks.slice(-8);
     rewardMoment(`${pack.title} earned. Open it from the Card Program.`);return true;
   }
@@ -526,7 +527,8 @@ function normalizeCallSheet(u){
   }
   // After any recorded card game (coached or simulated, regular season or postseason).
   // ranks: {opp, me} read before the game was recorded.
-  function programAwards({won,us,them,postseason,ranks,oppName}){
+  function programAwards({won,us,them,postseason,ranks,oppName,opp}){
+    try{nemesisMoments(opp,won)}catch(err){console.error(err)}
     if(!programRewardsOn())return[];
     const meta=cardMeta(),got=[];meta.cardStreak=won?(meta.cardStreak|0)+1:0;
     const upset=won&&ranks&&ranks.opp<=10&&(ranks.me>25||ranks.me-ranks.opp>=15);
@@ -560,6 +562,117 @@ function normalizeCallSheet(u){
     return{ok:true};
   }
   if(typeof document!=='undefined'&&typeof document.addEventListener==='function')document.addEventListener('click',e=>{if(e.target.closest?.('[data-reward-pack]'))openRewardPack()});
+
+  // ============================================================== 6. recruiting and development, in cards
+  // Nemesis recruits, visit pitches, camp auditions, portal arrivals with a card, Players of the Week breakouts,
+  // mentors passing a signature down, and development stamps on player cards. Public data only: archetypes, the
+  // depth chart, recruiting history, awards. Hidden true ratings are never read.
+  const PEOPLE_LINK=registerCardIntegration({id:'people-cards',label:'Recruiting and development in cards',
+    about:'Recruits who chose a rival play up against you, camp auditions settle close position battles, transfers bring a card, Players of the Week break out, mentors pass a signature down, and player cards show development stamps.',
+    hooks:{
+      launch(ctx){if(!peopleOn())return;const side=ctx.userSide==='home'?'away':'home',p=ctx.cfg.program??={home:{enabled:false},away:{enabled:false}};p[side]??={enabled:false};
+        const conds=p[side].conds??={};for(const n of nemesesOn(ctx.opp,ctx.me))conds[n.p.id]=[{v:1,when:'money',src:`Nemesis: chose ${ctx.opp.name} over you`}]},
+      weekTick(ctx){portalCards();potwBreakouts(ctx.week)},
+      offseason(){gradeSnapshot();portalCards();mentorCards()}
+    }});
+  const peopleOn=()=>!!universe?.callSheet&&integrationOn(PEOPLE_LINK);
+  // A nemesis: a player on that roster who had you in his final five, took your offer, and signed elsewhere.
+  function isNemesis(p,team,me){const r=p?.recruitment;return!!r&&String(r.schoolId)===String(team.id)&&String(team.id)!==String(me.id)&&(r.offerSchoolIds||[]).map(String).includes(String(me.id))&&(r.topFiveSchoolIds||[]).map(String).includes(String(me.id))}
+  function nemesesOn(team,me){
+    if(!team||!me)return[];const lu=CS.adapter.lineupFromTeam(team).lineup,ids=new Set([...Object.values(lu.off),...Object.values(lu.def)].map(x=>String(x.id)));
+    return(team.roster||[]).filter(p=>ids.has(String(p.id))&&isNemesis(p,team,me)).map(p=>({p}));
+  }
+  function nemesisMoments(opp,won){
+    if(!won||!opp||!peopleOn())return;const meta=cardMeta();meta.rewardKeys??=[];
+    for(const {p} of nemesesOn(opp,selected())){const key=`nemesis:${universe.year}:${p.id}`;if(meta.rewardKeys.includes(key))continue;meta.rewardKeys.push(key);
+      rewardMoment(`Should've signed with us: you beat ${p.name}, who chose ${opp.name} over you.`)}
+  }
+  // Transfers who arrive bring one card from their old program's playbook (or one that suits their position).
+  function portalCards(){
+    const me=selected();if(!peopleOn()||!me)return;const meta=cardMeta(),pb=userPlaybook();meta.rewardKeys??=[];
+    for(const p of me.roster||[]){
+      const h=(p.transferHistory||[]).filter(x=>String(x.toSchoolId)===String(me.id)&&Number(x.season)>=universe.year-1).at(-1);if(!h)continue;
+      const key=`portal:${p.id}:${h.season}`;if(meta.rewardKeys.includes(key))continue;meta.rewardKeys.push(key);
+      const off=Object.values(CS.data.OFF_ROLES).includes(p.pos),side=off?'off':'def',theirs=meta.ai?.[h.fromSchoolId],taken=takenLegendaries();
+      let id=null;
+      if(theirs){const pool=[...theirs[side].wrinkles,...theirs[side].tactics].filter(x=>{const c=CS.packs.cardDef(x);return c&&!c.signature&&!(CS.data.rarityOf(x)==='legendary'&&taken.includes(x))});
+        if(pool.length)id=pool[Math.floor(DynastyRng.create(`portal:${key}`).next()*pool.length)]}
+      if(!id)id=CS.packs.rewardPack(pb,{seed:`portal:${key}`,weights:POS_WEIGHTS[p.pos]||{},n:1,worldTaken:taken}).cards[0];
+      if(!id)continue;CS.packs.grantCard(pb,id,{kind:'portal',why:`${p.name} from ${h.fromSchool||'the portal'}`});
+      rewardMoment(`${p.name} arrived from ${h.fromSchool||'the portal'} and brought ${CS.packs.cardDef(id).name} with him.`);
+    }
+    meta.rewardKeys=meta.rewardKeys.slice(-120);
+  }
+  function roleFor(p,team){const lu=CS.adapter.lineupFromTeam(team).lineup;return[...Object.entries(lu.off),...Object.entries(lu.def)].find(([,bp])=>String(bp.id)===String(p.id))?.[0]||battleRoleOf(p,team)?.role||null}
+  function giveSignature(p,team,info,why){
+    const pb=userPlaybook(),role=roleFor(p,team);if(!role)return null;
+    const spec=CS.signatures.specFor(CS.adapter.toBattlePlayer(p,role),{season:universe.year,...info});
+    pb.signatures??=[];pb.reserveSignatures??=[];
+    (pb.signatures.length<CS.signatures.SLOTS?pb.signatures:pb.reserveSignatures).push(spec);CS.signatures.register(spec);
+    (pb.history??=[]).push({id:spec.id,kind:info.legacy?'legacy':'signature',side:spec.side,why});return spec;
+  }
+  const hasCard=(pb,id)=>[...(pb.signatures||[]),...(pb.reserveSignatures||[])].some(x=>String(x.playerId)===String(id));
+  // Players of the Week on your roster break out with a signature card.
+  function potwBreakouts(week){
+    const me=selected(),rows=universe.weeklyHonors?.year===universe.year?universe.weeklyHonors.rows||[]:[];if(!peopleOn()||!me||!rows.length)return;
+    const meta=cardMeta(),pb=userPlaybook();meta.rewardKeys??=[];
+    for(const row of rows)for(const w of [row.off,row.def]){
+      if(!w||String(w.teamId)!==String(me.id))continue;const key=`potw:${universe.year}:${row.week}:${w.playerId}`;if(meta.rewardKeys.includes(key))continue;meta.rewardKeys.push(key);
+      const p=(me.roster||[]).find(x=>String(x.id)===String(w.playerId));if(!p||hasCard(pb,p.id))continue;
+      if(giveSignature(p,me,{earned:`Player of the Week ${row.week}`},'Player of the Week'))rewardMoment(`${p.name} was Player of the Week and broke out with a signature card.`);
+    }
+  }
+  // A graduating signature player hands a fainter version to the starter who replaces him at his position.
+  function mentorCards(){
+    const me=selected();if(!peopleOn()||!me)return;const pb=userPlaybook();pb.legacies??=[];
+    const lu=CS.adapter.lineupFromTeam(me).lineup;
+    for(const r of (pb.ringOfHonor||[]).filter(x=>Number(x.year)>=universe.year-1)){
+      const id=`mentor:${r.playerId}`;if(pb.legacies.includes(id))continue;
+      const slot=[...Object.entries(lu.off),...Object.entries(lu.def)].find(([,bp])=>bp.pos===r.pos&&!hasCard(pb,bp.id)&&String(bp.id)!==String(r.playerId));
+      const heir=slot&&(me.roster||[]).find(p=>String(p.id)===String(slot[1].id));if(!heir)continue;
+      pb.legacies.push(id);
+      const legacy={playerId:String(r.playerId),name:String(r.name||'').slice(0,60),last:String(r.last||CS.signatures.lastName(r.name||'Mentor')),number:r.number??null};
+      if(giveSignature(heir,me,{legacy,earned:`Mentored by ${legacy.name}`},'Mentor'))rewardMoment(`${legacy.name} graduated and passed his card down: ${heir.name} carries a Legacy signature.`);
+    }
+  }
+  // Development stamps: card OVR when the season ended, compared on player cards after camp.
+  function gradeSnapshot(){
+    const me=selected();if(!peopleOn()||!me)return;const meta=cardMeta();
+    if(meta.gradeSnap?.year===universe.year)return;
+    const grades={};for(const p of me.roster||[]){const r=battleRoleOf(p,me);if(r)grades[p.id]=CS.adapter.toBattlePlayer(p,r.role).ovr}
+    meta.gradeSnap={year:universe.year,grades};
+  }
+  function developmentStamp(p,t,ovr){
+    const snap=universe.callSheet?.gradeSnap;if(!snap||t?.id!==selected()?.id||!(snap.year===universe.year||snap.year===universe.year-1))return null;
+    const was=Number(snap.grades?.[p.id]);return Number.isFinite(was)&&was!==ovr?{was,now:ovr,year:snap.year}:null;
+  }
+  // Camp auditions: in a close position battle, the candidates trade card duels on their role's assignments.
+  function campAudition(battle,team){
+    const ids=battle.candidates.slice(0,2).map(c=>c.id),players=ids.map(id=>(team.roster||[]).find(p=>String(p.id)===String(id)));if(players.some(x=>!x))return null;
+    const role=Object.keys(CS.adapter.ROLE_MAP).find(r=>CS.adapter.ROLE_MAP[r]===battle.roleId)||battleRoleOf(players[0],team)?.role;if(!role)return null;
+    const duels=Object.values({...CS.data.PLAYS,...CS.data.CALLS}).flatMap(c=>Object.values(c.duels||{})).filter(d=>(d.off||[]).includes(role)||(d.def||[]).includes(role)).slice(0,24);
+    if(!duels.length)return null;
+    const bps=players.map(p=>CS.adapter.toBattlePlayer(p,role)),rng=DynastyRng.create(`audition:${universe.year}:${battle.phase}:${battle.roleId}:${ids.join(':')}`),wins=[0,0];
+    for(let i=0;i<9;i++){const d=duels[i%duels.length],traits=(d.off||[]).includes(role)?d.ot:d.dt,g=bp=>traits.reduce((n,k)=>n+(bp.traits[k]||50),0)/traits.length;
+      const m=Math.max(-3,Math.min(3,Math.round((g(bps[0])-g(bps[1]))/6))),chance=CS.data.WIN_CHANCE[String(m)];wins[rng.next()<chance?0:1]++}
+    const w=wins[0]>=wins[1]?0:1;return{winnerId:ids[w],winner:players[w].name,score:`${wins[w]}–${wins[1-w]}`,loser:players[1-w].name};
+  }
+  if(typeof buildCampBattles==='function'){
+    const buildCampBattlesBase=buildCampBattles;
+    buildCampBattles=function buildCampBattlesWithCards(t,phase){
+      const out=buildCampBattlesBase(t,phase);if(!peopleOn()||t?.id!==selected()?.id)return out;
+      for(const b of out){try{const a=campAudition(b,t);if(!a)continue;b.cardAudition=a;
+        // Only a close battle (gap 5 or less) can swing on the audition, and only between the top two.
+        if(b.gap<=5&&a.winnerId!==b.recommended&&b.candidates.slice(0,2).some(c=>c.id===a.winnerId)){b.recommended=a.winnerId;b.auditionDecided=true;
+          const meta=cardMeta(),key=`audition:${universe.year}:${b.phase}:${b.roleId}`;meta.rewardKeys??=[];if(!meta.rewardKeys.includes(key)){meta.rewardKeys.push(key);rewardMoment(`${b.label||b.roleId} camp battle: ${a.winner} won the card audition ${a.score} over ${a.loser} and earns the staff's recommendation.`)}}}catch(err){console.error(err)}}
+      return out;
+    };
+  }
+  // Visit pitch: the three cards a recruit would star in, from his archetype's strengths.
+  function visitPitchHTML(r,u){
+    const fit=recruitingFit(u,r);if(!fit.plays.length)return'';
+    return`<p class="cs-pcard-note"><b>Visit pitch:</b> show him ${escH(fit.plays.slice(0,3).join(', '))} — the cards in your playbook built on his strengths.</p>`;
+  }
 
   // ============================================================== 4. the Card Program panel and settings
   // A panel on This Week, under the next-matchup card: your playbook at a glance, what other programs pulled and
@@ -704,6 +817,7 @@ function normalizeCallSheet(u){
     const development=t.id===selected()?.id?CS.program.developmentImpact(p,r.role,cs?.playbook):null;
     const duels=duelsForRole(r.role),pct=career&&career.w+career.l?Math.round(career.w*100/(career.w+career.l)):null;
     const when={late:'4th quarter',money:'3rd & 4th down',any:'every snap'};
+    const stamp=peopleOn()?developmentStamp(p,t,bp.ovr):null,nemesis=peopleOn()&&selected()&&t.id!==selected().id&&isNemesis(p,t,selected());
     return`<section class="cs-pcard${sig?' sig':''}" id="playerBattleCard" aria-label="Battle card">
       <div class="cs-pcard-face" style="--tc:${escH(t?.primary||'#2a3550')};--tc2:${escH(t?.secondary||'#e8e2d0')}">
         <div class="cs-pcard-top"><span class="cs-pcard-ovr">${bp.ovr}</span><span class="cs-pcard-num">#${escH(bp.number)}</span></div>
@@ -716,6 +830,8 @@ function normalizeCallSheet(u){
         <h3>${escH(ROLE_NAMES[r.role]||r.role)} · ${escH(depth)}</h3>
         ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
         ${development?`<p class="cs-pcard-note"><b>${escH(development.phase)} ${development.year}: ${escH(development.trait)} +${development.gain}</b>${development.plays.length?` · Helps ${escH(development.plays.join(', '))}`:' · Applied through his current battle traits'}. No extra bonus is stacked.</p>`:''}
+        ${stamp?`<p class="cs-pcard-note"><b>Development stamp: card OVR ${stamp.was} → ${stamp.now}</b> since the ${stamp.year} season ended.</p>`:''}
+        ${nemesis?`<p class="cs-pcard-note"><b>NEMESIS:</b> he had you in his final five and chose ${escH(t.name)}. He plays up against you on 3rd and 4th down.</p>`:''}
         ${duels.length?`<p class="cs-pcard-duels">Fights in: ${duels.map(x=>`<span>${escH(x)}</span>`).join('')}</p>`:''}
         <div class="cs-pcard-traits">${D.TRAITS.map(k=>`<div class="${strong.has(k)?'key':''}"><span>${k==='iq'?'IQ':escH(k)}</span><i style="--v:${Math.max(0,Math.min(100,bp.traits[k]))}%"></i><b>${Math.round(bp.traits[k]/10)}</b></div>`).join('')}</div>
         ${bp.cond.length?`<div class="cs-pcard-cond">${bp.cond.map(c=>`<span class="${c.v>0?'up':'down'}">${c.v>0?'+1':'−1'} ${escH(c.src)} <small>${when[c.when]}</small></span>`).join('')}</div>`:''}
@@ -828,6 +944,7 @@ function normalizeCallSheet(u){
       <div class="cs-pcard-body">
         <span class="eyebrow">PROSPECT CARD · SCOUTING ${Math.round(conf)}%</span>
         <h3>Projects as: ${escH(ROLE_NAMES[role]||role)}</h3>
+        ${peopleOn()?visitPitchHTML(r,u):''}
         ${fit.plays.length?`<p class="cs-pcard-note"><b>Fits your active playbook:</b> ${escH(fit.plays.join(', '))}${fit.bonus?` · +${fit.bonus} to your recruiting pitch`:""}. Based on his archetype, not hidden ratings.</p>`:''}
         ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
         ${duels.length?`<p class="cs-pcard-duels">Fights in: ${duels.map(x=>`<span>${escH(x)}</span>`).join('')}</p>`:''}
@@ -867,7 +984,7 @@ function normalizeCallSheet(u){
       if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key)}
       try{const g=findUserGame(),week=g?.week,me=selected(),userSide=g&&g.home===me.name?'home':'away',opp=g?T(userSide==='home'?g.away:g.home):null,ranks=rankSnapshot(opp);
         const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
-        try{const us=Number(state?.score?.[userSide])||0,them=Number(state?.score?.[userSide==='home'?'away':'home'])||0;programAwards({won:us>them,us,them,postseason:false,ranks,oppName:opp?.name})}catch(err){console.error(err)}
+        try{const us=Number(state?.score?.[userSide])||0,them=Number(state?.score?.[userSide==='home'?'away':'home'])||0;programAwards({won:us>them,us,them,postseason:false,ranks,oppName:opp?.name,opp})}catch(err){console.error(err)}
         return{ok:true,result:out.result}}
       catch(err){console.error(err);return{ok:false,error:err.message||String(err)}}
     },
@@ -894,6 +1011,6 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards},register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();
