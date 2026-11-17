@@ -74,6 +74,8 @@ function bracketRole(offLineup){
 function buildSnap(ctx){
   const {off,def,play,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
   const sit=ctx.situation||{down:1,distance:10,field:25};
+  // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). Used by effects, edges and matchups.
+  const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
   const brRole=dt.has('bracket')?(ctx.bracketRole||bracketRole(off)):null;
   const flags={},origin=rootPlay(play),abilityContext={play:{...play,id:origin},call,offTactics:[...ot],defTactics:[...dt],situation:sit};
   const duels=['G','K','F'].map(key=>{
@@ -119,13 +121,12 @@ function buildSnap(ctx){
     if(dt.has('press')&&d.release){add(-1,'Press');flags.press=true}
     if(dt.has('identify_protection')&&d.protect&&call.pressure>0)add(-1,'Aimed pressure');
     // Generic card effects (new tactics, signature cards, calls with duel mods). Each names which duels it touches.
-    const hits=e=>(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
+    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
     for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
     for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
     // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.
-    // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). play: one card (or anything evolved/upgraded from it).
-    const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
-    const edgeHits=e=>hits(e)&&whenOn(e.when)&&(!e.play||[play.id,play.evolvedFrom,play.upgradeOf].includes(e.play))&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
+    // play: one card (or anything evolved/upgraded from it).
+    const edgeHits=e=>hits(e)&&(!e.play||[play.id,play.evolvedFrom,play.upgradeOf].includes(e.play))&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
     for(const e of ctx.offEdges||[])if(edgeHits(e))add(e.v,e.src);
     for(const e of ctx.defEdges||[])if(edgeHits(e))add(-e.v,e.src);
     for(const e of play.effects||[])if(hits(e))add(e.v,e.src||play.name);
@@ -138,9 +139,11 @@ function buildSnap(ctx){
     // Data-driven matchups on newer cards.
     for(const m of play.matchups||[]){
       if(m.duel!==key)continue;
-      const hit={pressure:call.pressure>0,shell1:call.shell===1,shell2:call.shell===2,man:call.coverage==='man',zone:call.coverage==='zone',loaded:call.box==='loaded',light:call.box==='light'}[m.when];
+      const hit={pressure:call.pressure>0,shell1:call.shell===1,shell2:call.shell===2,man:call.coverage==='man',zone:call.coverage==='zone',loaded:call.box==='loaded',light:call.box==='light'}[m.when]??whenOn(m.when);
       if(hit)add(m.v,m.src);
     }
+    // Momentum: the offense that just took the ball away gets one snap's push at the point of attack.
+    if(ctx.momentum&&key==='G')add(1,'Momentum: takeaway');
     // Combos and hot players.
     if(ctx.combo&&ctx.combo.duel===key)add(ctx.combo.v,`COMBO: ${ctx.combo.name}`);
     if(ctx.fire){
@@ -176,7 +179,18 @@ function buildSnap(ctx){
   if(D.SIGNATURES[off.QB?.archetype]?.flag==='scramble')flags.scramble=true;
   if(play.carrier==='RB'&&D.SIGNATURES[off.RB?.archetype]?.flag==='burner')flags.burner=true;
   if(defFlag(def,'ballHawk'))flags.ballHawk=true;
-  return{play,call,duels,flags,offTactics:[...ot],defTactics:[...dt],bracketRole:brRole};
+  // Progression read: if the first read falls incomplete, the QB looks for the back or the tight end (whichever has the
+  // better matchup on his linebacker). Zone and all-out pressure leave the checkdown open; max protect keeps a man in.
+  let checkdown=null;
+  if(play.pass&&!play.trick&&!play.signature&&!play.drill&&ctx.read!=='primary'){
+    for(const [r,dr] of [['RB','WILL'],['TE','MIKE']]){
+      const o=off[r],dd=def[dr];if(r===play.target||!o||!dd)continue;
+      const og=((o.traits?.speed??50)+(o.traits?.technique??50))/20,dg=((dd.traits?.speed??50)+(dd.traits?.iq??50))/20;
+      const m=clamp(Math.round(og-dg)+(call.coverage==='zone'?1:0)+(call.pressure>=2?1:0)-(ot.has('max_protect')?1:0),-3,3),p=D.WIN_CHANCE[String(m)]*.6;
+      if(!checkdown||p>checkdown.p)checkdown={role:r,name:o.name,defRole:dr,p,margin:m,yards:4+Math.max(0,m)};
+    }
+  }
+  return{play,call,duels,flags,checkdown,offTactics:[...ot],defTactics:[...dt],bracketRole:brRole};
 }
 
 function categoryProbs(snap){
@@ -205,7 +219,9 @@ function evaluate(snap,situation){
       const pr=pc*r.w/wsum;let mean=r.yards[0]+(r.tail?r.tail*14:0);if(snap.flags.burner&&cat==='explosive')mean*=1.25;
       const sd=Math.max(.8,r.yards[1]+(r.tail?6:0));
       const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
-      to+=pr*(intP+(r.kind==='sack'?.07:0)+(r.kind==='run'&&(cat==='fail'||cat==='short')?.022:0));
+      const cd=r.kind==='inc'&&snap.checkdown?snap.checkdown.p:0;
+      if(cd){yards+=pr*cd*snap.checkdown.yards;first+=pr*cd*(1-phi((need-.5-snap.checkdown.yards)/1.5))}
+      to+=pr*((1-cd)*intP+(r.kind==='sack'?.07:0)+(r.kind==='run'&&(cat==='fail'||cat==='short')?.022:0));
       if(r.kind==='sack')sack+=pr;
       yards+=pr*(r.kind==='inc'?0:mean);
       if(r.kind!=='inc')first+=pr*(1-phi((need-.5-mean)/sd));
@@ -230,6 +246,8 @@ function resolve(snap,rng,situation){
   if(kind==='scramble')yards=Math.max(yards,2+rng.next()*5);
   const intRoll=rng.next(),fumRoll=rng.next(),clockRoll=rng.next();
   yards=Math.round(yards);
+  let checkdown=null;
+  if(kind==='inc'&&snap.checkdown&&rng.next()<snap.checkdown.p){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
   const play=snap.play,out={category:cat,kind,wins,duels:snap.duels.map((d,i)=>({key:d.key,label:d.label,won:wins[i],margin:d.margin,offNames:d.offNames,defNames:d.defNames}))};
   if(kind==='inc'){
     const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
@@ -243,15 +261,17 @@ function resolve(snap,rng,situation){
     out.clock=Math.round(23+clockRoll*11);
     if(kind==='run'&&(cat==='fail'||cat==='short')&&fumRoll<.022)out.turnover='fumble';
   }
+  if(play.clockStop&&!out.turnover)out.clock=Math.min(out.clock,play.clockStop);
+  if(checkdown)out.checkdown={role:checkdown.role,name:checkdown.name};
   out.engineKind=play.pass&&kind!=='scramble'?'pass':'rush';
   // Who did it, for the box score.
   const losing=!wins[0]?0:(!wins[1]?1:2);
   out.participants={
     passer:play.pass?'QB':null,
-    target:play.pass&&kind!=='sack'&&kind!=='scramble'?(cat==='short'&&(snap.flags.outlet||snap.flags.checkRelease)?(snap.flags.outlet?'RB':'TE'):play.target):null,
+    target:checkdown?checkdown.role:play.pass&&kind!=='sack'&&kind!=='scramble'?(cat==='short'&&(snap.flags.outlet||snap.flags.checkRelease)?(snap.flags.outlet?'RB':'TE'):play.target):null,
     carrier:!play.pass?play.carrier:(kind==='scramble'?'QB':null),
     sacker:kind==='sack'?snap.duels[0].defRoles[0]:null,
-    defender:snap.duels[kind==='inc'||kind==='sack'?Math.min(losing,2):Math.min(2,losing)].defRoles[0]
+    defender:checkdown?checkdown.defRole:snap.duels[kind==='inc'||kind==='sack'?Math.min(losing,2):Math.min(2,losing)].defRoles[0]
   };
   return out;
 }

@@ -27,7 +27,7 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
   pb.packsOpened=int(pb.packsOpened,0,99999,0);pb.gamesPlayed=int(pb.gamesPlayed,0,99999,0);
   if(pb.lastSignatureGame!==undefined)pb.lastSignatureGame=int(pb.lastSignatureGame,0,99999,0);
   if(pb.recordYear!==undefined)pb.recordYear=int(pb.recordYear,0,99999,0);
-  pb.programCards=[...new Set(ids(pb.programCards,60))].filter(id=>CS.data?.PROGRAM_CARDS?.includes(id));pb.legacies=[...new Set(ids(pb.legacies,60))];
+  pb.borrowed=objs(pb.borrowed,20).filter(x=>typeof x.from==='string'&&Number.isFinite(Number(x.year))).map(x=>({id:x.id,from:x.from.slice(0,60),year:Math.round(Number(x.year))}));pb.programCards=[...new Set(ids(pb.programCards,60))].filter(id=>CS.data?.PROGRAM_CARDS?.includes(id));pb.legacies=[...new Set(ids(pb.legacies,60))];
   pb.mastery=intMap(pb.mastery);pb.evolved=strMap(pb.evolved);pb.history=objs(pb.history,300);
   const validSignature=x=>{
     if(!CS?.signatures||!['string','number'].includes(typeof x.playerId)||x.id!==`${x.legacy?'leg':'sig'}_${x.playerId}`||(x.legacy&&(typeof x.legacy!=='object'||typeof x.legacy.name!=='string'||typeof x.legacy.last!=='string'))||typeof x.name!=='string'||typeof x.last!=='string')return false;
@@ -465,7 +465,7 @@ function normalizeCallSheet(u){
   // Everything here reads Dynasty Lab's own records (commitments, staff, fan support, rankings, retired numbers).
   const PROGRAM_REWARDS=registerCardIntegration({id:'program-cards',label:'Earn cards from your program',
     about:'Signing day and booster packs, coaching-tree cards from your coordinators, upset and milestone trick cards, and Legacy signatures for retired numbers.',
-    hooks:{weekTick(ctx){boosterPack(ctx.year,ctx.week);schemeCards()},offseason(){schemeCards();signingPack();legacyCards()}}});
+    hooks:{weekTick(ctx){boosterPack(ctx.year,ctx.week);schemeCards()},offseason(){returnBorrowed();schemeCards();signingPack();legacyCards()}}});
   const programRewardsOn=()=>!!universe?.callSheet&&integrationOn(PROGRAM_REWARDS);
   function rewardMoment(text){const meta=cardMeta();meta.moments.push({year:universe.year,week:universe.week|0,kind:'reward',text:text.slice(0,200)});meta.moments=meta.moments.slice(-60)}
   // Once-only program cards (tracked in pb.programCards).
@@ -541,7 +541,32 @@ function normalizeCallSheet(u){
     if(meta.cardStreak>=3&&grantProgramCard('flea_flicker','three straight wins'))got.push('flea_flicker');
     if(won&&them<=7&&grantProgramCard('bluff_zero',`held a winner to ${them} points`))got.push('bluff_zero');
     if(won&&postseason&&grantProgramCard('jet_reverse','a postseason win'))got.push('jet_reverse');
+    const borrowed=won&&opp?borrowRivalCard(opp):null;if(borrowed)got.push(borrowed);
     return got;
+  }
+  // Rivalry stakes: beat your protected rival and hold one of their cards until next season.
+  function borrowRivalCard(opp){
+    const me=selected(),meta=cardMeta();if(!me||!(me.protectedRivalIds||[]).map(String).includes(String(opp.id)))return null;
+    const key=`rival:${universe.year}:${opp.id}`;meta.rewardKeys??=[];if(meta.rewardKeys.includes(key))return null;
+    const pb=userPlaybook(),theirs=meta.ai?.[opp.id],taken=takenLegendaries();
+    const pool=theirs?['off','def'].flatMap(side=>[...theirs[side].wrinkles,...theirs[side].tactics]).filter(id=>{const c=CS.packs.cardDef(id);return c&&!c.signature&&CS.data.rarityOf(id)!=='legendary'&&!c.evolvedFrom}):[];
+    const id=pool.length?pool[Math.floor(DynastyRng.create(key).next()*pool.length)]:CS.packs.rewardPack(pb,{seed:key,n:1,worldTaken:taken}).cards[0];
+    if(!id)return null;meta.rewardKeys.push(key);
+    CS.packs.grantCard(pb,id,{kind:'borrowed',why:opp.name});(pb.borrowed??=[]).push({id,from:String(opp.name).slice(0,60),year:universe.year});
+    rewardMoment(`Rivalry won: you hold ${opp.name}'s ${CS.packs.cardDef(id).name} until next season.`);return id;
+  }
+  // Borrowed cards go back after the season: one copy, from wherever it sits (a base slot gets a stored play back).
+  function returnBorrowed(){
+    const pb=universe.callSheet?.playbook;if(!pb?.borrowed?.length)return;
+    pb.borrowed=pb.borrowed.filter(x=>{
+      if(x.year>=universe.year)return true;
+      const c=CS.packs.cardDef(x.id),side=c?.side;if(!side){return false}
+      const piles=[pb[side].wrinkles,pb[side].tactics,pb.reserve?.[side]?.wrinkles||[],pb.reserve?.[side]?.tactics||[]],pile=piles.find(a=>a.includes(x.id));
+      if(pile)pile.splice(pile.indexOf(x.id),1);
+      else{const i=pb[side].base.indexOf(x.id);if(i>=0){const table=side==='off'?CS.data.PLAYS:CS.data.CALLS,res=pb.reserve?.[side]?.wrinkles||[],sub=[...pb[side].wrinkles,...res].find(id=>table[id]&&!table[id].trick&&!table[id].signature&&!pb[side].base.includes(id))||CS.data.DEFAULT_DECKS[side].base.find(id=>!pb[side].base.includes(id));
+        if(sub){const from=pb[side].wrinkles.includes(sub)?pb[side].wrinkles:res.includes(sub)?res:null;if(from)from.splice(from.indexOf(sub),1);pb[side].base[i]=sub}}}
+      rewardMoment(`${c.name} went back to ${x.from} for the new season.`);return false;
+    });
   }
   const rankSnapshot=opp=>({opp:Number(opp?.rank)||99,me:Number(selected()?.rank)||99});
   // The Card Program's reward packs: pick one card for the collection.
@@ -1070,6 +1095,6 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,returnBorrowed,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();

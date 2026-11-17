@@ -32,7 +32,7 @@ function registerSignatures(){SG.registerAll(save.playbook);for(const r of save.
 registerSignatures();
 
 // ================================================================ state
-let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]};
+let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode='auto';
 const userSide=()=>b.user;
 const teamOf=s=>b.teams[s];
 const oppId=()=>W.opponentOf(save.world);
@@ -308,7 +308,7 @@ function renderSide(){
   const ur=DYN?DYN.record:(save.world.userRecord||pb.record);
   $('#side').innerHTML=backfieldHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
    <div class="mini">vs ${esc(teamOf('away').name)} · ${esc(teamOf('away').coach.name)}</div>
-   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='moments'?'key moments':'all'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
+   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='moments'?'key moments':'all'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
   const backfield=$('#backfield');if(backfield)backfield.onchange=()=>{
     if(busy)return;
     try{req=B.setBackfield(b,req.side,backfield.value);writeSave();sel={play:null,tac:[]};err='';hideTip();const f=formation(sitNow());if(f)ensureDots(f);refresh()}catch(e){err=e.message;renderHand()}
@@ -317,6 +317,7 @@ function renderSide(){
   $('#bFast').onclick=()=>{save.settings.fast=!save.settings.fast;FX.speed=save.settings.fast?.45:1;writeSave();renderSide()};
   $('#bSound').onclick=()=>{save.settings.sound=!save.settings.sound;S.on=save.settings.sound;writeSave();renderSide()};
   $('#bReplay').onclick=()=>{save.settings.replays=save.settings.replays==='moments'?'all':'moments';writeSave();renderSide()};
+  $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';renderSide()};
   $('#bSim').onclick=()=>{if(busy)return;b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
 }
 
@@ -410,7 +411,7 @@ function snap(){
   if(busy||!sel.play)return;
   const tactics=sel.tac.map(i=>req.options.tactics.find(t=>t.slot===i).id);
   if(selCost()>req.options.command){err='Not enough Command.';S.error();renderHand();return}
-  S.init();go({type:'call',play:sel.play,tactics});
+  S.init();go({type:'call',play:sel.play,tactics,...(readMode==='primary'?{read:'primary'}:{})});
 }
 function refresh(){renderLook();renderHand();renderSide()}
 

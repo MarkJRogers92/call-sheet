@@ -190,9 +190,12 @@ function offFamilyWeights(b,revealedFamily){
 const REP_PLAYS={run:['inside_zone','outside_zone','power'],quick:['quick_slant','stick'],deep:['deep_cross','vertical_shot'],constraint:['pa_boot','screen']};
 
 // ---------------------------------------------------------------- legal options
+// The two-minute drill: the last two minutes of each half. Drill cards are free and join every offense's options.
+function drillOn(b){const g=b.game;return(g.period===2||g.period===4)&&Number(g.clock)<=120&&!g.ot}
+const freeCard=(b,side,role,id)=>b.decks[side][role].base.includes(id)||(role==='off'&&(D.DRILL_CARDS||[]).includes(id)&&drillOn(b));
 function offOptions(b,side){
   const hand=b.hands[side],team=b.teams[side],lineup=team.lineup.off;
-  const plays=[...b.decks[side].off.base.map(id=>({id,base:true})),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
+  const plays=[...b.decks[side].off.base.map(id=>({id,base:true})),...(drillOn(b)?(D.DRILL_CARDS||[]).map(id=>({id,base:true,drill:true})):[]),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
     .map(o=>({...o,card:D.PLAYS[o.id],cost:costOf(b,side,D.PLAYS[o.id]),blocked:R.playBlocked(D.PLAYS[o.id],lineup)}));
   const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])}));
   return{plays,tactics,command:hand.command};
@@ -286,7 +289,7 @@ function payAndRemove(b,side,kind,id){
   const cost=costOf(b,side,card);if(cost>hand.command)throw new Error(`Not enough Command for ${card.name} (${cost} > ${hand.command}).`);
   if(kind==='tactic'){const i=hand.tactics.indexOf(id);if(i<0)throw new Error(`${card.name} is not in hand.`);hand.tactics.splice(i,1);b.piles[side][hand.role].tactic.discard.push(id)}
   else{
-    const base=b.decks[side][hand.role].base.includes(id);
+    const base=freeCard(b,side,hand.role,id);
     if(!base){const i=hand.wrinkles.indexOf(id);if(i<0)throw new Error(`${card.name} is not on your call sheet.`);hand.wrinkles.splice(i,1);
       // Trick plays are exhausted: once per game.
       if(card.trick)(b.exhausted[side]??=[]).push(id);else b.piles[side][hand.role].wrinkle.discard.push(id)}
@@ -337,10 +340,10 @@ function commit(b,side,choice){
   }
   const total=costOf(b,side,card)+tactics.reduce((s,id)=>s+costOf(b,side,D.TACTICS[id]),0);
   if(total>hand.command)throw new Error(`That costs ${total} Command; you have ${hand.command}.`);
-  if(!b.decks[side][role].base.includes(choice.play)&&!hand.wrinkles.includes(choice.play))throw new Error('That play is not in hand.');
+  if(!freeCard(b,side,role,choice.play)&&!hand.wrinkles.includes(choice.play))throw new Error('That play is not in hand.');
   if(tactics.some(id=>!hand.tactics.includes(id)))throw new Error('That tactic is not in hand.');
   payAndRemove(b,side,'play',choice.play);for(const id of tactics)payAndRemove(b,side,'tactic',id);
-  return{play:choice.play,tactics};
+  return{play:choice.play,tactics,...(role==='off'&&choice.read==='primary'?{read:'primary'}:{})};
 }
 
 // ---------------------------------------------------------------- the loop
@@ -518,7 +521,10 @@ function resolveSnap(b){
   const dkey=`${g.drive}:${off}`;if(b.drive.key!==dkey)b.drive={key:dkey,fams:[],firsts:0};
   const fams=b.drive.fams,combo=comboFor(b,play);
   const hurried=s.off.tactics.includes('hurry_up')&&s.def.tactics.length>0;
-  const snap=R.buildSnap({weather:b.weather,...edgesFor(b,off),off:b.teams[off].lineup.off,def:b.teams[def].lineup.def,play,call,offTactics:s.off.tactics,defTactics:hurried?[]:s.def.tactics,situation:sit,lean,heat,motionConfirmed:s.motionConfirmed,...knownEffects(b,play)});
+  // Coordinators skip the checkdown on long 3rd and 4th downs; the person chooses (Auto or Primary only).
+  const read=s.off.read||(s.userCalled&&isUser(b,off)?'auto':sit.down>=3&&sit.distance>=8?'primary':'auto');
+  const momentum=b.momentum?.side===off&&b.momentum.left>0;
+  const snap=R.buildSnap({weather:b.weather,...edgesFor(b,off),off:b.teams[off].lineup.off,def:b.teams[def].lineup.def,play,call,offTactics:s.off.tactics,defTactics:hurried?[]:s.def.tactics,situation:sit,lean,heat,motionConfirmed:s.motionConfirmed,read,momentum,...knownEffects(b,play)});
   b.telemetry.snaps++;b.seriesSnap++;
   const lineKey=`${play.id}${s.off.tactics.length?'+'+[...s.off.tactics].sort().join('+'):''}`;b.telemetry.lineCounts[lineKey]=(b.telemetry.lineCounts[lineKey]||0)+1;
   // Tendencies move whether or not a flag flies.
@@ -533,6 +539,8 @@ function resolveSnap(b){
     result.penalty={kind:pen.kind,label:pen.spec.label,against};result.text=`Flag: ${pen.spec.label} on ${b.teams[against].short}.`;
   }else{
     const out=withRng(b,rng=>R.resolve(snap,rng,sit));
+    if(b.momentum?.side===off)b.momentum.left=0;
+    if(out.turnover)b.momentum={side:def,left:1};
     Object.assign(result,{category:out.category,kind:out.kind,yards:out.yards,turnover:out.turnover||null,completed:out.completed,duelResults:out.duels,participants:out.participants});
     const before={down:g.down,distance:g.distance,field:g.fieldPosition,score:{...g.score}};
     const evStart=g.events.length;
@@ -590,7 +598,9 @@ function storyLine(b,off,def,play,out,before){
   let what;
   if(out.turnover==='interception')what=`${nm('QB')} intercepted by ${dn(P.defender)}`;
   else if(out.kind==='sack')what=`${nm('QB')} sacked by ${dn(P.sacker)}, ${out.yards}`+(out.turnover?' — fumble, recovered by the defense':'');
+  else if(play.id==='spike')what=`${nm('QB')} spikes it to stop the clock`;
   else if(out.kind==='inc')what=`${nm('QB')} incomplete to ${nm(P.target)}`;
+  else if(out.checkdown)what=`${nm('QB')} checks down to ${nm(P.target)} for ${out.yards}`;
   else if(out.kind==='catch')what=`${nm('QB')} to ${nm(P.target)} for ${out.yards}`;
   else what=`${nm(P.carrier)} ${out.kind==='scramble'?'scrambles':'runs'} for ${out.yards}`+(out.turnover?' — fumble, lost':'');
   return`${play.name}: ${what}. ${why}`;

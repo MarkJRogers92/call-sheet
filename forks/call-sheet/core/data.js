@@ -453,10 +453,51 @@ Object.assign(TACTICS,{
 });
 Object.assign(RARITY,{counter_trey:'rare',buck_sweep:'rare',midline_option:'rare',choice_route:'rare',dagger:'rare',smash:'rare',flea_flicker:'rare',jet_reverse:'rare',
   cover4_match:'rare',double_eagle:'rare',fire_zone:'rare',wide_nine:'rare',man_free:'rare',bluff_zero:'rare',giant_killer:'rare'});
+// --- Two-minute drill, weather and timeout cards (rules v0.7) ------------------------------------------
+// Drill cards are free and appear on their own in the last two minutes of a half; clockStop caps the clock a snap uses.
+Object.assign(PLAYS,{
+  sideline_out:{id:'sideline_out',side:'off',name:'Sideline Out',family:'quick',cost:0,target:'Z',pass:true,drill:true,clockStop:7,
+    text:'TWO-MINUTE DRILL · Throw it outside and get out of bounds. A completion stops the clock.',
+    duels:{
+      G:{label:'Release outside',off:['Z'],ot:['technique','speed'],def:['FCB'],dt:['technique','speed'],bias:1,release:true},
+      K:{label:'Throw it outside',off:['QB'],ot:['technique','composure'],def:['FCB'],dt:['iq','speed'],bias:0,qbRead:true},
+      F:{label:'Feet in, out of bounds',off:['Z'],ot:['technique','iq'],def:['FS'],dt:['speed','iq'],bias:0}},
+    results:{fail:[R(.85,'inc',[0,0],{int:.05}),R(.15,'catch',[2,1])],short:[R(.5,'inc',[0,0],{int:.03}),R(.5,'catch',[5,1.5])],success:[R(.9,'catch',[9,2]),R(.1,'inc',[0,0],{int:.02})],explosive:[R(1,'catch',[16,5],{tail:.06})]}},
+  spike:{id:'spike',side:'off',name:'Spike',family:'quick',cost:0,target:null,pass:true,drill:true,clockStop:3,
+    text:'TWO-MINUTE DRILL · Spike it to stop the clock. Costs a down, never the ball.',
+    duels:{
+      G:{label:'Line up',off:['QB'],ot:['composure'],def:['MIKE'],dt:['iq'],bias:3},
+      K:{label:'Snap',off:['C'],ot:['technique'],def:['NT'],dt:['technique'],bias:3},
+      F:{label:'Clock stops',off:['QB'],ot:['iq'],def:['FS'],dt:['iq'],bias:3}},
+    results:{fail:[R(1,'inc',[0,0],{int:0})],short:[R(1,'inc',[0,0],{int:0})],success:[R(1,'inc',[0,0],{int:0})],explosive:[R(1,'inc',[0,0],{int:0})]}},
+  wishbone_dive:{id:'wishbone_dive',side:'off',name:'Wishbone Dive',family:'run',cost:1,carrier:'RB',
+    matchups:[{when:'snow',duel:'G',v:1,src:'Snow game: grind it inside'},{when:'rain',duel:'G',v:1,src:'Wet ball: keep it on the ground'}],
+    text:'An old three-back dive straight ahead. Better in rain and snow.',
+    duels:{
+      G:{label:'Double the nose',off:['C','LG'],ot:['power','technique'],def:['NT'],dt:['power','durability'],bias:1},
+      K:{label:'Hit it fast',off:['RB'],ot:['power','iq'],def:['MIKE'],dt:['power','iq'],bias:0},
+      F:{label:'Fall forward',off:['RB'],ot:['power','durability'],def:['BOXS'],dt:['power','technique'],bias:0}},
+    results:{fail:[R(1,'run',[-.5,1.2])],short:[R(1,'run',[2.8,1])],success:[R(1,'run',[5,1.3])],explosive:[R(1,'run',[10,4],{tail:.08})]}},
+  power_lead:{id:'power_lead',side:'off',name:'Power Lead',family:'run',cost:1,carrier:'RB',
+    matchups:[{when:'wind',duel:'K',v:1,src:'Wind game: lean on the lead block'},{when:'snow',duel:'K',v:1,src:'Snow game: lean on the lead block'}],
+    text:'The tight end leads through the hole. Better when the wind or snow takes the ball out of the air.',
+    duels:{
+      G:{label:'Down blocks',off:['RG','RT'],ot:['power','technique'],def:['DT3','SET'],dt:['power','technique'],bias:1},
+      K:{label:'Lead block',off:['TE'],ot:['power','durability'],def:['MIKE'],dt:['power','composure'],bias:0},
+      F:{label:'Finish',off:['RB'],ot:['power','speed'],def:['BOXS'],dt:['power','technique'],bias:0}},
+    results:{fail:[R(1,'run',[-1,1.4])],short:[R(1,'run',[3,1.1])],success:[R(1,'run',[6,1.6])],explosive:[R(1,'run',[12,5],{tail:.1})]}}
+});
+Object.assign(TACTICS,{
+  timeout_settle:{id:'timeout_settle',side:'off',name:'Timeout: Settle Down',cost:1,icon:'⏸',effects:[{when:'money',duel:'K',v:1}],text:'Burn a timeout before a big down. 3rd and 4th down only: +1 on the Key duel.'},
+  timeout_ice:{id:'timeout_ice',side:'def',name:'Timeout: Ice Them',cost:1,icon:'🧊',effects:[{when:'money',duel:'K',v:1}],text:'Freeze them before a big down. 3rd and 4th down only: their Key duel −1.'}
+});
+Object.assign(RARITY,{sideline_out:'common',spike:'common',wishbone_dive:'common',power_lead:'common',timeout_settle:'common',timeout_ice:'common'});
+const DRILL_CARDS=['sideline_out','spike'];
+
 // Which program card each coordinator background teaches (Dynasty Lab scheme names).
 const SCHEME_CARDS={'Ground Pressure':'counter_trey','Heavy Play Action':'buck_sweep','Option Motion':'midline_option','Tempo Spread':'choice_route','Vertical Strike':'dagger','Rhythm Control':'smash','Multiple':'smash',
   'Match Quarters':'cover4_match','Split-Safety Control':'cover4_match','Odd Front Control':'double_eagle','Contain & Rally':'double_eagle','Pressure Multiple':'fire_zone','Four-Down Attack':'wide_nine','Aggressive Man':'man_free'};
 const PROGRAM_CARDS=['counter_trey','buck_sweep','midline_option','choice_route','dagger','smash','flea_flicker','jet_reverse','cover4_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero','giant_killer'];
 
-return{SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
+return{DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
 });
