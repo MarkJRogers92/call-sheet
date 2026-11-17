@@ -765,6 +765,60 @@ function explainSnap(e){
     detail:`${reached.map(d=>`${d.key} ${d.won?'won':'lost'}`).join(' · ')}${reached.length===1?' · Key and Finish not reached':''}${edge?` · Edge: ${edge.src.replace(/ \(health \d+\)/g,'')}`:''}`};
 }
 
+// Presentation-only evidence: these helpers never draw RNG or change the battle.
+function matchupStory(e){
+  if(!e||e.penalty||e.category==='kick'||!e.duelResults?.length)return null;
+  const reached=e.duelResults[0].won?e.duelResults.slice(0,3):e.duelResults.slice(0,1);
+  const failed=reached.findIndex(r=>!r.won),i=failed<0?reached.length-1:failed,d=e.duels?.[i];
+  if(!d)return null;
+  const offWon=!!reached[i].won,winnerSide=offWon?e.offSide:e.defSide;
+  const names=(offWon?d.offNames:d.defNames)||[],losers=(offWon?d.defNames:d.offNames)||[];
+  const ratingEdge=Number.isFinite(d.offGrade)&&Number.isFinite(d.defGrade)?d.offGrade-d.defGrade:null;
+  const setupEdge=(d.mods||[]).reduce((n,m)=>n+(Number(m.v)||0),0),sign=offWon?1:-1;
+  let detail='A favorable matchup improves the odds; it never guarantees the duel.';
+  if(ratingEdge!==null){
+    if(sign*ratingEdge>0&&sign*setupEdge<0)detail='The winner’s player-rating advantage overcame an unfavorable setup and situational edges.';
+    else if(sign*(ratingEdge+setupEdge)<0)detail='The matchup favored the other side, but winning it was not guaranteed.';
+    else if(sign*ratingEdge<0&&sign*setupEdge>0)detail='Setup and situational edges helped the lower-rated matchup win.';
+    else if(sign*ratingEdge>0)detail='The winner had the player-rating edge in the traits this duel tested.';
+  }
+  // A duel is not the same as a catch: outcome tables can still produce an incompletion.
+  if(e.kind==='inc'&&reached.every(r=>r.won))detail+=' All reached duels went the offense’s way, but the pass still fell incomplete.';
+  return{summary:`${d.label}: ${names.filter(Boolean).join(' & ')||'The winner'} beat ${losers.filter(Boolean).join(' & ')||'the matchup'}.`,detail,key:d.key,winnerSide,winnerRoles:offWon?d.offRoles:d.defRoles,loserRoles:offWon?d.defRoles:d.offRoles,offWon,ratingEdge,setupEdge};
+}
+function postgameTakeaway(b,side=b?.user){
+  if(!side)return null;
+  const byPlay=new Map();
+  for(const e of b.log||[]){
+    if(e.type!=='snap'||e.offSide!==side||e.penalty||e.category==='kick'||!D.PLAYS[e.play]||!Number.isFinite(e.yards))continue;
+    const t=byPlay.get(e.play)||{id:e.play,n:0,yards:0,stops:0,gateLoss:0};
+    t.n++;t.yards+=e.yards;t.stops+=e.turnover||e.yards<=0?1:0;t.gateLoss+=e.duelResults?.[0]?.won===false?1:0;byPlay.set(e.play,t);
+  }
+  const rows=[...byPlay.values()].filter(t=>t.n>=3);if(!rows.length)return null;
+  // Prefer a repeatable problem over one spectacular play; small samples remain explicitly labeled.
+  const weak=rows.filter(t=>t.yards/t.n<3||t.stops/t.n>=.5).sort((a,c)=>c.n-a.n||a.yards/a.n-c.yards/c.n)[0];
+  const t=weak||rows.sort((a,c)=>c.n-a.n||c.yards/c.n-a.yards/a.n)[0],play=D.PLAYS[t.id];
+  const owned=[...new Set([...(b.decks?.[side]?.off?.base||[]),...(b.decks?.[side]?.off?.wrinkles||[])])];
+  const alternate=owned.find(id=>id!==t.id&&D.PLAYS[id]&&!D.PLAYS[id].trick&&D.PLAYS[id].family!==play.family)||owned.find(id=>id!==t.id&&D.PLAYS[id]&&!D.PLAYS[id].trick);
+  return{summary:weak?`${play.name} struggled to move the ball.`:`${play.name} was a repeatable part of your offense.`,
+    evidence:`${t.n} recorded calls · ${(t.yards/t.n).toFixed(1)} yards per call · ${t.gateLoss} lost at the Gate. One game, not a permanent verdict.`,
+    recommendation:weak?(alternate?`Consider mixing in ${D.PLAYS[alternate].name} from your current deck, then compare the matchup.`:`Consider reviewing ${play.name}'s Gate matchup before calling it again.`):`Consider keeping ${play.name} in your plan, but read the next opponent before leaning on it.`,
+    playId:weak?(alternate||t.id):t.id,samples:t.n};
+}
+function adaptationRead(b,req=b?.pending){
+  if(req?.kind!=='snap'||!['off','def'].includes(req.role))return null;
+  const offense=req.role==='off'?req.side:other(req.side);
+  const recent=(b.log||[]).filter(e=>e.type==='snap'&&e.offSide===offense&&D.PLAYS[e.play]&&e.category!=='kick').slice(-5);
+  const last=recent[recent.length-1],family=last&&D.PLAYS[last.play].family;
+  let count=0;for(let i=recent.length-1;i>=0&&D.PLAYS[recent[i].play].family===family;i--)count++;
+  const lean=req.role==='off'?(req.look?.lean?.confirmed?req.look.lean.value:null):req.lean;
+  if(!lean&&count<3)return null;
+  const named=lean||family,label={run:'the run',quick:'quick passes',deep:'deep passes',constraint:'constraint plays'}[named]||named;
+  const counter=req.role==='off'?(req.options?.plays||[]).find(p=>!p.blocked&&p.cost<=req.options.command&&D.PLAYS[p.id]?.punishes===named):null;
+  return{summary:lean?`${req.role==='off'?'They are':'You are'} leaning on ${label}.`:`${req.role==='off'?'You have':'They have'} called ${count} straight ${family} plays.`,
+    detail:lean?`${count>=3&&family===lean?`The last ${count} calls repeated that family. `:''}${req.role==='off'?'A counter can punish the lean, but it still has to win its player matchups.':'A counter may punish your lean. The next call is still unknown.'}`:`That pattern may invite an adjustment. It is film, not confirmation of the next call.`,family:named,confirmed:!!lean,count,counterPlay:counter?.id||null};
+}
+
 // Save/resume: the whole battle is plain data except nothing — it serializes as-is.
 // Duel moments for the box score: the duel that decided the game (the snap where the winner took the lead for good) and
 // up to two more swings (takeaways and the longest plays). Plain sentences, named players, no hidden numbers.
@@ -821,5 +875,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap};
+return{VERSION,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead};
 });

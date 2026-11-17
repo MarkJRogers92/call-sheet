@@ -29,9 +29,66 @@ const FACE_CSS=`.cs-face{position:relative;display:flex;flex-direction:column;ga
 .cs-face-rar{position:absolute;left:12px;bottom:5px;font:800 10px system-ui;letter-spacing:.16em;text-transform:uppercase;color:#ffd84d}
 .cs-face.r-legendary .cs-face-rar{background:linear-gradient(90deg,#ff7a7a,#ffe066,#7af0a0,#7ad0ff,#d09bff);-webkit-background-clip:text;background-clip:text;color:transparent}.cs-face.r-evolved .cs-face-rar{color:#7dffd8}.cs-face.r-legacy .cs-face-rar{color:#cfe0ff}`;
 function injectFaceCSS(doc=document){if(doc.getElementById('csFaceStyles'))return;const st=doc.createElement('style');st.id='csFaceStyles';st.textContent=FACE_CSS;doc.head.appendChild(st)}
+// Presets store selections, never a second collection. Loading reconciles against today's inventory.
+const copyDeck=x=>JSON.parse(JSON.stringify(x));
+function validPreset(p){
+  return p&&typeof p.name==='string'&&p.name.trim()&&['off','def'].every(side=>p[side]&&['base','wrinkles','tactics'].every(pile=>Array.isArray(p[side][pile])&&p[side][pile].every(id=>typeof id==='string')));
+}
+function presetList(pb){return(Array.isArray(pb.deckPresets)?pb.deckPresets:[]).filter(validPreset).slice(0,8).map(p=>({...p,name:p.name.trim().slice(0,40)}))}
+function savePreset(pb,name){
+  name=String(name||'').trim().slice(0,40);if(!name)throw new Error('Give this preset a name.');
+  const presets=presetList(pb),i=presets.findIndex(p=>p.name.toLowerCase()===name.toLowerCase());
+  if(i<0&&presets.length>=8)throw new Error('Delete a preset first (8 maximum).');
+  const entry={name,off:copyDeck(pb.off),def:copyDeck(pb.def)};
+  pb.deckPresets=presets;if(i<0)presets.push(entry);else presets[i]=entry;
+}
+function loadPreset(pb,index){
+  const preset=pb.deckPresets?.[index],{data:D,packs:P}=root.CallSheet;
+  if(!Number.isInteger(index)||!validPreset(preset))throw new Error('Choose a valid saved preset.');
+  const next=copyDeck(pb);P.ensureCollection(next);
+  for(const side of ['off','def']){
+    const d=preset[side],table=side==='off'?D.PLAYS:D.CALLS;
+    if(!d||!Array.isArray(d.base)||d.base.length!==4||new Set(d.base).size!==4||d.base.some(id=>!table[id]||table[id].trick||table[id].signature)||!d.base.some(id=>table[id].cost===0&&!table[id].needs))throw new Error('Preset needs four valid base calls, including a free unrestricted call.');
+    for(const pile of ['wrinkles','tactics']){
+      if(!Array.isArray(d[pile])||d[pile].length>pb.capacity[pile])throw new Error('Preset exceeds your current deck capacity.');
+      const available=[...(pile==='wrinkles'?pb[side].base:[]),...pb[side][pile],...next.reserve[side][pile]];
+      for(const id of [...(pile==='wrinkles'?d.base:[]),...d[pile]]){
+        const i=available.indexOf(id);if(i<0)throw new Error('A preset card is no longer available. Save a new version after evolutions or roster changes.');available.splice(i,1);
+      }
+      next.reserve[side][pile]=available;
+    }
+    next[side]=copyDeck(d);
+  }
+  pb.off=next.off;pb.def=next.def;pb.reserve=next.reserve;
+}
+function deckAdvice(pb,lineup=null){
+  const {data:D,resolver:R}=root.CallSheet,off=lineup?.off||lineup;
+  const plays=[...new Set([...pb.off.base,...pb.off.wrinkles])].map(id=>D.PLAYS[id]).filter(Boolean);
+  const usable=plays.filter(p=>!off||!R.playBlocked(p,off)),warnings=[],suggestions=[];
+  const cheap=p=>p.pass&&p.cost<=1&&!p.fourthOnly&&!p.thirdOnly;
+  if(!usable.some(cheap)){
+    warnings.push('No low-cost passing answer in your active plays.');
+    const alt=(pb.reserve?.off?.wrinkles||[]).map(id=>D.PLAYS[id]).find(p=>p&&cheap(p)&&(!off||!R.playBlocked(p,off)));
+    if(alt)suggestions.push(`Consider equipping ${alt.name} from storage for a low-cost passing option.`);
+  }
+  if(off)for(const p of plays){const reason=R.playBlocked(p,off);if(reason)warnings.push(`${p.name}: ${reason}.`)}
+  for(const id of new Set(pb.off.tactics)){
+    const t=D.TACTICS[id];if(!t?.needs||t.special)continue;
+    // Without a lineup, don't pretend to assess personnel requirements.
+    if(!off)continue;
+    if(!usable.some(p=>!R.tacticBlocked(t,p,off))){
+      warnings.push(`${t.name} has no compatible play with this lineup.`);
+      const alt=(pb.reserve?.off?.wrinkles||[]).map(id=>D.PLAYS[id]).find(p=>p&&!R.playBlocked(p,off)&&!R.tacticBlocked(t,p,off));
+      if(alt)suggestions.push(`Consider ${alt.name} from storage to give ${t.name} a partner.`);
+      else suggestions.push(`Consider storing ${t.name} until your plays or personnel fit it.`);
+    }
+  }
+  const runs=plays.filter(p=>p.family==='run').length,total=plays.length;
+  return{identity:total&&runs/total>=.6?'Run-heavy':total&&runs/total<=.25?'Pass-first':'Balanced',warnings,suggestions:[...new Set(suggestions)].slice(0,3)};
+}
 function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
-  const {packs:P,data:D}=root.CallSheet,draft=JSON.parse(JSON.stringify(pb));P.ensureCollection(draft);root.CallSheet.signatures?.registerAll(draft);draft.reserveSignatures??=[];
+  const {packs:P,data:D}=root.CallSheet,draft=JSON.parse(JSON.stringify(pb));P.ensureCollection(draft);root.CallSheet.signatures?.registerAll(draft);draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
   let side='off',message='';
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const dialog=document.createElement('dialog');dialog.id='deckEditor';dialog.setAttribute('aria-label','Build your deck');
@@ -40,6 +97,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null}={}){
   dialog.addEventListener('cancel',e=>{e.preventDefault();close()});
   function paint(){
     const deck=draft[side],reserve=draft.reserve[side],table=side==='off'?D.PLAYS:D.CALLS;
+    const advice=deckAdvice(draft,lineup);
     const owned=[...new Set([...deck.base,...deck.wrinkles,...reserve.wrinkles])];
     const info=id=>{const c=P.cardDef(id),traits=c.duels?[...new Set(Object.values(c.duels).flatMap(d=>d.ot))]:[];
       return `<b>${esc(c.name)}</b><small>${c.cost} Command · ${esc(c.family||'Tactic')}${c.trick?' · Once per game':''}</small><p>${esc(cleanText(c.text))}</p>${traits.length?`<small>Uses ${esc(traits.join(', '))}</small>`:''}`};
@@ -48,8 +106,12 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null}={}){
       return `<div class="de-cards">${[...counts].map(([id,{i,n}])=>`<article class="${faceClass(id)}">${originHTML(id)}${info(id)}<footer><span>×${n}</span><button type="button" data-move="${pile}:${i}:${equip?1:0}">${equip?'Equip':'Store'}</button></footer></article>`).join('')||'<p class="de-muted">No cards here.</p>'}</div>`;
     };
     dialog.innerHTML=`<style>
-#deckEditor{box-sizing:border-box;width:min(1040px,96vw);max-height:92vh;padding:24px;border:1px solid #66592e;border-radius:16px;background:#10151f;color:#f2efe5;font:16px system-ui;z-index:2147483646;text-align:left}#deckEditor::backdrop{background:#03060bd9}#deckEditor *{box-sizing:border-box}#deckEditor h2{margin:0 0 8px;font-size:28px}#deckEditor h3{font-size:18px;margin:24px 0 10px;color:#ffda63}#deckEditor p{line-height:1.45}#deckEditor button,#deckEditor select{font:inherit;border-radius:7px;border:1px solid #617083;background:#233042;color:#fff;padding:8px 12px;cursor:pointer}#deckEditor button:focus-visible,#deckEditor select:focus-visible{outline:3px solid #7ad4ff}#deckEditor .de-gold{background:#ffda63;color:#17140b;border-color:#ffda63}#deckEditor nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}#deckEditor .de-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}#deckEditor article{padding:13px;border-radius:10px}#deckEditor article:not(.cs-face){border:1px solid #384555;background:#18202c}#deckEditor small{display:block;color:#b9c7d3;font-size:12px;margin-top:5px}#deckEditor article p{font-size:13px;min-height:38px}#deckEditor footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}#deckEditor .de-base{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}#deckEditor label{display:grid;gap:7px;font-size:13px}#deckEditor select{width:100%;min-width:0}#deckEditor .de-muted{color:#b9c7d3}#deckEditor .de-error{color:#ffb097;min-height:24px}#deckEditor summary{cursor:pointer;color:#ffda63}#deckEditor .de-actions{position:sticky;bottom:-24px;background:#10151ff5;padding:14px 0;display:flex;gap:10px;border-top:1px solid #384555}@media(max-width:500px){#deckEditor{padding:16px}.de-cards{grid-template-columns:1fr!important}}
+#deckEditor{box-sizing:border-box;width:min(1040px,96vw);max-height:92vh;padding:24px;border:1px solid #66592e;border-radius:16px;background:#10151f;color:#f2efe5;font:16px system-ui;z-index:2147483646;text-align:left}#deckEditor::backdrop{background:#03060bd9}#deckEditor *{box-sizing:border-box}#deckEditor h2{margin:0 0 8px;font-size:28px}#deckEditor h3{font-size:18px;margin:24px 0 10px;color:#ffda63}#deckEditor p{line-height:1.45}#deckEditor input,#deckEditor button,#deckEditor select{font:inherit;border-radius:7px;border:1px solid #617083;background:#233042;color:#fff;padding:8px 12px;cursor:pointer}#deckEditor input:focus-visible,#deckEditor button:focus-visible,#deckEditor select:focus-visible{outline:3px solid #7ad4ff}#deckEditor .de-gold{background:#ffda63;color:#17140b;border-color:#ffda63}#deckEditor nav{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}#deckEditor .de-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}#deckEditor article{padding:13px;border-radius:10px}#deckEditor article:not(.cs-face){border:1px solid #384555;background:#18202c}#deckEditor small{display:block;color:#b9c7d3;font-size:12px;margin-top:5px}#deckEditor article p{font-size:13px;min-height:38px}#deckEditor footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:12px}#deckEditor .de-base{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}#deckEditor label{display:grid;gap:7px;font-size:13px}#deckEditor select{width:100%;min-width:0}#deckEditor .de-muted{color:#b9c7d3}#deckEditor .de-error{color:#ffb097;min-height:24px}#deckEditor summary{cursor:pointer;color:#ffda63}#deckEditor .de-actions{position:sticky;bottom:-24px;background:#10151ff5;padding:14px 0;display:flex;gap:10px;border-top:1px solid #384555}@media(max-width:500px){#deckEditor{padding:16px}.de-cards{grid-template-columns:1fr!important}}
 </style><h2>Build your deck</h2><p class="de-muted">Your collection keeps every earned card. Choose four reliable base calls, then shape the plays and tactics you draw. Stored cards can be equipped again any time between games.</p>
+<section aria-label="Deck identity"><h3>${esc(advice.identity)} · your offensive identity</h3><p class="de-muted">${lineup?'Advice uses your current lineup.':'Personnel advice appears when a lineup is available.'} These are suggestions, not automatic changes.</p>${advice.warnings.map(x=>`<p>${esc(x)}</p>`).join('')}${advice.suggestions.map(x=>`<p class="de-muted">${esc(x)}</p>`).join('')}
+<label>Preset name<input id="deckPresetName" maxlength="40" placeholder="Power run, Balanced, Two-minute…"></label><button type="button" data-preset-save>Save current selections as preset</button>
+<p class="de-muted">Presets include offense and defense. Changes are kept only when you choose Save deck. Reusing a name replaces that preset.</p>
+${(draft.deckPresets||[]).map((p,i)=>`<div><b>${esc(p.name)}</b> <button type="button" data-preset-load="${i}">Load ${esc(p.name)}</button> <button type="button" data-preset-delete="${i}" aria-label="Delete preset ${esc(p.name)}">Delete</button></div>`).join('')}</section>
 <nav><button type="button" data-side="off" class="${side==='off'?'de-gold':''}">Offense</button><button type="button" data-side="def" class="${side==='def'?'de-gold':''}">Defense</button></nav>
 <p class="de-error" role="status">${esc(message)}</p>
 ${(root.CallSheet.evolution?.ready(draft,{lineup})||[]).map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}</h3><p class="de-muted">Your practice and game reps earned a permanent upgrade. It takes effect when you save this deck.</p><div class="de-cards">${r.options.map(id=>`<article class="${faceClass(id)}">${originHTML(id)}${info(id)}${r.locks?.[id]?`<small class="de-lock">🔒 ${esc(r.locks[id])}</small><button type="button" disabled>Locked</button>`:`<button type="button" data-evolve="${r.rootId}:${id}">Choose ${esc(P.cardDef(id).name)}</button>`}</article>`).join('')}</div></section>`).join('')}
@@ -65,6 +127,9 @@ ${draft.reserveSignatures.length?`<h3>Stored signatures</h3><p class="de-muted">
 <div class="de-actions"><button type="button" class="de-gold" data-save>Save deck</button><button type="button" data-cancel>Cancel</button></div>`;
     dialog.querySelectorAll('[data-side]').forEach(el=>el.onclick=()=>{side=el.dataset.side;message='';paint()});
     const act=fn=>{try{fn();message=''}catch(e){message=e.message}const scroll=dialog.scrollTop;paint();dialog.scrollTop=scroll};
+    dialog.querySelector('[data-preset-save]').onclick=()=>act(()=>savePreset(draft,dialog.querySelector('#deckPresetName').value));
+    dialog.querySelectorAll('[data-preset-load]').forEach(el=>el.onclick=()=>act(()=>loadPreset(draft,Number(el.dataset.presetLoad))));
+    dialog.querySelectorAll('[data-preset-delete]').forEach(el=>el.onclick=()=>act(()=>draft.deckPresets.splice(Number(el.dataset.presetDelete),1)));
     dialog.querySelectorAll('[data-move]').forEach(el=>el.onclick=()=>act(()=>{const [pile,i,equip]=el.dataset.move.split(':');P.moveCard(draft,side,pile,Number(i),equip==='1')}));
     dialog.querySelectorAll('[data-evolve]').forEach(el=>el.onclick=()=>act(()=>{const [rootId,branch]=el.dataset.evolve.split(':');root.CallSheet.evolution.evolve(draft,rootId,branch,{lineup})}));
     dialog.querySelectorAll('[data-base]').forEach(el=>el.onchange=()=>act(()=>P.setBase(draft,side,Number(el.dataset.base),el.value)));
@@ -74,5 +139,5 @@ ${draft.reserveSignatures.length?`<h3>Stored signatures</h3><p class="de-muted">
   }
   paint();dialog.showModal();return dialog;
 }
-root.CallSheet.playbookUI={open,faceHTML,faceClass,injectFaceCSS};
+root.CallSheet.playbookUI={presetList,savePreset,loadPreset,deckAdvice,open,faceHTML,faceClass,injectFaceCSS};
 })(typeof window==='object'?window:globalThis);

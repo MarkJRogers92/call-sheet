@@ -2,6 +2,7 @@
 (function(){
 'use strict';
 const {data:D,resolver:R,roster:Ro,battle:B,packs:P,evolution:EV,world:W,signatures:SG,classes:CL}=window.CallSheet;
+const O=window.CallSheet.onboarding;
 const FX=window.SliceFX,S=FX.sfx,PT=FX.particles,{card,esc,paintPortrait}=window.SliceCards;
 const $=s=>document.querySelector(s);
 const STORE='callsheet.slice.v1';
@@ -309,14 +310,37 @@ function personnelHTML(){
 function lastSnapHTML(){
   const e=b.lastResult,note=B.explainSnap(e);if(!note)return'';
   const outcome=e.penalty?e.penalty.label:e.turnover?e.turnover:e.kind==='inc'?'Incomplete':`${e.yards>0?'+':''}${e.yards} yards`;
-  return`<div class="box" id="lastSnap"><h3>Last snap · ${esc(teamOf(e.offSide).short)} offense</h3><div class="mini">${esc(D.PLAYS[e.play]?.name||'')} · ${esc(outcome)}</div><p class="mini">${esc(note.summary)}</p><div class="mini muted">${esc(note.detail)}</div></div>`;
+  return`<div class="box" id="lastSnap"><h3>Last snap · ${esc(teamOf(e.offSide).short)} offense</h3><div class="mini">${esc(D.PLAYS[e.play]?.name||'')} · ${esc(outcome)}</div><p class="mini">${esc(note.summary)}</p><details><summary>Full breakdown</summary><div class="mini muted">${esc(note.detail)}</div></details></div>`;
+}
+function matchupStoryHTML(e){
+  const note=B.matchupStory(e);if(!note)return'';
+  return`<strong>${esc(note.summary)}</strong><span>${esc(fogSpread()?'The duel is the result, not a guarantee of the whole play. Scout them to sharpen your matchup read.':note.detail)}</span>`;
+}
+function showMatchupStory(e){
+  let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
+  panel.innerHTML=matchupStoryHTML(e);panel.hidden=!panel.innerHTML;
+  const note=B.matchupStory(e);if(!note)return;
+  for(const role of note.winnerRoles||[]){const dot=layer.dots[(note.offWon?'o:':'d:')+role];if(dot){dot.classList.add('won');layer.players.appendChild(dot)}}
+}
+function guidedDriveHTML(){
+  if(!b?.guidedDrive?.active)return'';
+  return`<section class="box" id="guidedDrive"><h3>Your opening drive</h3><p class="mini">You call every offensive snap on this drive. Your normal pace returns afterward.</p><details><summary>Why might this play fit?</summary><p class="mini">${esc(O.hint(req,sel.play))}</p></details><button class="tbtn" id="finishGuide">Finish guided drive</button></section>`;
+}
+function adaptationHTML(){
+  const clue=B.adaptationRead(b,req);if(!clue)return'';
+  return`<section class="box" id="opponentAdjustment"><h3>Opponent adjustment</h3><p class="mini">${esc(clue.summary)}</p><details><summary>Your possible answer</summary><p class="mini">${esc(clue.detail)}${clue.counterPlay?` Try ${esc(D.PLAYS[clue.counterPlay]?.name||clue.counterPlay)} from your hand.`:''}</p></details></section>`;
+}
+function takeawayHTML(){
+  const note=B.postgameTakeaway(b);if(!note)return'';
+  return`<section class="box" id="filmTakeaway" style="text-align:left"><h3>One takeaway</h3><p>${esc(note.summary)}</p><p class="mini">${esc(note.evidence)}</p><details><summary>Optional adjustment</summary><p class="mini">${esc(note.recommendation)}</p><button class="tbtn" data-film-deck>Review your deck</button><p class="mini">Nothing changes unless you choose and save an adjustment.</p></details></section>`;
 }
 function renderSide(){
   const pb=save.playbook;
   const ur=DYN?DYN.record:(save.world.userRecord||pb.record);
-  $('#side').innerHTML=backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
+  $('#side').innerHTML=guidedDriveHTML()+adaptationHTML()+backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
    <div class="mini">vs ${esc(teamOf('away').name)} · ${esc(teamOf('away').coach.name)}</div>
    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='moments'?'key moments':'all'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
+  const finish=$('#finishGuide');if(finish)finish.onclick=()=>{if(busy)return;O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();renderSide()};
   const personnel=$('#personnel');if(personnel)personnel.onchange=()=>{if(busy)return;try{B.setGrouping(b,req.side,personnel.value);writeSave();renderSide()}catch(e){err=e.message;renderHand()}};
   const backfield=$('#backfield');if(backfield)backfield.onchange=()=>{
     if(busy)return;
@@ -327,7 +351,7 @@ function renderSide(){
   $('#bSound').onclick=()=>{save.settings.sound=!save.settings.sound;S.on=save.settings.sound;writeSave();renderSide()};
   $('#bReplay').onclick=()=>{save.settings.replays=save.settings.replays==='moments'?'all':'moments';writeSave();renderSide()};
   $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';renderSide()};
-  $('#bSim').onclick=()=>{if(busy)return;b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
+  $('#bSim').onclick=()=>{if(busy)return;if(b.guidedDrive?.active){O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false}b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
 }
 
 // ================================================================ the Look
@@ -430,12 +454,18 @@ async function go(action){
   if(busy&&action!==null)return;busy=true;$('#hand').classList.add('away');err='';
   try{req=action===undefined||action===null?B.advance(b):B.submit(b,action)}
   catch(e){err=e.message;busy=false;S.error();refresh();return}
+  const story=$('#matchupStory');if(story)story.hidden=true;
   sel={play:null,tac:[]};writeSave();
   await present();
   busy=false;FX.skipping=false;$('#skip').classList.remove('on');
   decide();
 }
+function guidedDriveDone(){
+  const m=$('#modal');m.innerHTML=`<div class="mwrap"><p class="big gold">DRIVE COMPLETE</p><p class="statline">You have called a full offensive drive. Keep every snap, or let the staff handle routine downs.</p><button class="btn go" id="guideKey">KEY MOMENTS</button><button class="btn" id="guideSnap">EVERY SNAP</button></div>`;m.classList.add('on');
+  for(const [id,mode] of [['guideKey','key'],['guideSnap','snap']])$('#'+id).onclick=()=>{b.mode=mode;save.settings.mode=mode;writeSave();m.classList.remove('on');decide()};
+}
 function decide(){
+  if(O.update(b)){save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();if(req){guidedDriveDone();return}}
   if(!req){finalScreen();return}
   if(req.kind==='fourth'){fourthModal();return}
   if(req.kind==='plan'){go({type:'plan',calls:[]});return}
@@ -461,7 +491,7 @@ async function quick(e){
   renderBug(e.sit,b._lastScore||e.score);
   await setFormation(e.sit,FX.skipping?0:200,e);
   ticker(`${teamOf(e.offSide).short} · ${e.text}`);
-  if(!e.penalty){await animatePlayFast(e)}
+  if(!e.penalty){await animatePlayFast(e);if(e.userCalled)showMatchupStory(e)}
   const td=e.score&&e.score[e.offSide]-(b._lastScore?b._lastScore[e.offSide]:0)>=6;
   b._lastScore={...e.score};renderBug(e.after,e.score);
   const good=userOff(e);
@@ -534,6 +564,7 @@ async function cinematic(e){
   hideTip();clearGlow();
   await animatePlay(e);
   celebrateCards(e);
+  showMatchupStory(e);
   // Phase 3: count the yards, then the callout.
   const before=b._lastScore||e.score,td=e.score[e.offSide]-before[e.offSide]>=6;
   b._lastScore={...e.score};
@@ -625,11 +656,13 @@ function finalScreen(){
     <p class="statline">${esc(teamOf('home').short)} <b>${b.game.score.home}</b> — <b>${b.game.score.away}</b> ${esc(teamOf('away').short)}${DYN?'':` · record <b>${save.playbook.record.w}-${save.playbook.record.l}</b>`}</p>
     ${DYN?(b._saved?.ok?'<p class="statline" style="color:var(--win)">✓ SAVED TO YOUR SEASON</p>':`<p class="statline" style="color:var(--lose)">NOT SAVED: ${esc(b._saved?.error||'unknown error')}. Your season is unchanged.</p>`):''}
     <div style="margin:14px 0">${top.map(p=>`<div class="statline" style="font-size:16px"><b>${esc(p.name)}</b> ${p.role} · ${esc(line(p))}</div>`).join('')}</div>
+    ${takeawayHTML()}
     ${b.rivalry?(DYN?`<p class="statline">RIVALRY ${won?'WON':'LOST'}</p>`:`<div class="trophyWrap ${won?'won':''}">${trophyImg()}<p class="statline">${won?`<b>${esc(trophyName())}</b> ${save.world.trophy.holder==='user'?'stays':'comes'} home`:`${esc(specOf(oppId()).short)} keeps <b>${esc(trophyName())}</b>`}</p></div>`):''}
     ${(b._achievements||[]).map(a=>`<p class="statline">✓ ${esc(a.name)} · ${esc(P.cardDef(a.reward).name)} added to your collection</p>`).join('')}
     <button class="btn go" id="openPack">${b._breakout?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button></div>`;
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
+  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()}});
   $('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
 async function packScreen(won){
@@ -848,13 +881,15 @@ function rosterView(){
 }
 // Three steps, shown once (and from the side panel any time).
 function howToPlay(then){
-  const m=$('#modal');
+  const m=$('#modal'),guided=!!then&&O.eligible(save);
   m.innerHTML=`<div class="mwrap"><p class="big gold" style="font-size:clamp(40px,7vw,80px)">HOW TO PLAY</p>
     <div class="howto"><div><b>1</b><span class="hi">🃏</span>Pick a play card</div><div><b>2</b><span class="hi">🪙</span>Add tactics with your coins</div><div><b>3</b><span class="hi">⚔️</span>Win the duels, gain yards</div></div>
     <p class="statline">Green chips = good odds. Red = risky. A new first down refills your hand.</p>
-    <button class="btn go" id="gotIt">GOT IT</button></div>`;
+    ${guided?'<p class="statline">Try a guided opening drive: call every offensive snap, with optional coaching tips. Then choose your pace.</p><button class="btn go" id="guideStart">COACH MY FIRST DRIVE</button>':''}
+    <button class="btn" id="gotIt">${guided?'SKIP GUIDE · START GAME':'GOT IT'}</button></div>`;
   m.classList.add('on');
-  $('#gotIt').onclick=()=>{save.seenHelp=true;writeSave();m.classList.remove('on');if(then)then()};
+  const begin=guidedDrive=>{save.settings.guidedDrivePending=guidedDrive;save.seenHelp=true;if(guidedDrive&&b)O.start(b);writeSave();m.classList.remove('on');if(then)then()};
+  $('#gotIt').onclick=()=>begin(false);if(guided)$('#guideStart').onclick=()=>begin(true);
 }
 
 // ================================================================ title, league and playbooks
@@ -882,7 +917,7 @@ function title(){
   m.querySelectorAll('[data-k]').forEach(el=>el.onclick=()=>{st[el.dataset.k]=el.dataset.v;writeSave();S.tick(5);title()});
   const p=$('#play');if(p)p.onclick=()=>{S.init();if(save.activeBattle){resumeBattle();return}if(save.world.offseason?.stage==='signing')signingDayScreen();else if(save.world.offseason)seasonEndScreen();else scoutingReport()};
   const ro=$('#rost');if(ro)ro.onclick=rosterView;
-  const v=$('#pbv');if(v)v.onclick=()=>{if(save.activeBattle){resumeBattle();return}window.CallSheet.playbookUI.open(save.playbook,{onSave:pb=>{save.playbook=pb;writeSave()}})};
+  const v=$('#pbv');if(v)v.onclick=()=>{if(save.activeBattle){resumeBattle();return}window.CallSheet.playbookUI.open(save.playbook,{lineup:save.world?.userLineup,onSave:pb=>{save.playbook=pb;writeSave()}})};
   const r=$('#reset');if(r)r.onclick=()=>{if(r.dataset.armed!=='1'){r.dataset.armed='1';r.textContent='TAP AGAIN: ERASE THIS DYNASTY';r.style.borderColor='var(--lose)';S.error();return}save={team:null,playbook:P.newPlaybook(),settings:st,combos:[],games:0};writeSave();title()};
 }
 function playbookView(pb,name,progId){
@@ -1017,11 +1052,12 @@ function resumeBattle(){
   try{b=B.load(save.activeBattle.battle)}catch(e){err='Could not resume this battle: '+e.message;return}
   req=b.pending;seen=b.log.length;busy=false;sel={play:null,tac:[]};lastLook={};
   b._lastScore={...b.game.score};setWeather(b.weather);drawField();renderBug();setMarkers(null);
-  $('#modal').classList.remove('on');$('#ticker').innerHTML='';decide();
+  $('#modal').classList.remove('on');$('#ticker').innerHTML='';if(!req&&b.game.status!=='final')go(null);else decide();
 }
 function startGame(){
   const oid=oppId(),me=W.teamFor(save.team,save.playbook,save.world.userLineup),opp=W.teamFor(oid,save.world.programs[oid].playbook,save.world.programs[oid].lineup);
   b=B.create({home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
+  if(save.settings.guidedDrivePending)O.start(b);
   setWeather(b.weather);
   seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);

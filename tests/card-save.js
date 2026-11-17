@@ -11,6 +11,8 @@ const P=require('../forks/call-sheet/core/packs.js');
   u=JSON.parse(JSON.stringify(u));n(u);
   assert.deepEqual(u.callSheet.playbook.off.wrinkles,pb.off.wrinkles);assert.equal(u.callSheet.playbook.mastery.inside_zone,12);
   assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false,integrations:{},replays:'all'});assert.equal(u.callSheet.games,3);
+  const guided={callSheet:{version:1,playbook:P.newPlaybook(),settings:{guidedDrivePending:true,guidedDriveDone:true}}};
+  n(guided);assert.equal(guided.callSheet.settings.guidedDrivePending,true);assert.equal(guided.callSheet.settings.guidedDriveDone,true);
   // Damage is repaired or reset, never fatal.
   const bad={callSheet:{version:1,playbook:{off:{base:['inside_zone'],wrinkles:[3,'x']},def:{}},combos:'nope',settings:{mode:'warp'},games:-5}};
   n(bad);assert.equal(bad.callSheet.playbook,null,'a broken call sheet resets');assert.deepEqual(bad.callSheet.combos,[]);

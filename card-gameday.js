@@ -48,6 +48,7 @@ function normalizeCallSheet(u){
   const integrations=Object.fromEntries(Object.entries(st.integrations&&typeof st.integrations==='object'?st.integrations:{}).filter(([k,v])=>typeof k==='string'&&typeof v==='boolean'));
   cs.settings={mode:['key','series','snap','sim'].includes(st.mode)?st.mode:'key',control:['offense','both','defense'].includes(st.control)?st.control:'offense',replays:st.replays==='moments'?'moments':'all',fast:!!st.fast,sound:st.sound!==false,integrations};
   if(cs.activeBattle&&(typeof cs.activeBattle.seed!=='string'||typeof cs.activeBattle.battle!=='string'||cs.activeBattle.battle.length>4000000))cs.activeBattle=null;
+  for(const key of ['guidedDrivePending','guidedDriveDone'])if(Object.hasOwn(st,key))cs.settings[key]=st[key]===true;
   cs.games=Number.isFinite(Number(cs.games))?Math.max(0,Math.min(99999,Math.round(Number(cs.games)))):0;cs.seenHelp=!!cs.seenHelp;
   // AI programs' playbooks, keyed by team id. Kept small: only programs you play, plus your rival.
   const ai={};for(const [id,pb] of Object.entries(cs.ai&&typeof cs.ai==='object'?cs.ai:{}).slice(0,40)){const n=normalizeCardPlaybook(pb,2);if(n)ai[id]=n}
