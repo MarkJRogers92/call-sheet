@@ -3,10 +3,12 @@
 'use strict';
 // Card faces shared by the deck editor and the dynasty's reward packs: rarity frame, origin ribbon, cost bubble.
 const escF=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function originOf(id,c){const weather=(c.matchups||[]).some(m=>['rain','snow','wind'].includes(m.when));return c.legacy?'legacy':c.program?'coaching tree':c.drill?'two-minute drill':c.trick?'trick':weather?'weather':id==='giant_killer'?'milestone':''}
-function faceClass(id){const {packs:P,data:D}=root.CallSheet,c=P.cardDef(id)||{},o=originOf(id,c);return`cs-face r-${D.rarityOf(id)}${c.legacy?' r-legacy':''}${o?' o-'+o.replace(/[^a-z]+/g,'-'):''}`}
+function originOf(id,c){const weather=(c.matchups||[]).some(m=>['rain','snow','wind'].includes(m.when));return c.legacy?'legacy':c.program?'coaching tree':c.era?({single_wing:'single wing',option:'option era',west_coast:'west coast',blitz:'blitz era'}[c.era]||c.era.replace(/_/g,' ')):c.drill?'two-minute drill':c.special?'special teams':c.trick?'trick':weather?'weather':id==='giant_killer'?'milestone':''}
+// Print finishes come from the collection being shown (the deck editor sets it while open).
+let finishes=null;
+function faceClass(id){const {packs:P,data:D}=root.CallSheet,c=P.cardDef(id)||{},o=originOf(id,c),f=finishes?.[id];return`cs-face r-${D.rarityOf(id)}${c.legacy?' r-legacy':''}${o?' o-'+o.replace(/[^a-z]+/g,'-'):''}${f?' f-'+f:''}`}
 function originHTML(id){const c=root.CallSheet.packs.cardDef(id)||{},o=originOf(id,c);return o?`<span class="cs-face-origin">${escF(o)}</span>`:''}
-function cleanText(t){return String(t||'').replace(/^(EVOLVED|COACHING TREE|TRICK|TWO-MINUTE DRILL) · /,'').replace(/^LEGACY of #\S* [^·]*· /,'')}
+function cleanText(t){return String(t||'').replace(/^(EVOLVED|COACHING TREE|TRICK|TWO-MINUTE DRILL|OPTION ERA|SINGLE WING|WEST COAST|46|ZONE BLITZ|IRON MAN) · /,'').replace(/^LEGACY of #\S* [^·]*· /,'')}
 function faceHTML(id,{footer=''}={}){
   const {packs:P,data:D}=root.CallSheet,c=P.cardDef(id)||{},r=D.rarityOf(id);
   const type=c.family?`${c.family}${c.trick?' · once per game':''}`:c.box?`${c.coverage} · ${c.box} box`:'tactic';
@@ -18,6 +20,8 @@ const FACE_CSS=`.cs-face{position:relative;display:flex;flex-direction:column;ga
 .cs-face.r-evolved{border-color:#3cf0c0;background:linear-gradient(170deg,#0f3a33,#101826 70%)}
 .cs-face.r-signature{border:2px solid #ffd84d;background:linear-gradient(160deg,#1a1408,#050505 60%,#1a1408)}
 .cs-face.r-legacy{border:2px solid #9fc3ff;background:linear-gradient(160deg,#0e1a2e,#05070c 60%,#0e1a2e)}
+.cs-face.f-foil{box-shadow:0 0 0 1px #9ad8ff,0 0 14px rgba(224,176,255,.35)}.cs-face.f-foil::after{content:'FOIL';position:absolute;right:10px;bottom:5px;font:800 9px system-ui;letter-spacing:.14em;color:#0b0f18;background:linear-gradient(90deg,#9ad8ff,#e0b0ff,#a6ffd8);padding:1px 5px;border-radius:6px}
+.cs-face.f-gold{box-shadow:0 0 0 2px #e5b53a,0 0 18px rgba(229,181,58,.45)}.cs-face.f-gold::after{content:'GOLD';position:absolute;right:10px;bottom:5px;font:800 9px system-ui;letter-spacing:.14em;color:#1a1200;background:linear-gradient(90deg,#ffe58a,#c8901a);padding:1px 5px;border-radius:6px}
 .cs-face-cost{position:absolute;right:-7px;top:-7px;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-weight:800;color:#1a1200;background:radial-gradient(circle at 35% 30%,#fff3b0,#e5b53a)}
 .cs-face-origin{align-self:flex-start;margin:-12px 0 2px -12px;padding:2px 8px;border-radius:12px 0 10px 0;font:800 10px system-ui;letter-spacing:.1em;text-transform:uppercase;color:#0b0f18;background:#e5c766}
 .cs-face.o-legacy .cs-face-origin{background:#9fc3ff}.cs-face.o-coaching-tree .cs-face-origin{background:#7ad0a6}.cs-face.o-two-minute-drill .cs-face-origin{background:#ff9f5a}.cs-face.o-trick .cs-face-origin{background:linear-gradient(90deg,#ff7a7a,#ffe066)}.cs-face.o-weather .cs-face-origin{background:#8fd3ff}.cs-face.o-milestone .cs-face-origin{background:#d09bff}
@@ -26,7 +30,7 @@ const FACE_CSS=`.cs-face{position:relative;display:flex;flex-direction:column;ga
 .cs-face.r-legendary .cs-face-rar{background:linear-gradient(90deg,#ff7a7a,#ffe066,#7af0a0,#7ad0ff,#d09bff);-webkit-background-clip:text;background-clip:text;color:transparent}.cs-face.r-evolved .cs-face-rar{color:#7dffd8}.cs-face.r-legacy .cs-face-rar{color:#cfe0ff}`;
 function injectFaceCSS(doc=document){if(doc.getElementById('csFaceStyles'))return;const st=doc.createElement('style');st.id='csFaceStyles';st.textContent=FACE_CSS;doc.head.appendChild(st)}
 function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null}={}){
-  injectFaceCSS();
+  injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D}=root.CallSheet,draft=JSON.parse(JSON.stringify(pb));P.ensureCollection(draft);root.CallSheet.signatures?.registerAll(draft);draft.reserveSignatures??=[];
   let side='off',message='';
   const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));

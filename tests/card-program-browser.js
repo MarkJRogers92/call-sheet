@@ -15,7 +15,11 @@ const shots=process.env.CARD_SHOTS||'';
       const panel=page.locator('#cardProgram');await panel.waitFor();
       const open=panel.locator('[data-reward-pack]');assert.match(await open.innerText(),/Open Booster Pack/);
       assert.match(await panel.innerText(),/ Era · /i,'the season era is shown');
-      assert.match(await panel.locator('.cpn-albums summary').innerText(),/Albums · \d+\/7 complete/);
+      assert.match(await panel.locator('.cpn-albums summary').innerText(),/Albums · \d+\/\d+ complete/);
+      // The Ring of Honor binder shows graduated players' career cards.
+      await page.evaluate(()=>{const g=window.DynastyCardGameDay;g.addRingForTest?.({playerId:'gr-1',name:'Test Legend',number:12,pos:'QB',archetype:'Field Architect',career:'3 seasons · 7,412 pass yds · 61 TD',exit:'graduated',year:2026});g.paint()});
+      if(await page.locator('#cardProgram .cpn-ring').count()){assert.match(await page.locator('#cardProgram .cpn-ring summary').innerText(),/Ring of Honor binder · 1/);await page.locator('#cardProgram .cpn-ring summary').click();assert.match(await page.locator('#cardProgram .cs-ring').innerText(),/Test Legend[\s\S]*7,412 pass yds/)}
+      else assert.fail('the Ring of Honor binder did not render');
       if(shots)await panel.screenshot({path:`${shots}/program-${view.name}.png`});
       await open.click();
       const dialog=page.locator('#rewardPack');await dialog.waitFor();

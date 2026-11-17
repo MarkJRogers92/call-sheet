@@ -122,7 +122,7 @@ function buildSnap(ctx){
     if(dt.has('press')&&d.release){add(-1,'Press');flags.press=true}
     if(dt.has('identify_protection')&&d.protect&&call.pressure>0)add(-1,'Aimed pressure');
     // Generic card effects (new tactics, signature cards, calls with duel mods). Each names which duels it touches.
-    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:e.flag==='countered'?(call.counters||[]).includes(play.family):!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
+    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:e.flag==='countered'?(call.counters||[]).includes(play.family):e.flag==='versatile'?d.off.some(r=>(off[r]?.traits?.versatility??0)>=80):!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
     for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
     for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
     // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.

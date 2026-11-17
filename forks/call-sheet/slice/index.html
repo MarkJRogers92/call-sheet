@@ -272,6 +272,11 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .card.r-signature .shine{background:linear-gradient(115deg,transparent 25%,rgba(255,230,140,.35) 40%,transparent 55%),repeating-linear-gradient(45deg,transparent 0 10px,rgba(255,216,77,.06) 10px 11px);background-size:250% 100%,100% 100%;animation:sweep 2s infinite}
 .card.r-legacy{border:2px solid #9fc3ff;background:linear-gradient(160deg,#0e1a2e,#05070c 60%,#0e1a2e);box-shadow:0 0 20px rgba(159,195,255,.4),0 10px 24px rgba(0,0,0,.6)}
 .card.r-legacy .rar{color:#cfe0ff}.card.r-legacy .shine{background:linear-gradient(115deg,transparent 30%,rgba(200,225,255,.3) 45%,transparent 60%);background-size:250% 100%;animation:sweep 3s infinite}
+.slot .back[style*="--tb1"]{background:repeating-linear-gradient(45deg,var(--tb1) 0 10px,color-mix(in srgb,var(--tb1) 70%,#000) 10px 20px);border-color:var(--tb2);color:var(--tb2)}
+.card .finish{position:absolute;right:8px;bottom:5px;font-family:var(--cond);font-weight:800;font-size:9px;letter-spacing:.16em;padding:1px 5px;border-radius:6px;z-index:2}
+.card.f-foil .finish{background:linear-gradient(90deg,#9ad8ff,#e0b0ff,#a6ffd8);color:#0b0f18}.card.f-gold .finish{background:linear-gradient(90deg,#ffe58a,#c8901a);color:#1a1200}
+.card.f-foil::after{content:'';position:absolute;inset:0;border-radius:inherit;pointer-events:none;background:linear-gradient(115deg,rgba(154,216,255,.0) 20%,rgba(224,176,255,.22) 40%,rgba(166,255,216,.22) 55%,rgba(154,216,255,0) 75%);background-size:250% 100%;animation:sweep 2.6s infinite;mix-blend-mode:screen}
+.card.f-gold{box-shadow:0 0 0 2px #e5b53a,0 0 26px rgba(229,181,58,.55),0 10px 24px rgba(0,0,0,.6)}
 .card .origin{position:absolute;left:-1px;top:-1px;padding:2px 7px 2px 8px;border-radius:12px 0 10px 0;font-family:var(--cond);font-weight:800;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#0b0f18;background:#e5c766;z-index:2}
 .card.o-legacy .origin{background:#9fc3ff}.card.o-coaching-tree .origin{background:#7ad0a6}.card.o-two-minute-drill .origin{background:#ff9f5a}.card.o-trick .origin{background:linear-gradient(90deg,#ff7a7a,#ffe066)}.card.o-weather .origin{background:#8fd3ff}.card.o-milestone .origin{background:#d09bff}
 .card.small .origin{font-size:9px;padding:1px 5px}

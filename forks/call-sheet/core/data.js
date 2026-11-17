@@ -528,6 +528,72 @@ Object.assign(TACTICS,{
 });
 Object.assign(RARITY,{fake_punt:'rare',fake_field_goal:'rare',fade_route:'common',kill_kill:'rare',onside_kick:'rare',swinging_gate:'rare'});
 
+// --- Eras of football (rules v0.10) --------------------------------------------------------------------
+// Single wing, the option, the West Coast and the 46: cards from football's history, collected in albums and favored
+// by their era's season.
+Object.assign(PLAYS,{
+  spinner:{id:'spinner',side:'off',name:'Spinner Series',family:'run',cost:1,carrier:'RB',era:'single_wing',
+    matchups:[{when:'man',duel:'K',v:1,src:'The spin hid the ball'}],
+    text:'SINGLE WING · Direct snap, the tailback spins and fakes before hitting it. Hides the ball from man defenders.',
+    duels:{
+      G:{label:'Unbalanced line',off:['LT','LG','C'],ot:['power','technique'],def:['NT','SET'],dt:['power','technique'],bias:1},
+      K:{label:'The spin fake',off:['RB'],ot:['iq','versatility'],def:['MIKE'],dt:['iq','composure'],bias:0,fake:true},
+      F:{label:'North and south',off:['RB'],ot:['power','speed'],def:['BOXS'],dt:['power','technique'],bias:0}},
+    results:{fail:[R(1,'run',[-1,1.5])],short:[R(1,'run',[3,1.2])],success:[R(1,'run',[6.5,1.8])],explosive:[R(1,'run',[14,6],{tail:.15})]}},
+  buck_lateral:{id:'buck_lateral',side:'off',name:'Buck Lateral',family:'constraint',punishes:'run',cost:1,target:'SLOT',pass:true,era:'single_wing',
+    matchups:[{when:'loaded',duel:'G',v:1,src:'The fullback buck pulled them in'}],
+    text:'SINGLE WING · The fullback bucks into the line, laterals back, and the wingback throws. Punishes a run lean.',
+    duels:{
+      G:{label:'Sell the buck',off:['RB'],ot:['power','iq'],def:['MIKE'],dt:['iq','composure'],bias:1,fake:true},
+      K:{label:'The lateral',off:['QB'],ot:['technique','composure'],def:['WILL'],dt:['speed','iq'],bias:0,qbRead:true},
+      F:{label:'Wingback leaks out',off:['SLOT'],ot:['speed','technique'],def:['NICKEL'],dt:['speed','iq'],bias:0}},
+    results:{fail:[R(.8,'inc',[0,0],{int:.05}),R(.2,'catch',[2,1.5])],short:[R(.5,'inc',[0,0],{int:.04}),R(.5,'catch',[6,2])],success:[R(.85,'catch',[13,4]),R(.15,'inc',[0,0])],explosive:[R(1,'catch',[25,9],{tail:.2})]}},
+  triple_option:{id:'triple_option',side:'off',name:'Triple Option',family:'run',cost:1,carrier:'QB',era:'option',needs:{role:'QB',trait:'speed',grade:7},
+    matchups:[{when:'man',duel:'F',v:1,src:'Nobody took the pitch man'}],
+    text:'OPTION ERA · Read the dive, read the keep, pitch it. Three defenders, three decisions. Needs a QB who can run.',
+    duels:{
+      G:{label:'Dive read',off:['RB'],ot:['power','iq'],def:['DT3'],dt:['power','iq'],bias:1,qbRead:true},
+      K:{label:'Keep read',off:['QB'],ot:['iq','speed'],def:['SET'],dt:['iq','speed'],bias:0,qbRun:true},
+      F:{label:'The pitch',off:['QB'],ot:['speed','versatility'],def:['FS'],dt:['speed','iq'],bias:0,qbRun:true}},
+    results:{fail:[R(1,'run',[-1.5,1.8])],short:[R(1,'run',[3,1.5])],success:[R(1,'run',[7,2.2])],explosive:[R(1,'run',[17,7],{tail:.22})]}},
+  split_veer:{id:'split_veer',side:'off',name:'Split Veer',family:'run',cost:1,carrier:'RB',era:'option',
+    matchups:[{when:'pressure',duel:'G',v:1,src:'The read left the blitzer unblocked on purpose'}],
+    text:'OPTION ERA · Split backs, read the defensive tackle, give or keep. Turns pressure into a running lane.',
+    duels:{
+      G:{label:'Read the tackle',off:['QB'],ot:['iq','composure'],def:['DT3'],dt:['iq','power'],bias:1,qbRead:true},
+      K:{label:'Hit the seam',off:['RB'],ot:['speed','iq'],def:['MIKE'],dt:['speed','iq'],bias:0},
+      F:{label:'Finish',off:['RB'],ot:['speed','power'],def:['BOXS'],dt:['speed','technique'],bias:0}},
+    results:{fail:[R(1,'run',[-1,1.5])],short:[R(1,'run',[3,1.3])],success:[R(1,'run',[6.5,2])],explosive:[R(1,'run',[15,6],{tail:.18})]}},
+  shallow_cross:{id:'shallow_cross',side:'off',name:'Shallow Cross',family:'quick',cost:0,target:'SLOT',pass:true,era:'west_coast',
+    matchups:[{when:'zone',duel:'K',v:1,src:'Found the hole underneath the zone'}],
+    text:'WEST COAST · A drag route under the linebackers, caught on the run. Timing beats zone.',
+    duels:{
+      G:{label:'Release',off:['SLOT'],ot:['speed','technique'],def:['NICKEL'],dt:['speed','technique'],bias:1,release:true},
+      K:{label:'Throw on rhythm',off:['QB'],ot:['technique','iq'],def:['WILL'],dt:['iq','speed'],bias:0,qbRead:true},
+      F:{label:'Run after catch',off:['SLOT'],ot:['speed','versatility'],def:['MIKE'],dt:['speed','technique'],bias:0}},
+    results:{fail:[R(.8,'inc',[0,0],{int:.04}),R(.2,'catch',[2,1.5])],short:[R(.45,'inc',[0,0],{int:.03}),R(.55,'catch',[4,1.5])],success:[R(.88,'catch',[7.5,2]),R(.12,'inc',[0,0],{int:.02})],explosive:[R(1,'catch',[15,6],{tail:.1})]}},
+  curl_flat:{id:'curl_flat',side:'off',name:'Curl-Flat',family:'quick',cost:1,target:'Z',pass:true,era:'west_coast',
+    matchups:[{when:'shell1',duel:'K',v:1,src:'High-low on the flat defender'}],
+    text:'WEST COAST · The receiver curls, the back runs to the flat. Make the flat defender wrong.',
+    duels:{
+      G:{label:'Push vertical',off:['Z'],ot:['speed','technique'],def:['FCB'],dt:['speed','technique'],bias:1,release:true},
+      K:{label:'Read the flat',off:['QB'],ot:['iq','technique'],def:['BOXS'],dt:['iq','speed'],bias:0,qbRead:true},
+      F:{label:'Sit it down',off:['Z'],ot:['technique','power'],def:['FCB'],dt:['technique','power'],bias:0}},
+    results:{fail:[R(.8,'inc',[0,0],{int:.04}),R(.2,'catch',[3,1.5])],short:[R(.45,'inc',[0,0],{int:.03}),R(.55,'catch',[5,1.5])],success:[R(.85,'catch',[9,2]),R(.15,'inc',[0,0],{int:.02})],explosive:[R(1,'catch',[16,5],{tail:.08})]}}
+});
+Object.assign(CALLS,{
+  forty_six:{id:'forty_six',side:'def',name:'46 Defense',family:'pressure',cost:2,box:'loaded',shell:1,coverage:'man',pressure:1,counters:['run','quick'],look:{pressureShown:true},era:'blitz',
+    effects:[{flag:'protect',v:1,src:'Both guards and the center covered'}],
+    text:'46 · Eight men up, both guards and the center covered, everyone attacks. Pressure +1; thin behind.'},
+  zone_blitz:{id:'zone_blitz',side:'def',name:'Zone Blitz',family:'pressure',cost:1,box:'normal',shell:1,coverage:'zone',pressure:1,counters:['quick','deep'],look:{pressureShown:true},era:'blitz',
+    effects:[{flag:'qbRead',v:1,src:'A lineman dropped into the hot throw'}],
+    text:'ZONE BLITZ · Send a linebacker, drop a lineman into the hot route. QB reads −1 for them.'}
+});
+Object.assign(TACTICS,{
+  two_way_star:{id:'two_way_star',side:'off',name:'Two-Way Star',cost:1,icon:'♾',effects:[{flag:'versatile',v:1}],text:'IRON MAN · Your most versatile players never leave the field: +1 on any duel where an offensive player with versatility 8+ is in it.'}
+});
+Object.assign(RARITY,{spinner:'rare',buck_lateral:'rare',triple_option:'rare',split_veer:'common',shallow_cross:'common',curl_flat:'common',forty_six:'rare',zone_blitz:'common',two_way_star:'rare'});
+
 // --- Combos (rules v0.8) -------------------------------------------------------------------------------
 // Real sequencing: set something up, then make them pay. Each is checked before a snap from this drive's memory
 // (c.fams / c.plays / c.calls / c.results, oldest first) and gives one labeled +1 (v is from the offense's point of

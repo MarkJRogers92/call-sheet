@@ -45,6 +45,9 @@ const CARDS=[
   ['flea_flicker','off','wrinkles'],['jet_reverse','off','wrinkles'],['counter_trey','off','wrinkles'],['buck_sweep','off','wrinkles'],
   ['midline_option','off','wrinkles'],['choice_route','off','wrinkles'],['dagger','off','wrinkles'],['smash','off','wrinkles'],
   ['wishbone_dive','off','wrinkles'],['power_lead','off','wrinkles'],
+  ['fade_route','off','wrinkles'],['kill_kill','off','tactics'],['two_way_star','off','tactics'],
+  ['spinner','off','wrinkles'],['buck_lateral','off','wrinkles'],['triple_option','off','wrinkles'],['split_veer','off','wrinkles'],['shallow_cross','off','wrinkles'],['curl_flat','off','wrinkles'],
+  ['forty_six','def','wrinkles'],['zone_blitz','def','wrinkles'],
   ['cover4_match','def','wrinkles'],['double_eagle','def','wrinkles'],['fire_zone','def','wrinkles'],['wide_nine','def','wrinkles'],['man_free','def','wrinkles'],['bluff_zero','def','wrinkles']
 ];
 function cards(){

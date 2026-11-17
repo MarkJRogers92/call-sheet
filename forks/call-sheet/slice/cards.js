@@ -43,8 +43,9 @@ function card(id,opts={}){
   const c=def(id),kind=kindOf(id),rarity=D.rarityOf(id),fam=c.family||'',side=c.side;
   const el=document.createElement('button');el.type='button';
   // Where a card came from, as a ribbon: Legacy, coaching tree, two-minute drill, trick, weather or milestone.
-  const weather=(c.matchups||[]).some(m=>['rain','snow','wind'].includes(m.when)),origin=c.legacy?'legacy':c.program?'coaching tree':c.drill?'two-minute drill':c.trick?'trick':weather?'weather':id==='giant_killer'?'milestone':'';
-  el.className=`card k-${kind} r-${rarity}${c.legacy?' r-legacy':''}${origin?' o-'+origin.replace(/[^a-z]+/g,'-'):''}${opts.selected?' sel':''}${opts.blocked?' blocked':''}${c.info?' info':''}${opts.small?' small':''}`;
+  const weather=(c.matchups||[]).some(m=>['rain','snow','wind'].includes(m.when)),origin=c.legacy?'legacy':c.program?'coaching tree':c.era?({single_wing:'single wing',option:'option era',west_coast:'west coast',blitz:'blitz era'}[c.era]||c.era.replace(/_/g,' ')):c.drill?'two-minute drill':c.special?'special teams':c.trick?'trick':weather?'weather':id==='giant_killer'?'milestone':'';
+  const fin=opts.finish!==undefined?opts.finish:(root.SliceCards?.finishOf?.(id)||null);
+  el.className=`card k-${kind} r-${rarity}${fin?' f-'+fin:''}${c.legacy?' r-legacy':''}${origin?' o-'+origin.replace(/[^a-z]+/g,'-'):''}${opts.selected?' sel':''}${opts.blocked?' blocked':''}${c.info?' info':''}${opts.small?' small':''}`;
   el.dataset.id=id;el.style.setProperty('--fam',FAM[fam]||'#e5c766');
   let type;
   if(kind==='play')type=`${fam}${c.trick?' · trick':''}${opts.base?' · base':''}`;
@@ -54,8 +55,8 @@ function card(id,opts={}){
   const art=sg?`<div class="sigart"><canvas class="sigface" width="58" height="58"></canvas><div class="signum">#${esc(sg.number)}<small>${esc(sg.role)}</small></div></div>`:kind==='tactic'?`<div class="ticon">${esc(c.icon)}</div>`:diagram(c.evolvedFrom||c.upgradeOf||id,side);
   el.innerHTML=`<span class="frame"></span><span class="cost">${opts.cost??c.cost}</span>
     <span class="cname">${esc(c.name)}</span><span class="art">${art}</span><span class="ctype">${esc(type)}</span>
-    <span class="ctext">${esc(String(c.text).replace(/^(EVOLVED|COACHING TREE|TRICK|TWO-MINUTE DRILL) · /,'').replace(/^LEGACY of #\S* [^·]*· /,''))}</span>${opts.why?`<span class="cwhy">${esc(opts.why)}</span>`:''}${opts.notch?'<span class="notch">PUNISHES LEAN</span>':''}
-    ${origin?`<span class="origin">${esc(origin)}</span>`:''}${rarity!=='common'?`<span class="rar">${rarity==='evolved'?'evolved · '+esc(c.branch||''):rarity==='signature'?'signature · '+esc(sg.archetype):rarity}</span>`:''}${opts.mastery?`<span class="mbar ${opts.mastery.reps>=opts.mastery.need?'full':''}" title="Reps toward evolution"><i style="width:${Math.min(100,opts.mastery.reps/opts.mastery.need*100)}%"></i></span>`:''}<span class="shine"></span>`;
+    <span class="ctext">${esc(String(c.text).replace(/^(EVOLVED|COACHING TREE|TRICK|TWO-MINUTE DRILL|OPTION ERA|SINGLE WING|WEST COAST|46|ZONE BLITZ|IRON MAN) · /,'').replace(/^LEGACY of #\S* [^·]*· /,''))}</span>${opts.why?`<span class="cwhy">${esc(opts.why)}</span>`:''}${opts.notch?'<span class="notch">PUNISHES LEAN</span>':''}
+    ${origin?`<span class="origin">${esc(origin)}</span>`:''}${fin?`<span class="finish">${fin==='gold'?'GOLD':'FOIL'}</span>`:''}${rarity!=='common'?`<span class="rar">${rarity==='evolved'?'evolved · '+esc(c.branch||''):rarity==='signature'?'signature · '+esc(sg.archetype):rarity}</span>`:''}${opts.mastery?`<span class="mbar ${opts.mastery.reps>=opts.mastery.need?'full':''}" title="Reps toward evolution"><i style="width:${Math.min(100,opts.mastery.reps/opts.mastery.need*100)}%"></i></span>`:''}<span class="shine"></span>`;
   el.setAttribute('aria-label',`${c.name}, costs ${opts.cost??c.cost}. ${c.text}${opts.why?' '+opts.why:''}`);
   if(sg){const cv=el.querySelector('.sigface');paintPortrait(cv,sg,sg.colors,58)}
   // 3D tilt and moving shine.

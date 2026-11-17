@@ -30,6 +30,8 @@ if(save.world&&!save.world.rival){save.world.rival=save.world.order[0];save.worl
 if(save.world&&!save.world.userLineup){save.world.userLineup=W.freshLineup(save.team);save.world.userRecord={w:0,l:0};save.world.history=[];for(const [id,p] of Object.entries(save.world.programs))p.lineup??=W.freshLineup(id)}
 function registerSignatures(){SG.registerAll(save.playbook);for(const r of save.playbook.ringOfHonor||[])SG.register(r);if(save.world)for(const p of Object.values(save.world.programs))SG.registerAll(p.playbook)}
 registerSignatures();
+// Your collection's print finishes (foil, gold) show on your cards wherever they appear.
+window.SliceCards.finishOf=id=>save.playbook?.finishes?.[id]||null;
 
 // ================================================================ state
 let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode='auto';
@@ -633,7 +635,7 @@ function finalScreen(){
 async function packScreen(won){
   S.init();
   const opp=b.user==='home'?'away':'home';
-  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,stage:DYN?.stage||null,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?DYN.worldTaken||[]:W.takenLegendaries(save.world,save.playbook,'user')});
+  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,stage:DYN?.stage||null,favor:won?DYN?.packFavor:null,favorWhy:DYN?.packFavorWhy,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?DYN.worldTaken||[]:W.takenLegendaries(save.world,save.playbook,'user')});
   const post=P.STAGE_PACKS?.[pack.type]||null;
   const pc=pack.type==='title'?['#fff2b0','#8a5a00']:post?['#d8dee9','#2c3448']:pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
   const m=$('#modal');
@@ -652,8 +654,10 @@ async function packScreen(won){
 }
 async function revealCards(pack){
   const rv=$('#rv');rv.innerHTML='';
-  const slots=pack.cards.map(c=>{const s=document.createElement('div');s.className='slot';s.innerHTML=`<div class="back">CALL<br>SHEET</div><div class="front"></div><div class="why"></div>`;
-    s.querySelector('.front').appendChild(card(c.id,{}));s.querySelector('.why').textContent=c.why||'';rv.appendChild(s);return s});
+  // Card backs in your program's colors.
+  const tc=b?.teams?.[b.user]?.colors||[];
+  const slots=pack.cards.map(c=>{const s=document.createElement('div');s.className='slot';s.innerHTML=`<div class="back" style="${tc[0]?`--tb1:${esc(tc[0])};--tb2:${esc(tc[1]||tc[0])}`:''}">${DYN?esc(teamOf(b.user).short):'CALL<br>SHEET'}</div><div class="front"></div><div class="why"></div>`;
+    s.querySelector('.front').appendChild(card(c.id,{finish:null}));s.querySelector('.why').textContent=c.why||'';rv.appendChild(s);return s});
   for(const [i,s] of slots.entries()){S.whoosh();FX.anim(s,[{transform:'translateY(-300px) rotate(-20deg) scale(.4)',opacity:0},{transform:'none',opacity:1}],{duration:380,easing:'cubic-bezier(.2,1.3,.4,1)'});await FX.wait(120)}
   await FX.wait(300);
   for(const [i,s] of slots.entries()){
@@ -681,6 +685,7 @@ async function choose(pack,slots,i){
   for(const [j,s] of slots.entries()){if(j===i)continue;s.classList.add('burn');const r=s.getBoundingClientRect();S.burn();PT.embers(r.left+r.width/2,r.top+r.height*.7)}
   await FX.wait(1000);
   const res=P.applyPick(save.playbook,c);b._packPicked=true;writeSave();
+  if(c.finish)callout(c.finish==='gold'?'GOLD PRINT':'FOIL PRINT','small',900,`${P.cardDef(c.id)?.name||c.id} · a ${c.finish} card for your collection`);
   const def=P.cardDef(c.id);
   $('#pkMsg').innerHTML=`<b>${esc(def.name)}</b> joins your playbook.`;
   if(res.over){await cutScreen(res.over,c);return}

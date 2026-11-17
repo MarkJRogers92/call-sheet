@@ -13,10 +13,10 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 
 // Every card a pack can hold. kind: play (offense wrinkle) | call (defense wrinkle) | tactic | upgrade.
 const POOL=[
-  ...['deep_cross','pa_boot','screen','power','read_option','draw','four_verts','vertical_shot','statue_left','rpo_bubble','hb_wheel','qb_draw','hook_ladder','wishbone_dive','power_lead','fake_punt','fake_field_goal','fade_route'].map(id=>({id,kind:'play',side:'off'})),
-  ...['motion','max_protect','route_adjust','seal_block','hard_count','check_with_me','hurry_up','audible','timeout_settle','kill_kill','onside_kick','swinging_gate'].map(id=>({id,kind:'tactic',side:'off'})),
+  ...['deep_cross','pa_boot','screen','power','read_option','draw','four_verts','vertical_shot','statue_left','rpo_bubble','hb_wheel','qb_draw','hook_ladder','wishbone_dive','power_lead','fake_punt','fake_field_goal','fade_route','spinner','buck_lateral','triple_option','split_veer','shallow_cross','curl_flat'].map(id=>({id,kind:'play',side:'off'})),
+  ...['motion','max_protect','route_adjust','seal_block','hard_count','check_with_me','hurry_up','audible','timeout_settle','kill_kill','onside_kick','swinging_gate','two_way_star'].map(id=>({id,kind:'tactic',side:'off'})),
   ...[['inside_zone_plus','inside_zone'],['quick_slant_plus','quick_slant'],['pa_boot_plus','pa_boot']].map(([id,replaces])=>({id,kind:'upgrade',side:'off',replaces})),
-  ...['zone_pressure','two_man','robber','sim_pressure','bear','corner_blitz','cover2_trap','cover0','midnight_mirage','tampa2','ghost_blitz'].map(id=>({id,kind:'call',side:'def'})),
+  ...['zone_pressure','two_man','robber','sim_pressure','bear','corner_blitz','cover2_trap','cover0','midnight_mirage','tampa2','ghost_blitz','forty_six','zone_blitz'].map(id=>({id,kind:'call',side:'def'})),
   ...['film_tell','identify_protection','disguise','bracket','spy','press','stunt','lock','timeout_ice'].map(id=>({id,kind:'tactic',side:'def'}))
 ].map(c=>({...c,rarity:D.rarityOf(c.id)}));
 // Defensive answers to each offensive family, for Film Study packs.
@@ -59,6 +59,8 @@ function openPack(pb,opts){
   if(!opts.won&&opts.oppTendency){focus=Object.entries(opts.oppTendency).filter(([k])=>COUNTERS[k]).sort((a,b)=>b[1]-a[1])[0]?.[0]||null}
   for(let i=0;i<n;i++){
     let pick=null;
+    // A themed pack (a classic bowl's era cards, a modern bowl's spread cards): the first slot comes from the theme.
+    if(!pick&&i===0&&Array.isArray(opts.favor)&&opts.favor.length){const ids=opts.favor.filter(id=>!used.has(id)),c=ids.length?POOL.find(p=>p.id===ids[rng.int(0,ids.length-1)]):null;if(c&&eligible(pb,c,opts.worldTaken))pick={...c,why:opts.favorWhy||'Part of this pack\'s theme'}}
     // Film Study: the first two slots come from the counters to what beat you.
     if(focus&&i<2){
       const ids=COUNTERS[focus].filter(id=>!used.has(id)),want=ids.length?ids[rng.int(0,ids.length-1)]:null,c=want?POOL.find(p=>p.id===want):null;
@@ -78,7 +80,15 @@ function openPack(pb,opts){
   return{type:opts.won?'victory':'film',title:opts.won?'Victory Pack':'Film Study Pack',subtitle:opts.won?'Pick 1 of 4':`Pick 1 of 3 · built around stopping their ${focus||'offense'}`,cards};
 }
 // Apply a pick. Returns {over:null} or {over:{side,pile}} when a cut is required.
+// Print finish of a pulled card: purely cosmetic. 3% gold, 12% foil; a collection keeps each card's best finish.
+const FINISH_RANK={foil:1,gold:2};
+function rollFinish(pb,id,seed){
+  const r=DynastyRng.create(`finish:${seed}:${pb.packsOpened}:${id}`).next(),f=r<.03?'gold':r<.15?'foil':null;
+  if(f&&(FINISH_RANK[f]>(FINISH_RANK[pb.finishes?.[id]]||0)))(pb.finishes??={})[id]=f;
+  return f;
+}
 function applyPick(pb,card){
+  card.finish=rollFinish(pb,card.id,card.uid||'pick');
   pb.packsOpened++;
   const d=pb[card.side];
   if(card.kind==='upgrade'){
@@ -168,12 +178,12 @@ function rewardPack(pb,{seed,weights={},n=4,bonusRare=0,worldTaken=[],title='Rew
 function grantCard(pb,id,how={}){
   const c=cardDef(id);if(!c)throw new Error(`Unknown card ${id}`);
   const side=c.side,pile=D.TACTICS[id]?'tactics':'wrinkles';
-  ensureCollection(pb)[side][pile].push(id);
+  ensureCollection(pb)[side][pile].push(id);if(how.finish!==false)rollFinish(pb,id,how.kind||'grant');
   if(D.rarityOf(id)==='legendary'&&!pb.legendaries.includes(id))pb.legendaries.push(id);
   (pb.history??=[]).push({id,kind:how.kind||'program',side,...(how.why?{why:String(how.why).slice(0,80)}:{})});
   return{side,pile};
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

@@ -70,15 +70,24 @@ function buildAny(spec){
   def.text=`LEGACY of #${spec.legacy.number??''} ${spec.legacy.name} · ${def.text} (A fainter edge than the original.)`;
   return{...b,def};
 }
+// Award tiers (the Heisman chase): 1 = a Player of the Week, 2 = three honors, 3 = a national award or five honors.
+// Tiers 1-2 add stars to the name; tier 3 adds +1 to the card's Key duel or its first effect.
+function withTier(spec,b){
+  const tier=Math.max(0,Math.min(3,spec.tier|0));if(!tier)return b;
+  const def=JSON.parse(JSON.stringify(b.def,(k,v)=>typeof v==='function'?undefined:v));def.name=`${def.name} ${'★'.repeat(tier)}`;
+  if(tier>=3){if(def.duels?.K)def.duels.K.bias=(def.duels.K.bias||0)+1;else if(def.effects?.length)def.effects[0].v=(def.effects[0].v||0)+1}
+  def.text=`${tier>=3?'AWARD WINNER':'HONORED'} · ${def.text}`;def.tier=tier;return{...b,def};
+}
 function register(spec){
-  const b=buildAny(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
+  const b=withTier(spec,buildAny(spec)),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
   table[spec.id]=b.def;D.RARITY[spec.id]='signature';return b;
 }
 function registerAll(pb){for(const s of [...(pb?.signatures||[]),...(pb?.reserveSignatures||[])])register(s)}
 function specFor(player,info={}){
   const template=templateFor(player),b=build({template,role:player.role,last:lastName(player.name),name:player.name,id:'x'});
   const legacy=info.legacy&&typeof info.legacy==='object'?{playerId:String(info.legacy.playerId),name:String(info.legacy.name||'').slice(0,60),last:String(info.legacy.last||'').slice(0,40),number:info.legacy.number??null}:null;
-  return{id:`${legacy?'leg':'sig'}_${player.id}`,...(legacy?{legacy}:{}),template,playerId:player.id,name:player.name,last:lastName(player.name),role:player.role,pos:player.pos,archetype:player.archetype,number:player.number,portraitSeed:player.portraitSeed,
+  const tier=Math.max(0,Math.min(3,Number(info.tier)||0));
+  return{id:`${legacy?'leg':'sig'}_${player.id}`,...(legacy?{legacy}:{}),...(tier?{tier}:{}),template,playerId:player.id,name:player.name,last:lastName(player.name),role:player.role,pos:player.pos,archetype:player.archetype,number:player.number,portraitSeed:player.portraitSeed,
     side:b.side,pile:b.kind==='tactic'?'tactics':'wrinkles',earned:info.earned||'',season:info.season||1,colors:info.colors||null};
 }
 // Who broke out in this game? A dominant share of his duels, or catching fire again and again.

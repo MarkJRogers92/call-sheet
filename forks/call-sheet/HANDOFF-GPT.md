@@ -27,7 +27,25 @@ portal transfer/reserve/save continuity, postseason stat/reward recording, and f
 Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
 (Superseded Nov 17 — see the next section.)
 
-## Balance, combos, card mode, visuals — November 17, 2026 (latest)
+## Round 2 from IDEAS-2.md — November 17, 2026 (latest)
+
+Built (tests in `npm test`): `card-special-teams.js`, `card-eras.js`, `card-dynasty-moments.js`, `card-collecting.js`.
+- **Special teams** (battle.js "special teams and situations"): kicker/punter ratings move kicks (adapter supplies
+  `team.specialists`), Fake Punt / Fake Field Goal (`fourthOnly`), Onside Kick and Swinging Gate (`special` tactics that
+  never enter a hand), personnel groupings (`GROUPINGS`, `setGrouping`), Kill Kill (`countered` effect flag), Fade, real
+  timeouts for timeout cards, red-zone rule, halftime weather turn. Game Engine 2 gained opt-in hooks
+  (`attemptFieldGoal(state,{adjust})`, `punt(state,{netAdjust})`, `state.onside`, `state.twoPointCall`); unused, nothing
+  changes. The v0.10.0 calibration was re-run (identical numbers) and restamped.
+- **Eras**: Spinner, Buck Lateral, Triple Option, Split Veer, Shallow Cross, Curl-Flat, 46, Zone Blitz, Two-Way Star
+  (`versatile` flag); Single Wing and Two-Way eras; Single Wing, West Coast albums; era ribbons on cards.
+- **Dynasty moments** (card-gameday section 12, `dynasty-moments`): bowl-themed packs (`packs.openPack` `favor`),
+  signature honor tiers (`signatures.withTier`, tier 3 = +1), held rivalry trophy edge, coaching-tree cards leave with
+  their coach (`callSheet.schemeGrants`), Program History album (`callSheet.milestones`), Walk-On badge, spring game.
+- **Collecting**: cosmetic foil/gold finishes (`packs.rollFinish`, `playbook.finishes`), team-colored card backs, Ring of
+  Honor binder in the Card Program.
+- Not built: quick kick (needs a punt mid-snap; low value).
+
+## Balance, combos, card mode, visuals — November 17, 2026
 
 - **Balance** (`tools/balance-report.js`, `tools/sim-report.js`, guards in `tests/card-balance.js`): game-day form
   (`battle.js` `FORM_SIGMA`, seeded per game, labeled "X sharp/flat today") so a 12-point talent gap wins ~92%, not

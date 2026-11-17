@@ -1,7 +1,11 @@
 # Call Sheet ideas, round 2 — from football history
 
 November 17, 2026. Built from real football history (eras, schemes, special teams, traditions), not from other
-games. Each idea says which existing system it reuses. Nothing here is built yet.
+games. Each idea says which existing system it reuses. **Status (Nov 17): built, with these simplifications** (see HANDOFF-GPT.md):
+#5 quick kick not built. #7 two-way players became the Two-Way Star tactic and Two-Way era (no player fills roles on
+both sides). #13 timeout cards spend real timeouts, but the drill does not yet use them to stop the clock. #18 the
+trophy is a labeled edge while held, not a collection card. #21 walk-ons get a badge, no breakout roll. #22 the spring
+game gives reps and names a standout; it does not change the depth chart. #24 team colors are on pack card backs.
 
 ## Special teams become cards
 
