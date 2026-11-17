@@ -408,3 +408,16 @@ reachable. An active battle is labeled as a locked launch snapshot and does not 
 This adds no new economy, reward, save field or simulation modifier. Integration switches and stale/
 postseason preparation are respected. `tests/card-dynasty-bridge.js` checks read-only behavior against
 the whole universe, current-week prep, toggles, active saves, legacy staff and escaped names.
+
+## Dynasty availability governs card games — November 17, 2026
+
+Scheduled card games now use Dynasty Lab's canonical `gameAvailable()` rules, not only injuries.
+Redshirts, academic holds and current-week sit decisions cannot enter the starting lineup, RB
+rotation or kicker/punter slots. The launch serializes excluded IDs into each side's program info;
+this rule remains active with program bonuses disabled. Both the coached launch and separate
+postseason simulation path apply it. Existing saved battles retain their original lineup snapshot.
+Depth cards, deck eligibility, teaching support, opponent matchup cards and nemesis participation
+use the same eligible lineup. Spring practice remains separate: redshirts may practice.
+No rewards, save schema, or independent eligibility rules were added. `tests/card-availability.js`
+covers real coached/sim launch, both teams, specialists, expired rest, missing specialist depth,
+postseason rewards, resumed snapshots and unavailable nemesis moments.

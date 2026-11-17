@@ -191,7 +191,7 @@ function normalizeCallSheet(u){
     hooks:{launch(ctx){syncProgramCapacity(ctx.me,userPlaybook());ctx.cfg.playbook=userPlaybook()},weekTick(){syncProgramCapacity(selected(),userPlaybook())},offseason(){syncProgramCapacity(selected(),userPlaybook())}}});
   function syncProgramCapacity(team,pb){if(team&&pb&&integrationOn(FACILITY_LINK))CS.program.syncCapacity(pb,team);return pb}
   function trainingFor(team,pb){
-    const support={},roster=new Map((team.roster||[]).map(p=>[String(p.id),p])),lineup=CS.adapter.lineupFromTeam(team).lineup;
+    const support={},roster=new Map((team.roster||[]).map(p=>[String(p.id),p])),lineup=gameLineup(team).lineup;
     for(const side of ['off','def'])for(const [role,bp] of Object.entries(lineup[side])){const p=roster.get(bp.id);if(p)support[role]=resolveDevelopmentCoaching(team,p).modifier}
     return CS.program.trainingRates(team,pb,support);
   }
@@ -311,6 +311,10 @@ function normalizeCallSheet(u){
     if(Number(c.wind)>=16)return'wind';
     return'clear';
   }
+  // Eligibility comes from Dynasty Lab itself. The plain ID snapshot crosses the battle iframe boundary.
+  // Keep spring practice separate: redshirts may practice, but cannot appear in a scheduled game.
+  function availabilityFor(team){return{unavailableIds:(team.roster||[]).filter(p=>!gameAvailable(p)).map(p=>String(p.id))}}
+  function gameLineup(team){return CS.adapter.lineupFromTeam(team,availabilityFor(team))}
   // Everything a battle needs for this week's game, from the dynasty, after every integration has had its say.
   function buildLaunch(){
     const g=currentCardGame(),home=T(g.home),away=T(g.away),me=selected(),meta=cardMeta(),seed=battleSeed(g);
@@ -323,6 +327,8 @@ function normalizeCallSheet(u){
       activeBattle:meta.activeBattle?.seed===seed?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
       seed,moves:[],practiceReps:{},worldTaken:takenLegendaries(),program:{home:{enabled:false},away:{enabled:false}}};
     runHook('launch',{cfg,g,home,away,me,opp,userSide:cfg.userSide});
+    // Eligibility is a game rule, not an optional program bonus. Apply after hooks replace program info.
+    for(const side of ['home','away'])cfg.program[side]={...cfg.program[side],...availabilityFor(cfg[side])};
     if(cfg.moves.length)try{autosaveAfter('game')}catch(err){}
     return cfg;
   }
@@ -409,6 +415,7 @@ function normalizeCallSheet(u){
         seed:`card:post:${universe.year}:${week}:${options.label||'post'}:${home.id}:${away.id}`,weather:battleWeather(conditions),conditions,
         playbook:userPlaybook(),practiceReps:{},moves:[],program:{home:{enabled:false},away:{enabled:false}},rivalry:(me.protectedRivalIds||[]).includes(opp.id)};
       runHook('launch',{cfg,g:{week},home,away,me,opp,userSide});
+      for(const side of ['home','away'])cfg.program[side]={...cfg.program[side],...availabilityFor(cfg[side])};
       const sim=simulateCardGame(cfg);sim.week=week;sim.postseason=true;sim.ranks=rankSnapshot(opp);
       const out=postseasonRecordBase(home,away,{...options,externalState:sim.b.game});
       if(out?.ok){completeSimCardGame(sim);out.record.cardBattle=true;try{out.record.cardMoments=cleanMoments(CS.battle.decidingMoments(sim.b))}catch(err){console.error(err)}}return out;
@@ -627,7 +634,7 @@ function normalizeCallSheet(u){
   // A nemesis: a player on that roster who had you in his final five, took your offer, and signed elsewhere.
   function isNemesis(p,team,me){const r=p?.recruitment;return!!r&&String(r.schoolId)===String(team.id)&&String(team.id)!==String(me.id)&&(r.offerSchoolIds||[]).map(String).includes(String(me.id))&&(r.topFiveSchoolIds||[]).map(String).includes(String(me.id))}
   function nemesesOn(team,me){
-    if(!team||!me)return[];const lu=CS.adapter.lineupFromTeam(team).lineup,ids=new Set([...Object.values(lu.off),...Object.values(lu.def)].map(x=>String(x.id)));
+    if(!team||!me)return[];const lu=gameLineup(team).lineup,ids=new Set([...Object.values(lu.off),...Object.values(lu.def)].map(x=>String(x.id)));
     return(team.roster||[]).filter(p=>ids.has(String(p.id))&&isNemesis(p,team,me)).map(p=>({p}));
   }
   function nemesisMoments(opp,won){
@@ -945,7 +952,7 @@ function normalizeCallSheet(u){
   function paintDepthCards(){
     const host=document.querySelector('#depth'),grid=host?.querySelector('#depthGrid');if(!host||!grid)return;let box=host.querySelector('#depthCards');
     if(!pagesOn()){box?.remove();return}
-    const me=selected(),lu=CS.adapter.lineupFromTeam(me).lineup,byId=new Map((me.roster||[]).map(p=>[String(p.id),p]));
+    const me=selected(),lu=gameLineup(me).lineup,byId=new Map((me.roster||[]).map(p=>[String(p.id),p]));
     const row=side=>Object.entries(lu[side]).map(([role,bp])=>{const p=byId.get(String(bp.id));return p?miniCardHTML(p,me,{role}):''}).join('');
     if(!box){grid.insertAdjacentHTML('beforebegin','<div id="depthCards" class="cs-cards card"></div>');box=host.querySelector('#depthCards')}
     box.innerHTML=`<h3>Card lineup</h3><p class="muted">Who the card battle puts on the field from this depth chart. Gold borders are signature cards.</p><h4>Offense</h4><div class="cs-mini-row">${row('off')}</div><h4>Defense</h4><div class="cs-mini-row">${row('def')}</div>`;
@@ -996,7 +1003,7 @@ function normalizeCallSheet(u){
     if(!feature.__cardsObs&&typeof MutationObserver==='function'){let queued=false;feature.__cardsObs=new MutationObserver(()=>{if(queued||feature.querySelector('#matchupCards')||!pagesOn())return;queued=true;(window.requestAnimationFrame||setTimeout)(()=>{queued=false;try{paintMatchupCards()}catch(err){}})});feature.__cardsObs.observe(feature,{childList:true})}
     const g=pagesOn()?currentCardGame():null,me=selected();if(!g){box?.remove();return}
     const opp=T(g.home===me.name?g.away:g.home);if(!opp){box?.remove();return}
-    const lu=CS.adapter.lineupFromTeam(opp).lineup,byId=new Map((opp.roster||[]).map(p=>[String(p.id),p]));
+    const lu=gameLineup(opp).lineup,byId=new Map((opp.roster||[]).map(p=>[String(p.id),p]));
     const top=[...Object.entries(lu.off),...Object.entries(lu.def)].map(([role,bp])=>({role,bp,p:byId.get(String(bp.id))})).filter(x=>x.p).sort((a,b)=>b.bp.ovr-a.bp.ovr).slice(0,4);
     if(!box){feature.insertAdjacentHTML('beforeend','<div id="matchupCards" class="cs-cards"></div>');box=feature.querySelector('#matchupCards')}
     box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4><div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
@@ -1176,7 +1183,7 @@ function normalizeCallSheet(u){
     const unavailable=(me.roster||[]).filter(p=>Number(p.injuryWeeks)>0).length;
     return`<div class="cpn-connections" aria-label="Dynasty Lab connections"><h4>Dynasty Lab → Game Day</h4><div class="cpn-bridge-grid">
       <article><b>This week’s preparation</b><p>${escH(prep)}</p>${opp&&!active?link('gamelab','Scout & prepare'):''}</article>
-      <article><b>Your people, your cards</b><p>${unavailable?`${unavailable} injured player${unavailable===1?' is':'s are'} unavailable. `:''}Roles & Depth chooses the real players on the field. Camp gains change their duel traits, not a second bonus.</p>${link('depth','Set the lineup')}${link('development','Develop players')}</article>
+      <article><b>Your people, your cards</b><p>${unavailable?`${unavailable} injured player${unavailable===1?' is':'s are'} unavailable. `:''}Roles & Depth chooses the real players on the field. Redshirts, academic holds and this week’s sit decisions are respected. Camp gains change their duel traits, not a second bonus.</p>${link('depth','Set the lineup')}${link('development','Develop players')}</article>
       <article><b>Coaches teach what you call</b><p>${escH(teachers)}. Coordinator development and player coaching support contribute. Only cards used in games earn the coaching boost.</p>${link('staff','Manage staff')}</article>
       <article><b>Recruit for your playbook</b><p>${integrationOn(RECRUIT_LINK)?'Prospect cards show archetype fit with your active deck. Matching strengths contribute to the existing recruiting pitch, without revealing hidden ratings.':'Playbook recruiting is off in Card Settings; the normal recruiting pitch is unchanged.'}</p>${link('recruiting','Find your next playmaker')}</article>
     </div></div>`;
@@ -1444,7 +1451,7 @@ function normalizeCallSheet(u){
     const offense=role in (D.OFF_ROLES||{}),pb=universe.callSheet?.playbook;
     const deck=offense&&pb?[...pb.off.base,...pb.off.wrinkles]:[],inPlay=id=>Object.values(D.PLAYS[id]?.duels||{}).some(d=>(d.off||[]).includes(role)||(d.def||[]).includes(role));
     const usage=offense?(deck.length?`In ${deck.filter(inPlay).length} of the ${deck.length} plays in your playbook`:''):(()=>{const all=Object.values(D.PLAYS).filter(p=>!p.signature&&!p.evolvedFrom);return`Fights in ${Math.round(all.filter(p=>inPlay(p.id)).length*100/Math.max(1,all.length))}% of the plays offenses run`})();
-    const starter=AD.lineupFromTeam(u).lineup[offense?'off':'def'][role];
+    const starter=gameLineup(u).lineup[offense?'off':'def'][role];
     const cmp=starter?(lo>starter.ovr?`Projects ahead of your starter ${starter.name} (${starter.ovr}) right away.`:hi<starter.ovr?`Behind your starter ${starter.name} (${starter.ovr}) for now; a development project.`:`Neck and neck with your starter ${starter.name} (${starter.ovr}).`):'You have no starter at this spot.';
     const ability=D.SIGNATURES[bp.archetype]?.text||'',duels=duelsForRole(role),fit=recruitingFit(u,r);
     return`<section class="cs-pcard cs-rcard" id="recruitBattleCard" aria-label="Recruit battle card">
@@ -1486,7 +1493,7 @@ function normalizeCallSheet(u){
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
-  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){const cg=currentCardGame();if(cg&&cardMeta().activeBattle?.seed===battleSeed(cg)){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{lineup:CS.adapter.lineupFromTeam(selected()).lineup,onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
+  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){const cg=currentCardGame();if(cg&&cardMeta().activeBattle?.seed===battleSeed(cg)){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{lineup:gameLineup(selected()).lineup,onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
 
   let host=null;
   globalThis.__callSheetDynasty={
