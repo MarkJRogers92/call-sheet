@@ -104,6 +104,14 @@ function startGame(state){
   validateState(state);return state;
 }
 function kickoffTo(state,receiver,reason='kickoff'){
+  // Opt-in onside kick (the card battle sets state.onside = {kicker, chance}); one extra draw only when requested.
+  const onside=state.onside&&state.onside.kicker===other(receiver)?state.onside:null;
+  if(onside){
+    state.onside=null;state.pendingKickoff=null;const rng=rngFor(state),roll=rng.next();finishRng(state,rng);
+    const recovered=roll<clamp(Number(onside.chance)||0,0,.5),side=recovered?onside.kicker:receiver;
+    state.possession=side;state.fieldPosition=recovered?45:55;state.down=1;state.distance=10;state.drive++;
+    pushEvent(state,'kickoff',{receiver,reason,onside:true,recovered});return;
+  }
   state.pendingKickoff=null;state.possession=receiver;state.fieldPosition=KICKOFF_SPOT;state.down=1;state.distance=10;state.drive++;
   const rules=rulesOf(state);
   if(!rules||rules.returns===false){pushEvent(state,'kickoff',{receiver,reason,touchback:true});return}
@@ -210,7 +218,10 @@ function touchdown(state,side,data={}){
   addPoints(state,side,6,'touchdown',data);
   // One draw either way, so a playbook choice never shifts the rest of the game's randomness.
   const rng=rngFor(state),roll=rng.next();finishRng(state,rng);
-  if(playbookTwoPoint(state,side)){
+  // Opt-in two-point call (the card battle's Swinging Gate): same single draw, so nothing else shifts.
+  const call=state.twoPointCall&&state.twoPointCall.side===side?state.twoPointCall:null;if(call)state.twoPointCall=null;
+  if(call){if(roll<clamp(TWO_POINT_RATE+(Number(call.boost)||0),0,.9))addPoints(state,side,2,'two_point',{made:true,gate:true});else pushEvent(state,'two_point',{team:side,points:0,made:false,gate:true})}
+  else if(playbookTwoPoint(state,side)){
     if(roll<TWO_POINT_RATE)addPoints(state,side,2,'two_point',{made:true,playbook:true});else pushEvent(state,'two_point',{team:side,points:0,made:false,playbook:true});
   }else if(roll<.965)addPoints(state,side,1,'extra_point',{made:true});else pushEvent(state,'extra_point',{team:side,points:0,made:false});
   kickoffAfterScore(state,other(side),'post_touchdown');
@@ -288,32 +299,34 @@ function defaultFourthDown(state,goShort=false){
   if(state.fieldPosition<60&&state.distance>1)return 'punt';
   return 'play';
 }
-function attemptFieldGoal(state){
+// opts.adjust: an optional change to the make chance (the card battle's kicker duel). Default 0 changes nothing.
+function attemptFieldGoal(state,opts={}){
   requireStatus(state,'live');if(state.period>4)throw new Error('Use overtime resolution for overtime field goals.');
   const side=state.possession;if(!side)throw new Error('No possession for field goal.');
   const distance=Math.round(100-state.fieldPosition+17),rng=rngFor(state);
-  const probability=fieldGoalChance(state,distance),made=rng.next()<probability;finishRng(state,rng);
+  const probability=clamp(fieldGoalChance(state,distance)+(Number(opts.adjust)||0),.02,.99),made=rng.next()<probability;finishRng(state,rng);
   consumeClock(state,5);
   if(made){addPoints(state,side,3,'field_goal',{distance,made:true});kickoffAfterScore(state,other(side),'post_field_goal')}
   else{pushEvent(state,'field_goal',{team:side,points:0,distance,made:false});setPossession(state,other(side),Math.max(20,100-state.fieldPosition),'missed_field_goal')}
   endRegulationPeriodIfNeeded(state);validateState(state);return made;
 }
-function punt(state){
+// opts.netAdjust: optional extra yards on the kick (the card battle's punter). Default 0 changes nothing.
+function punt(state,opts={}){
   requireStatus(state,'live');if(state.period>4)throw new Error('Punts are not used in overtime.');
   const rules=rulesOf(state);
-  if(rules&&rules.returns!==false)return puntWithReturn(state);
-  const side=state.possession,rng=rngFor(state),net=clamp(Math.round(40+rng.gauss()*5),28,52);finishRng(state,rng);consumeClock(state,7);
+  if(rules&&rules.returns!==false)return puntWithReturn(state,opts);
+  const side=state.possession,rng=rngFor(state),net=clamp(Math.round(40+(Number(opts.netAdjust)||0)+rng.gauss()*5),28,52);finishRng(state,rng);consumeClock(state,7);
   const landing=state.fieldPosition+net;pushEvent(state,'punt',{team:side,net,touchback:landing>=100});
   setPossession(state,other(side),landing>=100?TOUCHBACK_SPOT:100-landing,'punt');endRegulationPeriodIfNeeded(state);validateState(state);return state;
 }
 // A punt with a returner: gross distance depends on the weather, a punt that lands deep is often downed or
 // fair caught, and a returned punt can break (rarely) for a touchdown. `net` stays the kick's own distance,
 // the way punting stats have always been recorded; the return is in `ret`.
-function puntWithReturn(state){
+function puntWithReturn(state,opts={}){
   const side=state.possession,receiver=other(side),rng=rngFor(state),e=effectsOf(state);
   const grossDraw=rng.gauss(),coverRoll=rng.next(),retDraw=rng.gauss(),breakRoll=rng.next();finishRng(state,rng);
   consumeClock(state,7);
-  const net=clamp(Math.round(40+e.puntYards+grossDraw*5.5),24,62),landing=state.fieldPosition+net;
+  const net=clamp(Math.round(40+e.puntYards+(Number(opts.netAdjust)||0)+grossDraw*5.5),24,62),landing=state.fieldPosition+net;
   if(landing>=100){
     pushEvent(state,'punt',{team:side,net,touchback:true,ret:0});
     setPossession(state,receiver,TOUCHBACK_SPOT,'punt');endRegulationPeriodIfNeeded(state);validateState(state);return state;

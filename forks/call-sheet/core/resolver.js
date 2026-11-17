@@ -31,8 +31,9 @@ function ability(lineup,roles,traits){
 const rootPlay=p=>p.evolvedFrom||p.upgradeOf||p.id;
 
 // Is a play legal for this lineup? Returns null or a reason.
-function playBlocked(play,lineup){
+function playBlocked(play,lineup,sit=null){
   const sig=signatureBlocked(play,lineup);if(sig)return sig;
+  if(play.fourthOnly&&sit&&sit.down!==4)return'4th down only';
   const n=play.needs;
   if(n&&traitGrade(lineup[n.role],n.trait)<n.grade)return`Needs a ${n.role} with ${n.trait} ${n.grade}+`;
   return null;
@@ -75,7 +76,7 @@ function buildSnap(ctx){
   const {off,def,play,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
   const sit=ctx.situation||{down:1,distance:10,field:25};
   // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). Used by effects, edges and matchups.
-  const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
+  const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:w==='redzone'?(sit.field||0)>=80:w==='fourth'?sit.down===4:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
   const brRole=dt.has('bracket')?(ctx.bracketRole||bracketRole(off)):null;
   const flags={},origin=rootPlay(play),abilityContext={play:{...play,id:origin},call,offTactics:[...ot],defTactics:[...dt],situation:sit};
   const duels=['G','K','F'].map(key=>{
@@ -121,7 +122,7 @@ function buildSnap(ctx){
     if(dt.has('press')&&d.release){add(-1,'Press');flags.press=true}
     if(dt.has('identify_protection')&&d.protect&&call.pressure>0)add(-1,'Aimed pressure');
     // Generic card effects (new tactics, signature cards, calls with duel mods). Each names which duels it touches.
-    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
+    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:e.flag==='countered'?(call.counters||[]).includes(play.family):!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
     for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
     for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
     // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.
@@ -142,6 +143,12 @@ function buildSnap(ctx){
       const hit={pressure:call.pressure>0,shell1:call.shell===1,shell2:call.shell===2,man:call.coverage==='man',zone:call.coverage==='zone',loaded:call.box==='loaded',light:call.box==='light'}[m.when]??whenOn(m.when);
       if(hit)add(m.v,m.src);
     }
+    // Red zone: the field shrinks, so deep routes have nowhere to go.
+    if((sit.field||0)>=80&&play.family==='deep'&&key==='K')add(-1,'Red zone: no room deep');
+    // Personnel grouping (the offense's choice each series), answered by the defense's box and shell.
+    const grp=ctx.grouping;
+    if(grp==='12'||grp==='21'){if(play.family==='run'&&key===(grp==='12'?'G':'K')&&call.box!=='loaded')add(.5,`Personnel ${grp}: extra blocker`);if(play.pass&&(d.separation||d.release))add(-.5,`Personnel ${grp}: fewer receivers`)}
+    if(grp==='10'){if(play.pass&&(d.separation||d.release)&&call.shell!==2)add(.5,'Personnel 10: four receivers');if(play.family==='run'&&key==='G')add(-.5,'Personnel 10: light up front')}
     // Momentum: the offense that just took the ball away gets one snap's push at the point of attack.
     if(ctx.momentum&&key==='G')add(1,'Momentum: takeaway');
     // Combos and hot players.

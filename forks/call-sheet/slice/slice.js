@@ -298,6 +298,12 @@ function backfieldHTML(){
   const p=team.lineup.off.RB,mode=b.backfieldMode?.[req.side]||'auto';
   return`<div class="box"><h3><label for="backfield">Backfield package</label></h3><select id="backfield" class="tbtn" style="width:100%">${Object.entries(B.BACKFIELD_MODES).map(([id,name])=>`<option value="${id}" ${id===mode?'selected':''}>${esc(name)}</option>`).join('')}</select><div class="mini" style="margin-top:6px"><b>${esc(p.name)}</b> · ${esc(p.archetype)}<br>${mode==='auto'?'Backup takes every fourth offensive snap.':mode==='starter'?'Keep the depth-chart starter on the field.':mode==='power'?'Best power and technique, adjusted for conditions.':'Best technique, IQ and versatility, adjusted for conditions.'}</div></div>`;
 }
+// Personnel grouping for this series: heavy (12, 21) helps the run and costs a receiver; 10 spreads them out.
+function personnelHTML(){
+  if(req?.kind!=='snap'||req.role!=='off'||!B.GROUPINGS)return'';
+  const mode=b.grouping?.[req.side]||'auto',now=B.groupingFor(b,req.side);
+  return`<div class="box"><h3><label for="personnel">Personnel</label></h3><select id="personnel" class="tbtn" style="width:100%">${Object.entries(B.GROUPINGS).map(([id,name])=>`<option value="${id}" ${id===mode?'selected':''}>${esc(name)}${id==='auto'?` (now ${now})`:''}</option>`).join('')}</select><div class="mini">12/21: run +½ unless they load the box, receivers −½. 10: receivers +½ against one deep safety, run −½.</div></div>`;
+}
 function lastSnapHTML(){
   const e=b.lastResult,note=B.explainSnap(e);if(!note)return'';
   const outcome=e.penalty?e.penalty.label:e.turnover?e.turnover:e.kind==='inc'?'Incomplete':`${e.yards>0?'+':''}${e.yards} yards`;
@@ -306,9 +312,10 @@ function lastSnapHTML(){
 function renderSide(){
   const pb=save.playbook;
   const ur=DYN?DYN.record:(save.world.userRecord||pb.record);
-  $('#side').innerHTML=backfieldHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
+  $('#side').innerHTML=backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
    <div class="mini">vs ${esc(teamOf('away').name)} · ${esc(teamOf('away').coach.name)}</div>
    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='moments'?'key moments':'all'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
+  const personnel=$('#personnel');if(personnel)personnel.onchange=()=>{if(busy)return;try{B.setGrouping(b,req.side,personnel.value);writeSave();renderSide()}catch(e){err=e.message;renderHand()}};
   const backfield=$('#backfield');if(backfield)backfield.onchange=()=>{
     if(busy)return;
     try{req=B.setBackfield(b,req.side,backfield.value);writeSave();sel={play:null,tac:[]};err='';hideTip();const f=formation(sitNow());if(f)ensureDots(f);refresh()}catch(e){err=e.message;renderHand()}
@@ -586,7 +593,7 @@ async function bigMoment(text,good,sub){
 function fourthModal(){
   renderBug();setFormation(sitNow());refresh();$('#hand').classList.add('away');
   const r=req,m=$('#modal');
-  const lab={go:'GO FOR IT',punt:'PUNT',field_goal:`FIELD GOAL · ${Math.round(r.fgChance*100)}%`};
+  const lab={go:'GO FOR IT',punt:'PUNT',field_goal:`FIELD GOAL · ${Math.round(r.fgChance*100)}%${r.kicker?.adjust?` (${r.kicker.name?esc(r.kicker.name)+' ':''}${r.kicker.adjust>0?'+':''}${Math.round(r.kicker.adjust*100)}%)`:''}`};
   m.innerHTML=`<div class="mwrap"><p class="big gold">4TH DOWN</p><p class="statline">${r.situation.distance} to go · staff says <b>${esc(lab[r.recommended]||r.recommended)}</b></p>
     <div>${r.options.map(o=>`<button class="btn ${o===r.recommended?'go':''}" data-o="${o}">${esc(lab[o])}</button>`).join('')}</div></div>`;
   m.classList.add('on');

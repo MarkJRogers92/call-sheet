@@ -27,7 +27,7 @@ const OFF_FAMILIES=['run','quick','deep','constraint'];
 function create(opts){
   const seed=String(opts.seed??'call-sheet');
   const game=Engine.createGame({home:{id:'home',name:opts.home.name,rating:70},away:{id:'away',name:opts.away.name,rating:70},seed,rules:{penalties:true,returns:true,pressure:true,...(opts.conditions?{conditions:opts.conditions}:{})}});
-  const b={version:VERSION,seed,mode:opts.mode||'series',user:opts.user||null,control:opts.control||'both',weather:opts.weather||'clear',rivalry:!!opts.rivalry,game,
+  const b={version:VERSION,seed,mode:opts.mode||'series',user:opts.user||null,control:opts.control||'both',weather:opts.weather||'clear',conditions:opts.conditions||null,grouping:{home:'auto',away:'auto'},specialUsed:{home:{},away:{}},rivalry:!!opts.rivalry,game,
     teams:{home:clone(opts.home),away:clone(opts.away)},
     decks:{home:clone(opts.home.decks||D.DEFAULT_DECKS),away:clone(opts.away.decks||D.DEFAULT_DECKS)},
     piles:{},hands:{home:null,away:null},
@@ -52,7 +52,7 @@ function blankTend(){return{run:0,quick:0,deep:0,constraint:0,pressure:0,man:0,z
 function blankBox(){return{plays:0,yards:0,rushAtt:0,rushYds:0,passAtt:0,comp:0,passYds:0,sacks:0,ints:0,fumbles:0,firstDowns:0,thirdAtt:0,thirdConv:0,fourthAtt:0,fourthConv:0,penalties:0,penaltyYds:0,punts:0,explosives:0,cardsPlayed:0}}
 function withRng(b,fn){const rng=DynastyRng.create(b.rng);const out=fn(rng);b.rng=rng.snapshot();return out}
 function shuffle(rng,arr){for(let i=arr.length-1;i>0;i--){const j=rng.int(0,i);[arr[i],arr[j]]=[arr[j],arr[i]]}return arr}
-function freshPiles(b,deck){return withRng(b,rng=>({wrinkle:{draw:shuffle(rng,[...deck.wrinkles]),discard:[]},tactic:{draw:shuffle(rng,[...deck.tactics]),discard:[]}}))}
+function freshPiles(b,deck){return withRng(b,rng=>({wrinkle:{draw:shuffle(rng,[...deck.wrinkles]),discard:[]},tactic:{draw:shuffle(rng,deck.tactics.filter(id=>!D.TACTICS[id]?.special)),discard:[]}}))}
 function drawFrom(b,pile,n){
   const out=[];
   while(out.length<n){
@@ -159,6 +159,10 @@ function halftime(b){
       b.piles[side]={off:freshPiles(b,keep(b.decks[side].off)),def:freshPiles(b,keep(b.decks[side].def))}}
   }
   b.seriesKey=null;b.log.push({type:'halftime',text:'Halftime. Tendencies cool off, decks reshuffle.'});
+  // Weather can turn at halftime (outdoors only, from its own seeded stream): clouds bring rain or snow, light rain can clear.
+  if(b.conditions?.roof!=='dome'){const r=DynastyRng.create(`${b.seed}:weather2`).next(),cold=Number(b.conditions?.temp??60)<=33;
+    const next=b.weather==='clear'&&Number(b.conditions?.wind??0)>=12&&r<.2?(cold?'snow':'rain'):b.weather==='rain'&&Number(b.conditions?.precip??1)<=1&&r<.25?'clear':null;
+    if(next){b.log.push({type:'weather',from:b.weather,to:next,text:next==='clear'?'The rain clears for the second half.':`${next==='snow'?'Snow':'Rain'} moves in for the second half.`});b.weather=next}}
 }
 
 // ---------------------------------------------------------------- the Look
@@ -197,6 +201,45 @@ function offFamilyWeights(b,revealedFamily){
 }
 const REP_PLAYS={run:['inside_zone','outside_zone','power'],quick:['quick_slant','stick'],deep:['deep_cross','vertical_shot'],constraint:['pa_boot','screen']};
 
+// ---------------------------------------------------------------- special teams and situations (rules v0.9)
+// Timeout cards spend one of the engine's real timeouts (three per half).
+const TIMEOUT_CARDS=['timeout_settle','timeout_ice'];
+const timeoutsLeft=(b,side)=>Number(b.game.timeouts?.[side]??3);
+// Personnel grouping: 11 (balanced), 12 and 21 (heavy), 10 (spread). Auto picks by situation.
+const GROUPINGS={auto:'Auto',11:'11 · balanced','12':'12 · two tight ends','21':'21 · fullback','10':'10 · four wide'};
+function groupingFor(b,side){
+  const m=b.grouping?.[side]||'auto';if(m!=='auto')return m;
+  const g=b.game;if(g.distance<=2)return'21';if(g.down>=3&&g.distance>=7)return'10';if((g.fieldPosition||0)>=80)return'12';return'11';
+}
+function setGrouping(b,side,mode){if(!Object.hasOwn(GROUPINGS,mode))throw new Error('Unknown personnel grouping.');(b.grouping??={home:'auto',away:'auto'})[side]=mode;return b.pending}
+// Kickers and punters: their real ratings move the kick (grade = rating ÷ 10; 7 is average). Labeled in the log.
+const gradeOf=(p,ks)=>p?ks.reduce((n,k)=>n+(Number(p.traits?.[k])||50),0)/ks.length/10:7;
+function kickerEdge(b,side){
+  const K=b.teams[side]?.specialists?.K,rush=Math.max(...['RUSH','SET'].map(r=>gradeOf(b.teams[other(side)]?.lineup?.def?.[r],['speed'])));
+  const adj=Math.max(-.09,Math.min(.09,(gradeOf(K,['power','technique'])-7)*.03))-Math.max(-.03,Math.min(.03,(rush-7)*.01));
+  return{adjust:Math.round(adj*100)/100,name:K?.name||null};
+}
+function punterEdge(b,side){const P=b.teams[side]?.specialists?.P;return{netAdjust:Math.round(Math.max(-6,Math.min(6,(gradeOf(P,['power'])-7)*2))),name:P?.name||null}}
+// Special cards act on their own: an onside try late when trailing, a Swinging Gate two-point try when the chart says go.
+const hasSpecial=(b,side,id)=>(b.decks[side]?.off?.tactics||[]).includes(id)&&!b.specialUsed?.[side]?.[id];
+function armSpecials(b,side){
+  const g=b.game,opp=other(side),behind=g.score[opp]-g.score[side];
+  if(hasSpecial(b,side,'onside_kick')&&g.period===4&&g.clock<=360&&behind>=1&&behind<=16){
+    const hands=['X','Z','SLOT','TE'].map(r=>gradeOf(b.teams[side].lineup.off[r],['technique','speed'])),theirs=['X','Z','SLOT','TE'].map(r=>gradeOf(b.teams[opp].lineup.off[r],['technique','speed']));
+    const edge=(hands.reduce((a,x)=>a+x,0)-theirs.reduce((a,x)=>a+x,0))/hands.length;g.onside={kicker:side,chance:Math.max(.08,Math.min(.24,.14+edge*.03))};
+  }
+  if(hasSpecial(b,side,'swinging_gate')&&g.period>=3&&g.period<=4&&(Engine.TWO_POINT_CHART||[]).includes(g.score[side]+6-g.score[opp]))g.twoPointCall={side,boost:.12};
+}
+function settleSpecials(b,side,evStart){
+  const g=b.game,used=(b.specialUsed??={})[side]??={},notes=[];
+  for(const ev of g.events.slice(evStart)){
+    if(ev.type==='kickoff'&&ev.onside){used.onside_kick=true;notes.push(`${b.teams[side].short} tries an onside kick: ${ev.recovered?'RECOVERED!':'they cover it'}`)}
+    if(ev.type==='two_point'&&ev.gate){used.swinging_gate=true;notes.push(`Swinging Gate two-point try: ${ev.points?'GOOD':'no good'}`)}
+  }
+  g.onside=null;if(g.twoPointCall?.side===side)g.twoPointCall=null;
+  return notes;
+}
+
 // ---------------------------------------------------------------- legal options
 // The two-minute drill: the last two minutes of each half. Drill cards are free and join every offense's options.
 function drillOn(b){const g=b.game;return(g.period===2||g.period===4)&&Number(g.clock)<=120&&!g.ot}
@@ -204,15 +247,15 @@ const freeCard=(b,side,role,id)=>b.decks[side][role].base.includes(id)||(role===
 function offOptions(b,side){
   const hand=b.hands[side],team=b.teams[side],lineup=team.lineup.off;
   const plays=[...b.decks[side].off.base.map(id=>({id,base:true})),...(drillOn(b)?(D.DRILL_CARDS||[]).map(id=>({id,base:true,drill:true})):[]),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
-    .map(o=>({...o,card:D.PLAYS[o.id],cost:costOf(b,side,D.PLAYS[o.id]),blocked:R.playBlocked(D.PLAYS[o.id],lineup)}));
-  const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])}));
+    .map(o=>({...o,card:D.PLAYS[o.id],cost:costOf(b,side,D.PLAYS[o.id]),blocked:R.playBlocked(D.PLAYS[o.id],lineup,situation(b))}));
+  const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])})).filter(t=>!TIMEOUT_CARDS.includes(t.id)||timeoutsLeft(b,side)>0);
   return{plays,tactics,command:hand.command};
 }
 function defOptions(b,side){
   const hand=b.hands[side];
   const plays=[...b.decks[side].def.base.map(id=>({id,base:true})),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
     .map(o=>({...o,card:D.CALLS[o.id],cost:costOf(b,side,D.CALLS[o.id]),blocked:R.signatureBlocked(D.CALLS[o.id],b.teams[side].lineup.def)}));
-  const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])}));
+  const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])})).filter(t=>!TIMEOUT_CARDS.includes(t.id)||timeoutsLeft(b,side)>0);
   return{plays,tactics,command:hand.command};
 }
 function subsets(arr,max){const out=[[]];for(const x of arr){const n=out.length;for(let i=0;i<n;i++)if(out[i].length<max)out.push([...out[i],x])}return out}
@@ -338,7 +381,7 @@ function commit(b,side,choice){
   const card=role==='off'?D.PLAYS[choice.play]:D.CALLS[choice.play];
   if(!card)throw new Error(`Unknown play ${choice.play}.`);
   const sig=R.signatureBlocked(card,b.teams[side].lineup[role]);if(sig)throw new Error(sig);
-  if(role==='off'){const why=R.playBlocked(card,b.teams[side].lineup.off);if(why)throw new Error(why)}
+  if(role==='off'){const why=R.playBlocked(card,b.teams[side].lineup.off,situation(b));if(why)throw new Error(why)}
   const tactics=[...new Set(choice.tactics||[])];
   for(const id of tactics){
     const t=D.TACTICS[id];if(!t||t.side!==role)throw new Error(`Unknown tactic ${id}.`);
@@ -350,7 +393,9 @@ function commit(b,side,choice){
   if(total>hand.command)throw new Error(`That costs ${total} Command; you have ${hand.command}.`);
   if(!freeCard(b,side,role,choice.play)&&!hand.wrinkles.includes(choice.play))throw new Error('That play is not in hand.');
   if(tactics.some(id=>!hand.tactics.includes(id)))throw new Error('That tactic is not in hand.');
+  const outs=tactics.filter(id=>TIMEOUT_CARDS.includes(id));if(outs.length>timeoutsLeft(b,side))throw new Error('No timeouts left.');
   payAndRemove(b,side,'play',choice.play);for(const id of tactics)payAndRemove(b,side,'tactic',id);
+  if(outs.length&&b.game.timeouts)b.game.timeouts[side]=Math.max(0,b.game.timeouts[side]-outs.length);
   return{play:choice.play,tactics,...(role==='off'&&choice.read==='primary'?{read:'primary'}:{})};
 }
 
@@ -451,14 +496,16 @@ function fourthChoice(b){
 }
 function fourthRequest(b){
   const g=b.game,opts=['go','punt'];if(Engine.fieldGoalInRange(g,Engine.FG_OFFER_CHANCE))opts.push('field_goal');
-  return{kind:'fourth',side:offSide(b),situation:situation(b),options:opts,recommended:Engine.defaultFourthDown(g)==='play'?'go':Engine.defaultFourthDown(g),fgChance:Engine.fieldGoalChance(g,Engine.fieldGoalDistance(g))};
+  const ke=kickerEdge(b,offSide(b));
+  return{kind:'fourth',side:offSide(b),situation:situation(b),options:opts,recommended:Engine.defaultFourthDown(g)==='play'?'go':Engine.defaultFourthDown(g),fgChance:Math.max(.02,Math.min(.99,Engine.fieldGoalChance(g,Engine.fieldGoalDistance(g))+ke.adjust)),kicker:ke};
 }
 function kick(b,choice){
   const g=b.game,off=offSide(b),before=g.fieldPosition;
   if(choice==='ot_fg'){Engine.step(g);b.log.push({type:'kick',text:'Overtime field goal attempt.'});return}
   const sit=situation(b);
-  if(choice==='punt'){Engine.punt(g);b.box[off].punts++;b.log.push({type:'kick',kick:'punt',side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} punts from the ${yardLine(before)}.`})}
-  else{const made=Engine.attemptFieldGoal(g);b.log.push({type:'kick',kick:'field_goal',made,side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} ${made?'makes':'misses'} a ${100-before+17}-yard field goal.`})}
+  if(choice==='punt'){const pe=punterEdge(b,off);Engine.punt(g,{netAdjust:pe.netAdjust});b.box[off].punts++;b.log.push({type:'kick',kick:'punt',side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} punts from the ${yardLine(before)}${pe.name&&pe.netAdjust?` (${pe.name}: ${pe.netAdjust>0?'+':''}${pe.netAdjust} yards)`:''}.`})}
+  else{const ke=kickerEdge(b,off),evStart=g.events.length;armSpecials(b,off);const made=Engine.attemptFieldGoal(g,{adjust:ke.adjust});const notes=settleSpecials(b,off,evStart);
+    b.log.push({type:'kick',kick:'field_goal',made,side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} ${made?'makes':'misses'} a ${100-before+17}-yard field goal${ke.adjust?` (${ke.name?ke.name+': ':''}${ke.adjust>0?'+':''}${Math.round(ke.adjust*100)}%)`:''}.${notes.length?' '+notes.join('. ')+'.':''}`})}
 }
 
 // ---------------------------------------------------------------- submit
@@ -514,7 +561,7 @@ function comboFor(b,play,call=null){
   const hit=(D.COMBOS||[]).find(x=>!usedBy(x.side==='def'?defSide(b):offSide(b)).includes(x.id)&&(x.side==='off'||call)&&x.test(c));
   return hit?{id:hit.id,name:hit.name,duel:hit.duel,v:hit.v,side:hit.side,reward:hit.reward}:null;
 }
-function knownEffects(b,play,call=null){return{fire:b.fire,workload:b.workload||{},combo:comboFor(b,play,call)}}
+function knownEffects(b,play,call=null){return{fire:b.fire,workload:b.workload||{},combo:comboFor(b,play,call),grouping:groupingFor(b,offSide(b))}}
 
 // ---------------------------------------------------------------- resolution
 function rollPenalty(b,play){
@@ -558,8 +605,9 @@ function resolveSnap(b){
     if(out.turnover)b.momentum={side:def,left:1};
     Object.assign(result,{category:out.category,kind:out.kind,yards:out.yards,turnover:out.turnover||null,completed:out.completed,duelResults:out.duels,participants:out.participants});
     const before={down:g.down,distance:g.distance,field:g.fieldPosition,score:{...g.score}};
-    const evStart=g.events.length;
+    const evStart=g.events.length;armSpecials(b,off);
     Engine.applyScrimmage(g,{yards:out.yards,clock:out.clock,kind:out.engineKind,completed:out.completed,turnover:out.turnover});
+    const specialNotes=settleSpecials(b,off,evStart);
     // Tag the play the way Dynasty Lab's attribution expects (run/pass, completion, sack), plus who actually played it.
     for(let i=g.events.length-1;i>=evStart;i--){const ev=g.events[i];if(!['scrimmage','interception','fumble'].includes(ev.type))continue;
       ev.kind=out.engineKind;if(typeof out.completed==='boolean')ev.completed=out.completed;if(out.kind==='sack')ev.sack=true;
@@ -568,7 +616,8 @@ function resolveSnap(b){
         sacker:id(Df,P.sacker),tackler:out.kind==='sack'||out.turnover==='interception'?null:id(Df,P.defender),interceptor:out.turnover==='interception'?id(Df,P.defender):null}};break}
     b.workload??={};for(const p of [...Object.values(b.teams[off].lineup.off),...Object.values(b.teams[def].lineup.def)])b.workload[p.id]=(b.workload[p.id]||0)+1;
     recordStats(b,off,def,out,before,play);
-    result.text=storyLine(b,off,def,play,out,before);
+    result.text=storyLine(b,off,def,play,out,before)+(specialNotes.length?` ${specialNotes.join('. ')}.`:'');
+    if(specialNotes.length)result.special=specialNotes;
     result.events=[];
     if(hurried)result.events.push({type:'hurry',side:off,name:'Hurry-up',reward:'their adjustments never got in'});
     fams.push(play.family);b.drive.plays.push(play.evolvedFrom||play.upgradeOf||play.id);
@@ -760,5 +809,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap};
+return{VERSION,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap};
 });
