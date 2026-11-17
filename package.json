@@ -74,7 +74,9 @@
     "test:card-gameday-browser": "node tests/card-gameday-browser.js",
     "test:card-deck-browser": "node tests/card-deck-browser.js",
     "test:card-postseason-browser": "node tests/card-postseason-browser.js",
-    "test:card-program-browser": "node tests/card-program-browser.js"
+    "test:card-program-browser": "node tests/card-program-browser.js",
+    "test:card-default-browser": "node tests/card-default-browser.js",
+    "test:card-pages-browser": "node tests/card-pages-browser.js"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",

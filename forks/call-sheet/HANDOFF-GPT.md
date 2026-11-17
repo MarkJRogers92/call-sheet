@@ -27,6 +27,27 @@ portal transfer/reserve/save continuity, postseason stat/reward recording, and f
 Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
 (Superseded Nov 17 — see the next section.)
 
+## The card game is the game — November 17, 2026 (latest)
+
+Mark: in this fork the card battle IS the game, and cards belong everywhere in Dynasty Lab.
+
+- `cards-default` (section 9 of `card-gameday.js`, on by default): the top **Next** button reads "Next: Coach Week N vs
+  Opponent" and opens the battle; Game Day (nav) and the matchup's Open Game Day open it too. After the game, Next
+  advances the week as before. "Next: Resume Card Battle" resumes. Classic Game Day stays on the matchup card; Sim Week
+  (season controls) lets coordinators play it. Every dynasty has a Card Program and playbook from day one; the matchup and
+  Card Program sit at the top of This Week under the briefing.
+- `card-pages` (section 10, on by default): roster card grid (Cards / Classic toggle; Classic is DL's own board and
+  folding table), Roles & Depth card lineup, Recruiting prospect cards (ranges from scouting via `prospectEstimate`,
+  never hidden ratings), Staff coach cards (Command, coaching-tree card, development coaching), Development card growth,
+  the matchup's "players to beat", and a Card Program block in the newsletter. Kickers and punters get special-teams cards.
+  Hooks: DL's `extendRender` for roster/recruiting/staff/development; the tab table's depth/newsletter entries are
+  *wrapped* (table-folding also wraps them — never replace them).
+- Tests: DL browser tests that expect classic Next and pages call `startNewDynasty(page)` and keep them; card tests ask
+  `startNewDynasty(page,{cardGame:true})`. `tests/helpers/play-card-battle.js` plays a battle through the UI (no hooks);
+  `tests/release-build-browser.js` now plays Week 1 as a card battle. New: `card-default-browser.js`,
+  `card-pages-browser.js` (desktop and phone).
+- DL fix exposed by this: the recruiting workspace "UPDATED" badge was 7px; it now meets the phone 12px floor.
+
 ## Expansion batches — November 17, 2026 (after coached postseason)
 
 All in `card-gameday.js` sections 5–8 unless noted; each has an integration switch and a test suite in `npm test`.

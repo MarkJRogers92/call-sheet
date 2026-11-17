@@ -1,0 +1,31 @@
+'use strict';
+// Plays an open Call Sheet card battle to the end through the page itself (no test hooks): skip the how-to, let the
+// coordinators sim it, answer 4th-down choices, open the pack, take the first card, handle cuts/evolutions, go home.
+async function playCardBattle(page,{timeout=120000}={}){
+  const frame=await (await page.waitForSelector('#cardGameDay iframe',{timeout:15000})).contentFrame();
+  const until=Date.now()+timeout,tick=()=>page.waitForTimeout(150);
+  await frame.waitForSelector('#gotIt, #bSim, #openPack',{timeout:30000});
+  if(await frame.$('#gotIt'))await frame.click('#gotIt',{force:true});
+  if(!await frame.$('#openPack')){
+    await frame.waitForSelector('#bSim',{timeout:30000});
+    await frame.evaluate(()=>{const m=document.getElementById('modal');if(m)m.classList.toggle('on',false)});
+    await frame.click('#bSim',{force:true});
+  }
+  while(Date.now()<until&&!await frame.$('#openPack')){
+    if(await frame.$('#retryRecord'))throw new Error('The card battle result was not saved.');
+    const f=await frame.$('#modal [data-o]');if(f)await f.click({force:true}).catch(()=>{});await tick();
+  }
+  await frame.click('#openPack',{force:true});
+  while(Date.now()<until&&!await frame.$('#pk')){const tp=await frame.$('#toPack');if(tp)await tp.click({force:true}).catch(()=>{});await tick()}
+  await frame.click('#pk',{force:true});
+  while(Date.now()<until&&!await frame.$('.slot.pickable'))await tick();
+  await (await frame.$$('.slot.pickable'))[0].click({force:true});
+  while(Date.now()<until){
+    const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}
+    const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}
+    if(await frame.$('#home'))break;await page.waitForTimeout(200);
+  }
+  await frame.click('#home',{force:true});
+  await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:15000});
+}
+module.exports={playCardBattle};

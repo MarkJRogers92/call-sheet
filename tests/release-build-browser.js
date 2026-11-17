@@ -6,6 +6,7 @@ const assert=require('node:assert/strict');
 const {chromium}=require('playwright-core');
 const {chromiumPath}=require('./helpers/chromium-path');
 const {testPageURL}=require('./helpers/browser-url');
+const {playCardBattle}=require('./helpers/play-card-battle');
 
 (async()=>{
  const browser=await chromium.launch({executablePath:chromiumPath(),args:['--no-sandbox']});
@@ -24,9 +25,12 @@ const {testPageURL}=require('./helpers/browser-url');
   await page.click('#hubAdvance');
   await page.waitForFunction(()=>/Week 1$/.test(document.querySelector('#weekLine')?.textContent||''),null,{timeout:30000});
   for(let i=0;i<4;i++){const choice=page.locator('#weeklyDecisions [data-decision][data-choice]').first();if(await choice.count())await choice.click()}
+  // The card battle is the game: Next coaches this week's game as a card battle, then Next advances the week.
+  assert.match(await page.locator('#hubAdvance').innerText(),/Next: Coach Week 1/);
+  await page.click('#hubAdvance');await playCardBattle(page);
   await page.click('#hubAdvance');
   await page.waitForFunction(()=>/Week 2$/.test(document.querySelector('#weekLine')?.textContent||''),null,{timeout:60000});
   assert.deepEqual(errors,[]);
-  console.log('Release build browser test passed (no test hooks; a player can start a dynasty and play a week)');
+  console.log('Release build browser test passed (no test hooks; a player can start a dynasty and play a week as a card battle)');
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exit(1)});

@@ -19,7 +19,7 @@ label:has(>input[type=checkbox]),label:has(>input[type=radio]){display:inline-fl
 /* Reading floor. */
 .small,small,th,.pill,.scheme-badge,
 .client-nav-label,.client-rail-brand span,.client-utilities summary,.client-rail-footer span,.dynasty-session-status span,.client-mobile-item span,
-.rw-main small,.rw-state,.rd-jersey,.rd-role-label,.rd-group-flags b,.rd-player-meta span,.rd-player-meta strong,
+.rw-main small,.rw-state,.rw-state b,.rw-update-chip,.rd-jersey,.rd-role-label,.rd-group-flags b,.rd-player-meta span,.rd-player-meta strong,
 .so-metric b,.so-metric strong,.so-node-foot span,.so-node-foot small,.so-node-lane,.so-node-role,.so-node-meta,.so-node-focus b,.so-node-focus span,.staff-scouting-identity span,.staff-scouting-identity small,
 .bi-chip-wk,.dev-confidence,.development-feature-btn,.development-feature-btn span,.v2-matchup-player span,.v2-matchup-player small,.milestone em,.hud-pause-trigger,
 .v2-release-drive b,.v2-release-drive small,.v2-release-metrics span,.v2-release-section-head span,.event-kicker span,.event-team-copy span,.event-team-copy small{font-size:12px!important}

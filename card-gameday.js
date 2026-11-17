@@ -804,6 +804,193 @@ function normalizeCallSheet(u){
     return`<details class="cpn-albums"><summary>Albums · ${complete}/${list.length} complete</summary>${list.map(a=>`<p class="cpn-foot"><b>${a.have>=a.need?'✓ ':''}${escH(a.name)}</b> ${a.have}/${a.need}${a.missing?.length&&a.have<a.need?` · missing ${escH(a.missing.map(id=>CS.packs.cardDef(id)?.name||id).join(', '))}`:''}</p>`).join('')}<p class="cpn-foot cpn-album-note" style="opacity:.75">Completing an album earns an Album Pack. Evolved cards count for the card they grew from.</p></details>`;
   }
 
+  // ============================================================== 9. the card game is the game
+  // Next, Game Day and the matchup's Open Game Day all coach your game as a card battle. Classic Game Day stays one
+  // click away on the matchup card; Sim Week still lets your coordinators play it. Card Settings can turn this off.
+  const CARD_DEFAULT=registerCardIntegration({id:'cards-default',label:'Card battles are your game day',
+    about:'Next and Game Day coach your game as a card battle. Turn off to make Next simulate; Coach with Cards and Classic Game Day stay on the matchup card.',hooks:{}});
+  function cardGameIsDefault(){return!!universe&&!!selected()&&integrationOn(CARD_DEFAULT)&&!!globalThis.CallSheetBundle}
+  // A game to coach right now (or a card battle to resume).
+  function coachableGame(){
+    if(!cardGameIsDefault()||cardGameBlocker())return null;const g=currentCardGame();if(!g)return null;
+    const active=universe.callSheet?.activeBattle?.seed===battleSeed(g);return!g.played||active?{g,active}:null;
+  }
+  function nextLabel(){
+    const c=coachableGame();if(!c)return null;if(c.active)return'Next: Resume Card Battle';
+    const me=selected(),g=c.g;if(g.postseason)return`Next: Coach the ${g.label}`;
+    const opp=g.home===me.name?g.away:g.home;return`Next: Coach Week ${g.week} ${g.home===me.name?'vs':'at'} ${opp}`;
+  }
+  function nextIsAdvance(btn){return btn&&!btn.disabled&&btn.dataset.openingPreseason!=='true'&&/^Next: /.test(btn.textContent||'')}
+  function labelNextButton(){
+    const btn=document.querySelector('#hubAdvance');if(!btn)return;
+    if(!btn.__cardObserver&&typeof MutationObserver==='function'){btn.__cardObserver=new MutationObserver(()=>{try{labelNextButton()}catch(err){}});btn.__cardObserver.observe(btn,{childList:true,characterData:true,subtree:true})}
+    const label=nextIsAdvance(btn)?nextLabel():null;
+    if(label&&btn.textContent!==label){btn.textContent=label;btn.title='Coach this game as a card battle. Sim Week (season controls) lets your coordinators play it instead.'}
+  }
+  if(typeof document!=='undefined'&&typeof document.addEventListener==='function')document.addEventListener('click',e=>{
+    const t=e.target?.closest?.('#hubAdvance,[data-client-tab="gamelab"],[data-tab="gamelab"],#broadcastFeature [data-sports-tab="gamelab"]');if(!t)return;
+    if(t.id==='hubAdvance'&&!nextIsAdvance(t))return;
+    if(!coachableGame())return;
+    e.preventDefault();e.stopImmediatePropagation();openCardGameDay();
+  },true);
+
+  // ============================================================== 10. cards everywhere in the dynasty
+  // Players and coaches appear as cards across Dynasty Lab: roster (card grid by default), Roles & Depth (starting
+  // lineup), Recruiting (prospect cards from your scouting, never hidden ratings), Staff (coach cards and what they do in
+  // a battle), Development (card growth), the matchup (their key players) and the newsletter (card moments).
+  const CARD_PAGES=registerCardIntegration({id:'card-pages',label:'Player cards across the dynasty',
+    about:'Roster, Roles & Depth, Recruiting, Staff, Development, the matchup and the newsletter show players and coaches as cards.',hooks:{}});
+  const pagesOn=()=>!!universe&&!!selected()&&integrationOn(CARD_PAGES)&&typeof document!=='undefined'&&typeof document.querySelector==='function';
+  function cardOf(p,team){
+    const pb=String(team?.id)===String(selected()?.id)?universe.callSheet?.playbook:universe.callSheet?.ai?.[team?.id];
+    return[...(pb?.signatures||[]),...(pb?.reserveSignatures||[])].find(x=>String(x.playerId)===String(p.id))||null;
+  }
+  // Specialists (kickers, punters) have no battle role but still get a card; card OVR does not depend on the role.
+  const roleLabel=(role,p)=>role?(ROLE_NAMES[role]||role):({K:'Kicker',P:'Punter',LS:'Long snapper'}[p.pos]||`${p.pos} · special teams`);
+  function miniCardHTML(p,team,{role=null,note=''}={}){
+    const r=role?{role}:battleRoleOf(p,team)||{role:null};
+    const bp=CS.adapter.toBattlePlayer(p,r.role),sig=cardOf(p,team),stamp=developmentStamp(p,team,bp.ovr);
+    const nem=selected()&&String(team.id)!==String(selected().id)&&isNemesis(p,team,selected());
+    const badge=nem?'NEMESIS':sig?.legacy?'LEGACY':sig?'SIGNATURE':'';
+    return`<button type="button" class="cs-mini${sig?' sig':''}${nem?' nem':''}" data-card-player="${escH(p.id)}" style="--tc:${escH(team?.primary||'#2a3550')};--tc2:${escH(team?.secondary||'#e8e2d0')}" title="${escH(p.name)} · card OVR ${bp.ovr}">
+      <span class="cs-mini-ovr">${bp.ovr}</span>${portraitTag(p,56,'card')}<b>${escH(p.name)}</b><small>${escH(roleLabel(r.role,p))}</small><small>${escH(bp.archetype||p.pos)}</small>
+      ${badge?`<em>${badge}</em>`:''}${stamp?`<i class="${stamp.now>stamp.was?'up':'down'}">${stamp.now>stamp.was?'▲':'▼'} ${Math.abs(stamp.now-stamp.was)}</i>`:''}${note?`<small class="cs-mini-note">${escH(note)}</small>`:''}</button>`;
+  }
+  function prospectMiniHTML(r,u){
+    const pe=prospectEstimate(r,u);if(!pe)return'';
+    return`<button type="button" class="cs-mini prospect" data-card-recruit="${escH(r.id)}" style="--tc:#24324f;--tc2:#8ea2d6" title="Range from your scouting (${Math.round(pe.conf)}% confidence)">
+      <span class="cs-mini-ovr">${pe.lo===pe.hi?pe.lo:`${pe.lo}–${pe.hi}`}</span>${portraitTag(r,56,'card','recruit')}<b>${escH(r.name)}</b><small>${escH(ROLE_NAMES[pe.role]||pe.role)} · ${'★'.repeat(r.stars||0)}</small><small>${escH(pe.bp.archetype||r.pos)}</small><em>PROSPECT</em></button>`;
+  }
+  function wireCards(host){
+    if(!host)return;
+    host.querySelectorAll('[data-card-player]').forEach(b=>b.onclick=()=>showPlayerProfile(b.dataset.cardPlayer));
+    host.querySelectorAll('[data-card-recruit]').forEach(b=>b.onclick=()=>showRecruitProfile(b.dataset.cardRecruit));
+    try{paintPortraits(host)}catch(err){}
+    injectMiniCardStyles();
+  }
+  function injectMiniCardStyles(){
+    if(document.getElementById('cardMiniStyles'))return;
+    const st=document.createElement('style');st.id='cardMiniStyles';st.textContent=`
+.cs-cards{margin:12px 0}.cs-cards h4{margin:14px 0 6px;font:700 12px system-ui;letter-spacing:.12em;text-transform:uppercase;color:#aab6e8}
+.cs-mini-row{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:10px}
+.cs-mini{position:relative;display:flex;flex-direction:column;align-items:center;gap:1px;padding:8px 6px 7px;border-radius:12px;border:2px solid var(--tc2);background:linear-gradient(170deg,var(--tc),#0b0f1c 80%);color:#eef2ff;text-align:center;cursor:pointer;font:12px system-ui;min-width:0}
+.cs-mini:hover,.cs-mini:focus-visible{transform:translateY(-2px);box-shadow:0 6px 18px rgba(0,0,0,.35)}
+.cs-mini.sig{border-color:#ffd34d;box-shadow:0 0 0 1px #ffd34d}.cs-mini.nem{border-color:#ff5d5d}.cs-mini.prospect{border-style:dashed}
+.cs-mini canvas{width:56px;height:56px;border-radius:8px}
+.cs-mini-ovr{position:absolute;top:4px;left:7px;font:800 17px 'Barlow Condensed',Impact,system-ui;text-shadow:0 2px 0 rgba(0,0,0,.5)}
+.cs-mini b{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;margin-top:2px}
+.cs-mini small{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#c8d0ee;font-size:10.5px}
+.cs-mini em{margin-top:3px;padding:1px 6px;border-radius:999px;background:#ffd34d;color:#241a00;font:800 9px system-ui;letter-spacing:.08em;font-style:normal}
+.cs-mini.nem em{background:#ff5d5d;color:#fff}.cs-mini.prospect em{background:#8ea2d6;color:#0b1020}
+.cs-mini i{position:absolute;top:5px;right:7px;font:800 11px system-ui;font-style:normal}.cs-mini i.up{color:#5be08a}.cs-mini i.down{color:#ff8a8a}
+#roster.cs-cards-view #rosterPositionBoard,#roster.cs-cards-view>.table-wrap{display:none!important}
+.cs-view-toggle{display:inline-flex;gap:4px}.cs-view-toggle button[aria-pressed="true"]{outline:2px solid #ffd34d}
+.cs-coach{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}.cs-coach article{padding:12px;border-radius:12px;border:1px solid #39456f;background:linear-gradient(160deg,#141b30,#0c111e);color:#eef2ff}
+.cs-coach article b{display:block;font-size:15px}.cs-coach article small{color:#aab6e8}.cs-coach ul{margin:6px 0 0;padding-left:18px;font-size:13px}`;
+    document.head.appendChild(st);
+  }
+  const POS_ORDER=['QB','RB','WR','TE','OT','OG','C','EDGE','DT','LB','CB','S','K','P'];
+  // Roster: a card grid (default) or the classic table, filtered by the same position menu.
+  function paintRosterCards(){
+    const host=document.querySelector('#roster');if(!host)return;
+    // Classic is Dynasty Lab's own roster layout (position board plus its folding full table), left untouched.
+    let grid=host.querySelector('#rosterCards'),table=host.querySelector('.table-wrap'),board=host.querySelector('#rosterPositionBoard'),toggle=host.querySelector('#rosterViewToggle');
+    if(!pagesOn()){grid?.remove();toggle?.remove();host.classList.remove('cs-cards-view');return}
+    const meta=cardMeta(),view=meta.rosterView==='classic'?'classic':'cards',me=selected(),f=document.querySelector('#positionFilter')?.value||'ALL';
+    if(!toggle){host.querySelector('.section-head')?.insertAdjacentHTML('beforeend','<div id="rosterViewToggle" class="cs-view-toggle" role="group" aria-label="Roster view"><button type="button" data-roster-view="cards">Cards</button><button type="button" data-roster-view="classic">Classic</button></div>');toggle=host.querySelector('#rosterViewToggle');
+      toggle.querySelectorAll('[data-roster-view]').forEach(b=>b.onclick=()=>{cardMeta().rosterView=b.dataset.rosterView;try{autosaveAfter('game')}catch(err){}paintRosterCards()})}
+    toggle.querySelectorAll('[data-roster-view]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.rosterView===view)));
+    if(!grid){host.querySelector('.section-head')?.insertAdjacentHTML('afterend','<div id="rosterCards" class="cs-cards"></div>');grid=host.querySelector('#rosterCards')}
+    // A class (not per-element hidden) so Dynasty Lab's own roster layer can render in any order underneath.
+    host.classList.toggle('cs-cards-view',view==='cards');grid.hidden=view!=='cards';injectMiniCardStyles();if(view!=='cards')return;
+    const players=(me.roster||[]).filter(p=>f==='ALL'||p.pos===f),groups=[...new Set([...POS_ORDER,...players.map(p=>p.pos)])].filter(pos=>players.some(p=>p.pos===pos));
+    grid.innerHTML=groups.map(pos=>{const list=players.filter(p=>p.pos===pos).map(p=>({p,html:miniCardHTML(p,me),ovr:CS.adapter.toBattlePlayer(p,null).ovr})).sort((a,b)=>b.ovr-a.ovr);
+      return`<h4>${escH(pos)} · ${list.length}</h4><div class="cs-mini-row">${list.map(x=>x.html).join('')}</div>`}).join('');
+    wireCards(grid);
+  }
+  // Roles & Depth: your card starting lineup, exactly who the battle puts on the field.
+  function paintDepthCards(){
+    const host=document.querySelector('#depth'),grid=host?.querySelector('#depthGrid');if(!host||!grid)return;let box=host.querySelector('#depthCards');
+    if(!pagesOn()){box?.remove();return}
+    const me=selected(),lu=CS.adapter.lineupFromTeam(me).lineup,byId=new Map((me.roster||[]).map(p=>[String(p.id),p]));
+    const row=side=>Object.entries(lu[side]).map(([role,bp])=>{const p=byId.get(String(bp.id));return p?miniCardHTML(p,me,{role}):''}).join('');
+    if(!box){grid.insertAdjacentHTML('beforebegin','<div id="depthCards" class="cs-cards card"></div>');box=host.querySelector('#depthCards')}
+    box.innerHTML=`<h3>Card lineup</h3><p class="muted">Who the card battle puts on the field from this depth chart. Gold borders are signature cards.</p><h4>Offense</h4><div class="cs-mini-row">${row('off')}</div><h4>Defense</h4><div class="cs-mini-row">${row('def')}</div>`;
+    wireCards(box);
+  }
+  // Recruiting: prospect cards for your targets (or the top of the board), ranges from your scouting only.
+  function paintProspectCards(){
+    const host=document.querySelector('#recruiting');if(!host)return;let box=host.querySelector('#prospectCards');
+    if(!pagesOn()){box?.remove();return}
+    const me=selected(),targets=(universe.recruits||[]).filter(r=>r.targeted&&!r.committed),list=(targets.length?targets:(universe.recruits||[]).filter(r=>!r.committed)).slice().sort((a,b)=>(b.stars||0)-(a.stars||0)).slice(0,12);
+    if(!list.length){box?.remove();return}
+    if(!box){const head=host.querySelector('.section-head');(head||host.firstElementChild)?.insertAdjacentHTML('afterend','<div id="prospectCards" class="cs-cards card"></div>');box=host.querySelector('#prospectCards')}
+    box.innerHTML=`<h3>${targets.length?'Your targets as cards':'Top prospects as cards'}</h3><p class="muted">Card OVR ranges come from your scouting: scout a prospect to narrow his.</p><div class="cs-mini-row">${list.map(r=>prospectMiniHTML(r,me)).join('')}</div>`;
+    wireCards(box);
+  }
+  // Staff: coach cards, with what each coach does in a card battle.
+  function paintStaffCards(){
+    const host=document.querySelector('#staff');if(!host)return;let box=host.querySelector('#staffCards');
+    if(!pagesOn()){box?.remove();return}
+    const me=selected(),cmd=CS.adapter.staffCommand(me),pb=universe.callSheet?.playbook,teach=pb?trainingFor(me,pb):{},maxTeach=Math.round(Math.max(0,...Object.values(teach))*100);
+    const roleName={HC:'Head coach',OC:'Offensive coordinator',DC:'Defensive coordinator',SC:'Strength coach',RC:'Recruiting coordinator'};
+    const cards=['HC','OC','DC','SC','RC'].map(k=>[k,me.staff?.[k]]).filter(([,c])=>c).map(([k,c])=>{
+      const lines=[],tree=CS.data.SCHEME_CARDS?.[c.preferredScheme];
+      if(k==='OC')lines.push(cmd.off?'Play calling 80+: +1 Command on offense':'Play calling under 80: no Command bonus');
+      if(k==='DC')lines.push(cmd.def?'Play calling 80+: +1 Command on defense':'Play calling under 80: no Command bonus');
+      if((k==='OC'||k==='DC')&&tree)lines.push(`Coaching tree: ${CS.packs.cardDef(tree)?.name||tree} (${c.preferredScheme})`);
+      if((k==='OC'||k==='DC')&&maxTeach)lines.push(`Development coaching: up to +${maxTeach}% mastery on cards you use`);
+      if(k==='HC')lines.push(`Program schemes: ${me.offScheme} / ${me.defScheme}`);
+      if(k==='RC')lines.push('Signing Day Pack is built from the class he lands');
+      if(k==='SC')lines.push('Development stamps show what his camp work changed');
+      return`<article><small>${escH(roleName[k]||k)}</small><b>${escH(c.name||'Vacant')}</b>${c.preferredScheme?`<small>${escH(c.preferredScheme)}</small>`:''}<ul>${lines.map(x=>`<li>${escH(x)}</li>`).join('')}</ul></article>`});
+    if(!box){const head=host.querySelector('.section-head');(head||host.firstElementChild)?.insertAdjacentHTML('afterend','<div id="staffCards" class="cs-cards card"></div>');box=host.querySelector('#staffCards')}
+    box.innerHTML=`<h3>Coach cards</h3><div class="cs-coach">${cards.join('')}</div>`;injectMiniCardStyles();
+  }
+  // Development: players whose card OVR moved since the season ended.
+  function paintGrowthCards(){
+    const host=document.querySelector('#development');if(!host)return;let box=host.querySelector('#growthCards');
+    if(!pagesOn()){box?.remove();return}
+    const me=selected(),moved=(me.roster||[]).map(p=>{const r=battleRoleOf(p,me);if(!r)return null;const ovr=CS.adapter.toBattlePlayer(p,r.role).ovr,s=developmentStamp(p,me,ovr);return s?{p,d:s.now-s.was}:null}).filter(Boolean).sort((a,b)=>Math.abs(b.d)-Math.abs(a.d)).slice(0,12);
+    if(!moved.length){box?.remove();return}
+    if(!box){const head=host.querySelector('.section-head');(head||host.firstElementChild)?.insertAdjacentHTML('afterend','<div id="growthCards" class="cs-cards card"></div>');box=host.querySelector('#growthCards')}
+    box.innerHTML=`<h3>Card growth since the season ended</h3><div class="cs-mini-row">${moved.map(x=>miniCardHTML(x.p,me)).join('')}</div>`;wireCards(box);
+  }
+  // The matchup: their four best starters as cards (nemeses marked).
+  function paintMatchupCards(){
+    const feature=document.querySelector('#broadcastFeature');if(!feature)return;let box=feature.querySelector('#matchupCards');
+    // The matchup card is redrawn by its own presentation layer; repaint the strip whenever that wipes it.
+    if(!feature.__cardsObs&&typeof MutationObserver==='function'){let queued=false;feature.__cardsObs=new MutationObserver(()=>{if(queued||feature.querySelector('#matchupCards')||!pagesOn())return;queued=true;(window.requestAnimationFrame||setTimeout)(()=>{queued=false;try{paintMatchupCards()}catch(err){}})});feature.__cardsObs.observe(feature,{childList:true})}
+    const g=pagesOn()?currentCardGame():null,me=selected();if(!g){box?.remove();return}
+    const opp=T(g.home===me.name?g.away:g.home);if(!opp){box?.remove();return}
+    const lu=CS.adapter.lineupFromTeam(opp).lineup,byId=new Map((opp.roster||[]).map(p=>[String(p.id),p]));
+    const top=[...Object.entries(lu.off),...Object.entries(lu.def)].map(([role,bp])=>({role,bp,p:byId.get(String(bp.id))})).filter(x=>x.p).sort((a,b)=>b.bp.ovr-a.bp.ovr).slice(0,4);
+    if(!box){feature.insertAdjacentHTML('beforeend','<div id="matchupCards" class="cs-cards"></div>');box=feature.querySelector('#matchupCards')}
+    box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4><div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
+  }
+  // The newsletter: this season's card moments (packs, breakouts, legacies, nemeses, rewards).
+  function paintNewsCards(){
+    const host=document.querySelector('#newsletterBody');if(!host)return;let box=document.querySelector('#cardNews');
+    const list=pagesOn()?(universe.callSheet?.moments||[]).filter(m=>m.year===universe.year).slice(-10).reverse():[];
+    if(!list.length){box?.remove();return}
+    if(!box){host.insertAdjacentHTML('beforebegin','<div id="cardNews" class="card cs-cards"></div>');box=document.querySelector('#cardNews')}
+    box.innerHTML=`<h3>Card Program</h3>${list.map(m=>`<p class="cpn-foot">${m.week?`<b>Week ${m.week}</b> · `:''}${escH(m.text)}</p>`).join('')}`;
+  }
+  if(typeof extendRender==='function'){
+    extendRender('roster',()=>{try{paintRosterCards()}catch(err){console.error(err)}});
+    extendRender('recruiting',()=>{try{paintProspectCards()}catch(err){console.error(err)}});
+    extendRender('staff',()=>{try{paintStaffCards()}catch(err){console.error(err)}});
+    extendRender('development',()=>{try{paintGrowthCards()}catch(err){console.error(err)}});
+  }
+  if(typeof renderDepth==='function'){const renderDepthBase=renderDepth;renderDepth=function renderDepthWithCards(...a){const out=renderDepthBase.apply(this,a);try{paintDepthCards()}catch(err){console.error(err)}return out}}
+  if(typeof renderNewsletter==='function'){const renderNewsletterBase=renderNewsletter;renderNewsletter=function renderNewsletterWithCards(...a){const out=renderNewsletterBase.apply(this,a);try{paintNewsCards()}catch(err){console.error(err)}return out}}
+  // The tab table captured its renderers when it was built, and other layers (table folding) wrap its entries: wrap
+  // them again rather than replacing them, so every layer still runs on a tab switch.
+  if(typeof TAB_RENDERERS==='object'&&TAB_RENDERERS)for(const [view,paint] of [['depth',paintDepthCards],['newsletter',paintNewsCards]]){
+    const base=TAB_RENDERERS[view];if(typeof base!=='function')continue;
+    TAB_RENDERERS[view]=function(){const out=base.apply(this,arguments);try{paint()}catch(err){console.error(err)}return out};
+  }
+
   // ============================================================== 4. the Card Program panel and settings
   // A panel on This Week, under the next-matchup card: your playbook at a glance, what other programs pulled and
   // evolved (Around the League), and Card Settings. Shown only once the dynasty uses cards.
@@ -843,13 +1030,19 @@ function normalizeCallSheet(u){
   function paintCardProgram(){
     if(typeof document==='undefined'||typeof document.getElementById!=='function'||typeof document.createElement!=='function')return; // headless runs
     const dash=document.querySelector('#dashboard'),old=document.querySelector('#cardProgram');
-    // A coachable postseason game shows the panel (and its Coach button) even before the first card game.
-    if(dash&&universe&&!universe.callSheet&&selected()&&POST_PHASES.includes(universe.phase)&&postseasonCardGame()&&!cardGameBlocker())cardMeta();
+    // In this fork the card game is the game: every dynasty has a Card Program from day one.
+    if(dash&&universe&&!universe.callSheet&&selected()&&(cardGameIsDefault()||POST_PHASES.includes(universe.phase)&&postseasonCardGame()&&!cardGameBlocker()))cardMeta();
+    if(cardGameIsDefault()&&universe?.callSheet&&!universe.callSheet.playbook)userPlaybook();
     if(!dash||!universe?.callSheet||!selected()){old?.remove();return}
     const html=cardProgramHTML();
     if(old)old.outerHTML=html;else{const a=dash.querySelector('#broadcastFeature')||dash.querySelector('.command-center');a?a.insertAdjacentHTML('afterend',html):dash.insertAdjacentHTML('beforeend',html)}
-    // Postseason: offer the coached game beside the briefing's primary "Next" button too.
-    try{const adv=document.querySelector('#hubAdvance'),btn=document.querySelector('#cardHubCoach'),g=POST_PHASES.includes(universe.phase)&&!universe.callSheet.activeBattle?currentCardGame():null,label=g&&!cardGameBlocker()?`Coach the ${g.label} with Cards`:null;
+    // The matchup and the Card Program lead This Week, right under the program header and view tabs.
+    try{if(cardGameIsDefault()){const tabs=dash.querySelector(':scope > .dash-views'),feature=dash.querySelector(':scope > #broadcastFeature'),panel=dash.querySelector(':scope > #cardProgram');
+      if(tabs&&feature&&tabs.nextElementSibling!==feature)tabs.after(feature);if(feature&&panel&&feature.nextElementSibling!==panel)feature.after(panel)}}catch(err){console.error(err)}
+    try{labelNextButton()}catch(err){console.error(err)}
+    try{paintMatchupCards()}catch(err){console.error(err)}
+    // Postseason with the card default off: offer the coached game beside the briefing's primary "Next" button.
+    try{const adv=document.querySelector('#hubAdvance'),btn=document.querySelector('#cardHubCoach'),g=!cardGameIsDefault()&&POST_PHASES.includes(universe.phase)&&!universe.callSheet.activeBattle?currentCardGame():null,label=g&&!cardGameBlocker()?`Coach the ${g.label} with Cards`:null;
       if(!label||!adv)btn?.remove();else if(btn)btn.textContent=label;else adv.insertAdjacentHTML('afterend',`<button type="button" id="cardHubCoach" class="${escH(adv.className)}" data-coach-cards style="margin-left:8px">${escH(label)}</button>`)}catch(err){console.error(err)}
     injectCardProgramStyles();
   }
@@ -872,6 +1065,7 @@ function normalizeCallSheet(u){
 .cpn-news.legendary{border-color:#ffb81c;background:linear-gradient(90deg,rgba(255,184,28,.22),rgba(255,255,255,.04))}.cpn-news.legendary em{color:#ffd34d}
 .cpn-news.evolve{border-color:#b26bff}
 #cardProgram .muted{color:#aab6e8}.cpn-foot{margin:10px 0 0;font-size:12px}
+@media(max-width:720px){#cardProgram .eyebrow,#cardProgram .cpn-stats span,#cardProgram .cpn-foot,.cs-mini small,.cs-mini em,.cs-coach small{font-size:12px!important}}
 #cardSettings{position:fixed;inset:0;z-index:2147482000;background:rgba(4,6,14,.72);display:flex;align-items:center;justify-content:center;padding:16px}
 #cardSettings .cps{background:#10172a;color:#eef2ff;border:1px solid #2f3a66;border-radius:16px;max-width:560px;width:100%;max-height:calc(100vh - 32px);overflow:auto;padding:20px}
 #cardSettings h2{margin:0 0 4px;color:#fff}#cardSettings fieldset{border:0;margin:14px 0 0;padding:0}
@@ -943,7 +1137,7 @@ function normalizeCallSheet(u){
   }
   function playerCardHTML(p,t){
     const AD=CS.adapter,D=CS.data;if(!AD||!D)return'';
-    const r=battleRoleOf(p,t);if(!r)return'';
+    const r=battleRoleOf(p,t)||{role:null,depth:null};
     const bp=AD.toBattlePlayer(p,r.role),cs=universe.callSheet,career=cs?.players?.[String(p.id)];
     const sig=(cs?.playbook?.signatures||[]).find(x=>String(x.playerId)===String(p.id)),ring=(cs?.playbook?.ringOfHonor||[]).some(x=>String(x.playerId)===String(p.id));
     const strong=new Set(D.STYLE_TRAITS[bp.archetype]||[]),ability=D.SIGNATURES[bp.archetype]?.text||'';
@@ -956,12 +1150,12 @@ function normalizeCallSheet(u){
       <div class="cs-pcard-face" style="--tc:${escH(t?.primary||'#2a3550')};--tc2:${escH(t?.secondary||'#e8e2d0')}">
         <div class="cs-pcard-top"><span class="cs-pcard-ovr">${bp.ovr}</span><span class="cs-pcard-num">#${escH(bp.number)}</span></div>
         ${portraitTag(p,112,'card')}
-        <strong>${escH(p.name)}</strong><span>${escH(ROLE_NAMES[r.role]||r.role)}</span><em>${escH(bp.archetype||'')}</em>
+        <strong>${escH(p.name)}</strong><span>${escH(roleLabel(r.role,p))}</span><em>${escH(bp.archetype||'')}</em>
         ${sig?'<b class="cs-pcard-badge">SIGNATURE CARD</b>':ring?'<b class="cs-pcard-badge">RING OF HONOR</b>':''}
       </div>
       <div class="cs-pcard-body">
         <span class="eyebrow">BATTLE CARD</span>
-        <h3>${escH(ROLE_NAMES[r.role]||r.role)} · ${escH(depth)}</h3>
+        <h3>${escH(roleLabel(r.role,p))} · ${escH(depth)}</h3>
         ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
         ${development?`<p class="cs-pcard-note"><b>${escH(development.phase)} ${development.year}: ${escH(development.trait)} +${development.gain}</b>${development.plays.length?` · Helps ${escH(development.plays.join(', '))}`:' · Applied through his current battle traits'}. No extra bonus is stacked.</p>`:''}
         ${stamp?`<p class="cs-pcard-note"><b>Development stamp: card OVR ${stamp.was} → ${stamp.now}</b> since the ${stamp.year} season ended.</p>`:''}
@@ -1053,15 +1247,21 @@ function normalizeCallSheet(u){
   // A recruit's card shows what he would bring to the card game: his projected role and archetype ability, his
   // grades as scouted ranges (never the true values), how much of your playbook runs through his duels, and how
   // he compares with your current starter. Ranges narrow as your scouting confidence rises.
-  function recruitCardHTML(r,u){
-    const AD=CS.adapter,D=CS.data;if(!AD||!D||!r||!u)return'';
-    const role=Object.keys(AD.ROLE_MAP).find(x=>(AD.POS_FALLBACK[x]||[])[0]===r.pos)||Object.keys(AD.ROLE_MAP).find(x=>(AD.POS_FALLBACK[x]||[]).includes(r.pos));if(!role)return'';
+  // A prospect as your scouts see him: estimated traits widened by scouting confidence, and the card OVR range.
+  function prospectEstimate(r,u){
+    const AD=CS.adapter,D=CS.data;if(!AD||!D||!r||!u)return null;
+    const role=Object.keys(AD.ROLE_MAP).find(x=>(AD.POS_FALLBACK[x]||[])[0]===r.pos)||Object.keys(AD.ROLE_MAP).find(x=>(AD.POS_FALLBACK[x]||[]).includes(r.pos));if(!role)return null;
     let conf=50;try{const dom=Object.entries(ensureScoutingIntel(r,u,true)||{}).filter(([k])=>k!=='upside').map(([,v])=>Number(v.confidence)).filter(Number.isFinite);if(dom.length)conf=dom.reduce((a,b)=>a+b,0)/dom.length}catch(err){}
     const width=Math.max(1,Math.round((100-conf)/5)),est={};
     for(const k of D.TRAITS){const t=Number(r[k])||Number(r.trueNow)||60;est[k]=Math.max(25,Math.min(99,Math.round(t+scoutHash(r,k,'card')*width)))}
     const range=v=>[Math.max(25,v-width),Math.min(99,v+width)],g=v=>Math.round(v/10);
     const bp=AD.toBattlePlayer({...r,...est,health:100,wear:0,morale:70,positionFamiliarity:{[r.pos]:100}},role),strong=new Set(D.STYLE_TRAITS[bp.archetype]||[]);
     const lo=AD.toBattlePlayer({...r,...Object.fromEntries(D.TRAITS.map(k=>[k,range(est[k])[0]])),positionFamiliarity:{[r.pos]:100}},role).ovr,hi=AD.toBattlePlayer({...r,...Object.fromEntries(D.TRAITS.map(k=>[k,range(est[k])[1]])),positionFamiliarity:{[r.pos]:100}},role).ovr;
+    return{role,conf,width,est,range,g,bp,strong,lo,hi};
+  }
+  function recruitCardHTML(r,u){
+    const AD=CS.adapter,D=CS.data;if(!AD||!D||!r||!u)return'';
+    const pe=prospectEstimate(r,u);if(!pe)return'';const {role,conf,est,range,g,bp,strong,lo,hi}=pe;
     const offense=role in (D.OFF_ROLES||{}),pb=universe.callSheet?.playbook;
     const deck=offense&&pb?[...pb.off.base,...pb.off.wrinkles]:[],inPlay=id=>Object.values(D.PLAYS[id]?.duels||{}).some(d=>(d.off||[]).includes(role)||(d.def||[]).includes(role));
     const usage=offense?(deck.length?`In ${deck.filter(inPlay).length} of the ${deck.length} plays in your playbook`:''):(()=>{const all=Object.values(D.PLAYS).filter(p=>!p.signature&&!p.evolvedFrom);return`Fights in ${Math.round(all.filter(p=>inPlay(p.id)).length*100/Math.max(1,all.length))}% of the plays offenses run`})();
@@ -1147,6 +1347,6 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,returnBorrowed,albumProgress,checkAlbums,markArchive,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,returnBorrowed,albumProgress,checkAlbums,markArchive,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();

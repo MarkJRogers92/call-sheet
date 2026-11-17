@@ -24,6 +24,7 @@ async function openFrame(page){
     await page.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(page);
     await reachPostseason(page);
     await page.evaluate(()=>window.__DL_TEST__.v2PostseasonPrepare('bowl'));
+    const start=await page.evaluate(()=>{const m=window.DynastyCardGameDay.meta();return{packs:m?.playbook?.packsOpened||0,games:m?.games||0}});
     await page.evaluate(()=>window.DynastyCardGameDay.paint());
     const coach=page.locator('#cardProgram [data-coach-post]');
     await coach.waitFor({timeout:10000});
@@ -71,7 +72,7 @@ async function openFrame(page){
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
-    assert.equal(meta.playbook.packsOpened,1,'one pack');assert.equal(meta.games,1);assert.equal(meta.activeBattle,null);assert.equal(meta.pendingPostseason,undefined);
+    assert.equal(meta.playbook.packsOpened,start.packs+1,'one pack from the bowl');assert.equal(meta.games,start.games+1);assert.equal(meta.activeBattle,null);assert.equal(meta.pendingPostseason,undefined);
     // With the battle closed, the classic playoff runs again.
     await page.evaluate(()=>document.querySelector('#simPlayoff')?.click());
     await page.waitForFunction(()=>window.DynastyGameEngineV2LabBridge.cutoverDebug().phase!=='playoffReady',null,{timeout:60000}).catch(()=>{});

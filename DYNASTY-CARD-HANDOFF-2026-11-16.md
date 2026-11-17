@@ -107,6 +107,11 @@ Remaining sequence:
 5. Push the exact hosting source, package it, save and deploy it to the existing owner-private Site. Verify the
    returned deployment success and report the actual new version and unchanged URL to Mark.
 
+## Latest direction (Nov 17)
+
+The card battle is the default game day and cards appear across Dynasty Lab. See "The card game is the game" in
+`forks/call-sheet/HANDOFF-GPT.md`.
+
 ## Known remaining features — distinct from closing this batch
 
 - **Manual postseason card coaching: implemented (Nov 17).** See "Coached postseason" in `forks/call-sheet/HANDOFF-GPT.md`.
