@@ -44,9 +44,17 @@ function rollRarity(rng,won){
   return'common';
 }
 // opts: {won, seed, oppTendency:{run,quick,deep,constraint}, worldTaken:[legendary ids owned by AI programs]}
+// Postseason wins open bigger packs: five cards, with a legendary chance on the last one (best for the national title).
+const STAGE_PACKS={
+  conference:{type:'conference',title:'Championship Pack',subtitle:'Pick 1 of 5 · conference champions',wrap:'CONF<br>CHAMPS',legendary:.25},
+  bowl:{type:'bowl',title:'Bowl Pack',subtitle:'Pick 1 of 5 · bowl champions',wrap:'BOWL',legendary:.25},
+  playoff:{type:'playoff',title:'Playoff Pack',subtitle:'Pick 1 of 5 · still alive',wrap:'PLAYOFF',legendary:.3},
+  title:{type:'title',title:'National Title Pack',subtitle:'Pick 1 of 5 · national champions',wrap:'NATIONAL<br>TITLE',legendary:.6}
+};
 function openPack(pb,opts){
   const rng=DynastyRng.create(`pack:${opts.seed}:${pb.packsOpened}`);
-  const rivalWin=opts.rivalry&&opts.won,n=rivalWin?5:opts.won?4:3,cards=[],used=new Set();
+  const rivalWin=opts.rivalry&&opts.won,post=opts.won&&STAGE_PACKS[opts.stage]||null,n=rivalWin||post?5:opts.won?4:3,cards=[],used=new Set();
+  const lastLegendary=post?Math.max(post.legendary,rivalWin?.35:0):rivalWin?.35:0;
   let focus=null;
   if(!opts.won&&opts.oppTendency){focus=Object.entries(opts.oppTendency).filter(([k])=>COUNTERS[k]).sort((a,b)=>b[1]-a[1])[0]?.[0]||null}
   for(let i=0;i<n;i++){
@@ -57,7 +65,7 @@ function openPack(pb,opts){
       if(c&&eligible(pb,c,opts.worldTaken))pick={...c,why:`Counters their ${focus} game`};
     }
     for(let tries=0;!pick&&tries<40;tries++){
-      const rarity=rivalWin&&i===n-1&&rng.next()<.35?'legendary':rollRarity(rng,opts.won),list=POOL.filter(c=>c.rarity===rarity&&!used.has(c.id)&&eligible(pb,c,opts.worldTaken));
+      const rarity=lastLegendary&&i===n-1&&rng.next()<lastLegendary?'legendary':rollRarity(rng,opts.won),list=POOL.filter(c=>c.rarity===rarity&&!used.has(c.id)&&eligible(pb,c,opts.worldTaken));
       if(list.length)pick={...list[rng.int(0,list.length-1)]};
     }
     if(!pick)break;
@@ -65,6 +73,7 @@ function openPack(pb,opts){
   }
   // Show the best card last: reveal order escalates.
   const order={common:0,rare:1,legendary:2};cards.sort((a,b)=>order[a.rarity]-order[b.rarity]);
+  if(post)return{type:post.type,title:post.title,subtitle:post.subtitle,cards};
   if(rivalWin)return{type:'rivalry',title:'Rivalry Pack',subtitle:'Pick 1 of 5 · the trophy stays home',cards};
   return{type:opts.won?'victory':'film',title:opts.won?'Victory Pack':'Film Study Pack',subtitle:opts.won?'Pick 1 of 4':`Pick 1 of 3 · built around stopping their ${focus||'offense'}`,cards};
 }
@@ -140,5 +149,5 @@ function awardAchievements(pb,b,side){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

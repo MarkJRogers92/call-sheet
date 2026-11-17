@@ -616,7 +616,7 @@ function finalScreen(){
     <div style="margin:14px 0">${top.map(p=>`<div class="statline" style="font-size:16px"><b>${esc(p.name)}</b> ${p.role} · ${esc(line(p))}</div>`).join('')}</div>
     ${b.rivalry?(DYN?`<p class="statline">RIVALRY ${won?'WON':'LOST'}</p>`:`<div class="trophyWrap ${won?'won':''}">${trophyImg()}<p class="statline">${won?`<b>${esc(trophyName())}</b> ${save.world.trophy.holder==='user'?'stays':'comes'} home`:`${esc(specOf(oppId()).short)} keeps <b>${esc(trophyName())}</b>`}</p></div>`):''}
     ${(b._achievements||[]).map(a=>`<p class="statline">✓ ${esc(a.name)} · ${esc(P.cardDef(a.reward).name)} added to your collection</p>`).join('')}
-    <button class="btn go" id="openPack">${b._breakout?'⭐ SEE THE BREAKOUT':won?(b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button></div>`;
+    <button class="btn go" id="openPack">${b._breakout?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button></div>`;
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
   $('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
@@ -624,11 +624,12 @@ function finalScreen(){
 async function packScreen(won){
   S.init();
   const opp=b.user==='home'?'away':'home';
-  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?DYN.worldTaken||[]:W.takenLegendaries(save.world,save.playbook,'user')});
-  const pc=pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
+  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,stage:DYN?.stage||null,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?DYN.worldTaken||[]:W.takenLegendaries(save.world,save.playbook,'user')});
+  const post=P.STAGE_PACKS?.[pack.type]||null;
+  const pc=pack.type==='title'?['#fff2b0','#8a5a00']:post?['#d8dee9','#2c3448']:pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
   const m=$('#modal');
   m.innerHTML=`<div class="mwrap"><p class="big ${won?'gold':''}" style="font-size:clamp(40px,7vw,80px)">${esc(pack.title.toUpperCase())}</p><p class="statline">${esc(pack.subtitle)}</p>
-    <div class="pack" id="pk" style="--pa:${pc[0]};--pb:${pc[1]}"><div class="pt">${pack.type==='rivalry'?'RIVALRY':won?'VICTORY':'FILM<br>STUDY'}</div><div class="ps">TAP TO OPEN</div></div>
+    <div class="pack" id="pk" style="--pa:${pc[0]};--pb:${pc[1]}"><div class="pt">${post?post.wrap:pack.type==='rivalry'?'RIVALRY':won?'VICTORY':'FILM<br>STUDY'}</div><div class="ps">TAP TO OPEN</div></div>
     <div class="reveal" id="rv"></div><div id="pkMsg" class="statline"></div><div id="pkBtns"></div></div>`;
   const pk=$('#pk');
   pk.onclick=async()=>{
@@ -964,7 +965,7 @@ function dynastyStart(){
       else if(mv.how==='arrived')await callout('SIGNATURE ARRIVES','cool small',1200,`${mv.name} · from ${mv.from} · his card follows him`);
       else await callout(mv.how==='transfer'?'TRANSFERRED':'MOVED ON','cool small',1200,`${mv.name}${mv.to?` · now at ${mv.to}`:''} · his card leaves with him`);
     }
-    await callout(DYN.rivalry?'RIVALRY WEEK':'KICKOFF','small',800,`${teamOf('away').name} at ${teamOf('home').name}`);go(null);
+    await callout(DYN.stage?String(DYN.label||'POSTSEASON').toUpperCase():DYN.rivalry?'RIVALRY WEEK':'KICKOFF','small',800,`${teamOf('away').name} ${DYN.neutral?'vs':'at'} ${teamOf('home').name}${DYN.neutral?' · neutral site':''}`);go(null);
   };
   if(!save.seenHelp)howToPlay(begin);else begin();
 }

@@ -109,9 +109,9 @@ Remaining sequence:
 
 ## Known remaining features — distinct from closing this batch
 
-- **Manual postseason card coaching is not implemented.** `cardGameBlocker` still limits the interactive iframe
-  to regular-season games. Postseason simulation is integrated; do not conflate the two. A manual extension needs
-  a stage-aware launcher, recording/advance controls, exact resume and duplicate-reward tests.
+- **Manual postseason card coaching: implemented (Nov 17).** See "Coached postseason" in `forks/call-sheet/HANDOFF-GPT.md`.
+  Remaining polish: the This Week briefing's primary "Next: Play Bowl Games" button still simulates; the coach
+  entry point is the Card Program panel's "Coach the … with Cards" button.
 - Alternate passing targets and more combo recipes are future battle upgrades.
 - Older wishlist items (nemesis recruits, signing-class reveals, coordinator-owned pools, booster packs, legacy
   cards, coaching-tree playbooks, albums) were not part of this finite integration batch and remain optional work.

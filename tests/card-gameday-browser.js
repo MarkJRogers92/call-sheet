@@ -126,7 +126,7 @@ const shots=process.env.CARD_SHOTS||'';
     await page.locator('#cardSettings button[type="submit"]').click();
     const saved=await page.evaluate(()=>window.DynastyCardGameDay.meta().settings);
     assert.equal(saved.integrations['scouting-fog'],false,'scouting fog is switched off');assert.equal(saved.mode,'key');
-    assert.match(await page.locator('#cardProgram .cpn-foot').innerText(),/Key downs/);
+    assert.match(await page.locator('#cardProgram .cpn-foot.muted').innerText(),/Key downs/);
     // Advance the week: opponents open packs and the news shows Around the League.
     while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
     await page.locator('#hubAdvance').click();

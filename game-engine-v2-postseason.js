@@ -1,5 +1,10 @@
 // v0.10.2 development extension: user-controlled postseason games use the same transactional Game Engine 2 path.
 let v2PostseasonInjectedFault=null;
+// Coached postseason games (Call Sheet). v2PostseasonExternalFor(home,away,options) may return {state, onRecorded(out)}: the
+// final state of a game the user coached, recorded in place of a simulation inside the same stage transaction. With
+// v2PostseasonPauseForUser set, the playoff stops before a round in which the user has a game that has not been coached.
+let v2PostseasonExternalFor=null,v2PostseasonPauseForUser=false,v2PostseasonLastError=null;
+function v2PostseasonExternal(a,b,options){return typeof v2PostseasonExternalFor==='function'?v2PostseasonExternalFor(a,b,options||{}):null}
 function v2PostseasonUserMatch(a,b){const me=selected();return !!me&&(a?.id===me.id||b?.id===me.id)}
 // The two archives are append-only during a postseason stage (games are added, nothing already recorded changes), and
 // together they are most of a long dynasty's save. Cloning them made every postseason stage slower each season (1.8 s
@@ -52,9 +57,12 @@ function v2PostseasonRecordMatch(home,away,options={}){
 }
 function v2PostseasonSim(a,b,options){
   if(!v2PostseasonUserMatch(a,b))return gameSim(a,b,options?.neutral!==false,options?.conference??false,{week:options?.week,label:options?.label});
-  const fault=v2PostseasonInjectedFault;v2PostseasonInjectedFault=null;return v2PostseasonRecordMatch(a,b,{...options,testFault:fault}).result
+  const fault=v2PostseasonInjectedFault,ext=v2PostseasonExternal(a,b,options);v2PostseasonInjectedFault=null;
+  const out=v2PostseasonRecordMatch(a,b,{...options,testFault:fault,...(ext?.state?{externalState:ext.state}:{})});
+  if(ext?.state&&typeof ext.onRecorded==='function')ext.onRecorded(out);
+  return out.result
 }
-function v2PostseasonFail(stage,stageSnapshot,err){console.error(err);v2PostseasonStageRestore(stageSnapshot);setStatus(`${stage} rolled back: ${err.message||err}`)}
+function v2PostseasonFail(stage,stageSnapshot,err){console.error(err);v2PostseasonLastError=err;v2PostseasonStageRestore(stageSnapshot);setStatus(`${stage} rolled back: ${err.message||err}`)}
 
 simConferenceChampionships=function simConferenceChampionshipsV2(){
   if(universe.phase!=='confReady')return;const stage=v2PostseasonStageCapture(),archiveStart=(universe.gameArchive||[]).length;
@@ -80,15 +88,44 @@ simBowls=function simBowlsV2(){
   }catch(err){v2PostseasonFail('Bowl simulation',stage,err);return[]}
 };
 
+// The playoff plays one round per transaction so a coached game can pause it between rounds. Progress is kept in
+// universe.playoffProgress ({year, round, alive}) and cleared when the champion is crowned; saves without it start at round one.
+const V2_PLAYOFF_ROUNDS=['Round of 16','Quarterfinal','Semifinal','National Championship'];
+function v2PlayoffPairs(teams){const out=[];for(let i=0;i<teams.length/2;i++)out.push([teams[i],teams[teams.length-1-i]]);return out}
+function v2PlayoffProgress(){
+  const p=universe.playoffProgress;if(!p||p.year!==universe.year||!Number.isInteger(p.round)||p.round<1||p.round>=V2_PLAYOFF_ROUNDS.length||!Array.isArray(p.alive))return null;
+  const teams=p.alive.map(id=>teamById(id)).filter(Boolean);return teams.length===16>>p.round?{round:p.round,teams}:null
+}
+function v2PlayoffUpcoming(){
+  if(universe.phase!=='playoffReady')return null;
+  let p=v2PlayoffProgress();
+  if(!p){if(universe.playoffFieldUnavailable)return null;const field=seedField();if(field.length!==16)return null;p={round:0,teams:field}}
+  return{round:p.round,label:V2_PLAYOFF_ROUNDS[p.round],week:14+p.round,teams:p.teams,pairs:v2PlayoffPairs(p.teams)}
+}
 simPlayoff=function simPlayoffV2(){
-  if(universe.phase==='bowlReady')simBowls();if(universe.phase!=='playoffReady')return;const stage=v2PostseasonStageCapture(),archiveStart=(universe.gameArchive||[]).length;
-  try{
+  if(universe.phase==='bowlReady')simBowls();if(universe.phase!=='playoffReady')return;
+  if(!v2PlayoffProgress()){
     if(universe.playoffFieldUnavailable){setStatus('This older postseason save predates frozen playoff selections after its bowls. The original field is unavailable, so no playoff was simulated.');return}
-    const field=seedField();if(field.length!==16){setStatus('The saved playoff field is incomplete, so no playoff was simulated.');return}field.forEach((t,i)=>t.seed=i+1);let logs=[];
-    function round(arr,label){let out=[];for(let i=0;i<arr.length/2;i++){let a=arr[i],b=arr[arr.length-1-i],week=14+['Round of 16','Quarterfinal','Semifinal','National Championship'].indexOf(label),r=v2PostseasonSim(a,b,{week,label,neutral:true,conference:false});logs.push({...r,label});out.push(T(r.winner))}return out}
-    let r16=round(field,'Round of 16'),q=round(r16,'Quarterfinal'),s=round(q,'Semifinal'),f=round(s,'National Championship');
-    universe.champion=f[0].name;universe.phase='complete';universe.offseason=makeOffseasonState(universe.year,'review');universe.latest=logs;finalizeRecruiting();finalizeSeasonHonors();archiveSeason();ranked();buildWeeklyHub();announceUserPostseason(archiveStart);autosaveAfter('postseason');render()
-  }catch(err){v2PostseasonFail('Playoff simulation',stage,err)}
+    if(seedField().length!==16){setStatus('The saved playoff field is incomplete, so no playoff was simulated.');return}
+  }
+  const archiveStart=(universe.gameArchive||[]).length;let played=0;
+  while(universe.phase==='playoffReady'){
+    const up=v2PlayoffUpcoming();if(!up)return;
+    if(v2PostseasonPauseForUser&&up.pairs.some(([a,b])=>v2PostseasonUserMatch(a,b)&&!v2PostseasonExternal(a,b,{week:up.week,label:up.label,peek:true})?.state)){
+      if(played){ranked();buildWeeklyHub();announceUserPostseason(archiveStart);autosaveAfter('postseason');render()}
+      return{paused:up.label}
+    }
+    const stage=v2PostseasonStageCapture();
+    try{
+      if(up.round===0){up.teams.forEach((t,i)=>t.seed=i+1);universe.latest=[]}
+      const logs=[],winners=[];
+      for(const [a,b] of up.pairs){const r=v2PostseasonSim(a,b,{week:up.week,label:up.label,neutral:true,conference:false});logs.push({...r,label:up.label});winners.push(T(r.winner))}
+      universe.latest=(Array.isArray(universe.latest)?universe.latest:[]).concat(logs);played++;
+      if(up.round<V2_PLAYOFF_ROUNDS.length-1){universe.playoffProgress={year:universe.year,round:up.round+1,alive:winners.map(t=>t.id)};continue}
+      delete universe.playoffProgress;
+      universe.champion=winners[0].name;universe.phase='complete';universe.offseason=makeOffseasonState(universe.year,'review');finalizeRecruiting();finalizeSeasonHonors();archiveSeason();ranked();buildWeeklyHub();announceUserPostseason(archiveStart);autosaveAfter('postseason');render()
+    }catch(err){v2PostseasonFail('Playoff simulation',stage,err);return}
+  }
 };
 
 function v2PostseasonArchiveSummary(){
@@ -113,12 +150,13 @@ function v2PostseasonTestPrepare(stage){
     me.w=6;me.l=6;const elite=others.slice(0,20);for(const t of elite){t.w=12;t.l=0}universe.confChamps=elite.slice(0,10).map(t=>t.id);universe.playoffFieldIds=[];universe.playoffFieldUnavailable=false;ranked();freezePlayoffField();const field=bowlField().map(t=>t.id);if(!field.includes(me.id))throw new Error('Bowl test fixture did not place the controlled program in a bowl.');render();return{stage,field,userId:me.id}
   }
   if(stage==='playoff'){
-    universe.phase='playoffReady';for(const t of universe.teams){t.champ=false}me.w=12;me.l=0;const champs=[me,...others.slice(0,9)];for(const t of champs){t.w=Math.max(10,t.w||0);t.l=Math.min(2,t.l||0)}universe.confChamps=champs.map(t=>t.id);universe.playoffFieldIds=[];universe.playoffFieldUnavailable=false;ranked();const field=freezePlayoffField().map(t=>t.id);if(!field.includes(me.id))throw new Error('Playoff test fixture did not place the controlled program in the field.');render();return{stage,field,userId:me.id}
+    delete universe.playoffProgress;universe.phase='playoffReady';for(const t of universe.teams){t.champ=false}me.w=12;me.l=0;const champs=[me,...others.slice(0,9)];for(const t of champs){t.w=Math.max(10,t.w||0);t.l=Math.min(2,t.l||0)}universe.confChamps=champs.map(t=>t.id);universe.playoffFieldIds=[];universe.playoffFieldUnavailable=false;ranked();const field=freezePlayoffField().map(t=>t.id);if(!field.includes(me.id))throw new Error('Playoff test fixture did not place the controlled program in the field.');render();return{stage,field,userId:me.id}
   }
   throw new Error(`Unknown postseason test stage: ${stage}`)
 }
 globalThis.DynastyGameEngineV2LabBridge.postseasonSummary=v2PostseasonArchiveSummary;
 globalThis.DynastyGameEngineV2LabBridge.postseasonAudit=v2PostseasonAudit;
+globalThis.DynastyGameEngineV2LabBridge.playoffUpcoming=v2PlayoffUpcoming;
 if(globalThis.__DL_TEST__){
   globalThis.__DL_TEST__.v2PostseasonRecordMatch=v2PostseasonRecordMatch;
   globalThis.__DL_TEST__.v2PostseasonPrepare=v2PostseasonTestPrepare;

@@ -234,16 +234,54 @@ function normalizeCallSheet(u){
     }});
 
   // ============================================================== 3. game day and simulated games
+  // Postseason: the user's conference championship, bowl or playoff round, worked out exactly as the stage pairs it.
+  const POST_PHASES=['confReady','bowlReady','playoffReady'];
+  function postStageOf(label){return/National Championship/.test(label)?'title':/^(Round of 16|Quarterfinal|Semifinal)$/.test(label)?'playoff':/ Bowl$/.test(label)?'bowl':/ Championship$/.test(label)?'conference':null}
+  function postGameFor(home,away,label,week){
+    const me=selected();
+    return{postseason:true,stage:postStageOf(label),label,week,home:home.name,away:away.name,homeId:home.id,awayId:away.id,conf:false,neutral:true,
+      played:false,seed:`card:post:${universe.year}:${label}:${me.id}`};
+  }
+  function postseasonCardGame(){
+    const me=selected();if(!me||!universe||!POST_PHASES.includes(universe.phase))return null;
+    const mine=([a,b])=>a&&b&&(a.id===me.id||b.id===me.id);
+    if(universe.phase==='confReady'){
+      if(!allConfs().includes(me.conference))return null;const st=confStand(me.conference);
+      return st.length>=2&&mine(st)?postGameFor(st[0],st[1],`${me.conference} Championship`,13):null;
+    }
+    if(universe.phase==='bowlReady'){
+      const f=bowlField();for(let i=0;i+1<f.length;i+=2)if(mine([f[i],f[i+1]]))return postGameFor(f[i],f[i+1],bowlNameFor(i/2),13);
+      return null;
+    }
+    const up=globalThis.DynastyGameEngineV2LabBridge?.playoffUpcoming?.();const pair=up?.pairs.find(mine);
+    return pair?postGameFor(pair[0],pair[1],up.label,up.week):null;
+  }
+  // A postseason battle in progress (or finished, with its pack still to open) stays the current game until it closes.
+  function openPostseasonBattle(){
+    const cs=universe?.callSheet,pb=cs?.postseasonBattle;
+    return pb&&pb.year===universe.year&&cs.activeBattle?.seed===pb.seed?pb:null;
+  }
+  function battleSeed(g){return g?.seed||`card:${universe.year}:${g?.week}:${selected().id}`}
   function currentCardGame(){
+    const open=openPostseasonBattle();
+    if(open){const home=teamById(open.homeId),away=teamById(open.awayId);if(home&&away)return{...postGameFor(home,away,open.label,open.week),played:universe.callSheet.recordedBattleSeed===open.seed}}
+    if(universe&&POST_PHASES.includes(universe.phase))return postseasonCardGame();
     const next=findUserGame();if(next)return next;
     const me=selected(),key=universe?.callSheet?.activeBattle?.seed;
     return me&&key?(universe.schedule?.[universe.week]||[]).find(g=>(g.home===me.name||g.away===me.name)&&key===`card:${universe.year}:${g.week}:${me.id}`)||null:null;
   }
   function cardGameBlocker(){
     if(!universe||!selected())return'Start or load a dynasty first.';
-    if(universe.phase!=='regular')return'Card battles cover regular-season games for now. Bowls and playoffs use Classic Game Day.';
+    if(POST_PHASES.includes(universe.phase)||openPostseasonBattle()){
+      const g=currentCardGame();
+      if(!g)return universe.phase==='bowlReady'&&seedField().some(t=>t.id===selected().id)?'Your program is in the playoff. Sim the bowls to reach your first-round game.':'Your program has no postseason game to coach in this round.';
+      if(hasPendingCareerChoice())return'Choose your next job before playing this game.';
+      if(universe.liveGameDay)return'A Classic Game Day is in progress. Finish it first.';
+      return null;
+    }
+    if(universe.phase!=='regular')return'There is no card game to coach right now.';
     const g=currentCardGame();if(!g)return'There is no game for your program this week.';
-    if(g.played&&universe.callSheet?.activeBattle?.seed!==`card:${universe.year}:${g.week}:${selected().id}`)return'This week\'s game is already complete.';
+    if(g.played&&universe.callSheet?.activeBattle?.seed!==battleSeed(g))return'This week\'s game is already complete.';
     if(hasPendingCareerChoice())return'Choose your next job before playing this week.';
     if(hasPendingWeeklyDecisions())return'Resolve the Coach’s Desk decisions before playing this week.';
     if(universe.liveGameDay)return'A Classic Game Day is in progress. Finish it first.';
@@ -257,14 +295,15 @@ function normalizeCallSheet(u){
   }
   // Everything a battle needs for this week's game, from the dynasty, after every integration has had its say.
   function buildLaunch(){
-    const g=currentCardGame(),home=T(g.home),away=T(g.away),me=selected(),meta=cardMeta();
-    if(meta.activeBattle&&meta.activeBattle.seed!==`card:${universe.year}:${g.week}:${me.id}`)meta.activeBattle=null;
-    const opp=home.name===me.name?away:home,conditions=globalThis.DynastyGameConditions?.forGame({home,year:universe.year,week:g.week})||null;
-    const cfg={home,away,userSide:home.name===me.name?'home':'away',week:g.week,season:universe.year,
-      label:`Week ${g.week} · ${g.conf?'Conference':'Non-conference'}`,record:{w:me.w||0,l:me.l||0},
+    const g=currentCardGame(),home=T(g.home),away=T(g.away),me=selected(),meta=cardMeta(),seed=battleSeed(g);
+    if(meta.activeBattle&&meta.activeBattle.seed!==seed)meta.activeBattle=null;
+    if(g.postseason&&meta.postseasonBattle?.seed!==seed)meta.postseasonBattle={seed,year:universe.year,stage:g.stage,label:g.label,week:g.week,homeId:g.homeId,awayId:g.awayId};
+    const opp=home.name===me.name?away:home,conditions=globalThis.DynastyGameConditions?.forGame({home,year:universe.year,week:g.week,...(g.neutral?{neutral:true}:{})})||null;
+    const cfg={home,away,userSide:home.name===me.name?'home':'away',week:g.week,season:universe.year,neutral:!!g.neutral,stage:g.stage||null,
+      label:g.postseason?g.label:`Week ${g.week} · ${g.conf?'Conference':'Non-conference'}`,record:{w:me.w||0,l:me.l||0},
       weather:battleWeather(conditions),conditions,rivalry:(me.protectedRivalIds||[]).includes(opp.id),
-      activeBattle:meta.activeBattle?.seed===`card:${universe.year}:${g.week}:${me.id}`?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
-      seed:`card:${universe.year}:${g.week}:${me.id}`,moves:[],practiceReps:{},worldTaken:takenLegendaries(),program:{home:{enabled:false},away:{enabled:false}}};
+      activeBattle:meta.activeBattle?.seed===seed?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
+      seed,moves:[],practiceReps:{},worldTaken:takenLegendaries(),program:{home:{enabled:false},away:{enabled:false}}};
     runHook('launch',{cfg,g,home,away,me,opp,userSide:cfg.userSide});
     if(cfg.moves.length)try{autosaveAfter('game')}catch(err){}
     return cfg;
@@ -309,7 +348,7 @@ function normalizeCallSheet(u){
       const won=sim.b.game.score[sim.cfg.userSide]>sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];pb.record[won?'w':'l']++;
       CS.packs.awardAchievements(pb,sim.b,sim.cfg.userSide);
       // Sim delegates the pick to the same scheme-aware coordinator used by AI programs.
-      const pack=CS.packs.openPack(pb,{won,rivalry:sim.cfg.rivalry,seed:sim.cfg.seed,oppTendency:sim.b.tend[sim.cfg.userSide==='home'?'away':'home'],worldTaken:takenLegendaries()});
+      const pack=CS.packs.openPack(pb,{won,rivalry:sim.cfg.rivalry,stage:sim.cfg.stage||null,seed:sim.cfg.seed,oppTendency:sim.b.tend[sim.cfg.userSide==='home'?'away':'home'],worldTaken:takenLegendaries()});
       let picked=null;if(pack.cards.length){const spec=aiSpec(me),pick=CS.world.aiPick(spec,pack,pb,DynastyRng.create(`${sim.cfg.seed}:pick`));picked=pick;CS.packs.applyPick(pb,pick);
         for(let over=CS.packs.overCapacity(pb);over;over=CS.packs.overCapacity(pb))CS.world.aiCut(spec,pb,over)}
       if(breakout){const sg=CS.signatures.specFor(breakout.p,{season:universe.year,earned:sim.cfg.label});if(pb.signatures.length<CS.signatures.SLOTS)CS.signatures.add(pb,sg);else{(pb.reserveSignatures??=[]).push(sg);pb.lastSignatureGame=pb.gamesPlayed;CS.signatures.register(sg)}}
@@ -346,7 +385,7 @@ function normalizeCallSheet(u){
       try{
       const me=selected(),userSide=home.id===me.id?'home':'away',opp=userSide==='home'?away:home,week=options.week??13;
       const conditions=globalThis.DynastyGameConditions?.forGame({home,year:universe.year,week,neutral:options.neutral!==false})||null;
-      const cfg={home,away,userSide,week,season:universe.year,label:options.label||'Postseason',neutral:options.neutral!==false,
+      const cfg={home,away,userSide,week,season:universe.year,label:options.label||'Postseason',neutral:options.neutral!==false,stage:postStageOf(options.label||''),
         seed:`card:post:${universe.year}:${week}:${options.label||'post'}:${home.id}:${away.id}`,weather:battleWeather(conditions),conditions,
         playbook:userPlaybook(),practiceReps:{},moves:[],program:{home:{enabled:false},away:{enabled:false}},rivalry:(me.protectedRivalIds||[]).includes(opp.id)};
       runHook('launch',{cfg,g:{week},home,away,me,opp,userSide});
@@ -356,6 +395,42 @@ function normalizeCallSheet(u){
       }catch(err){v2PostseasonStageRestore(snapshot);throw err}
     };
     if(globalThis.__DL_TEST__)globalThis.__DL_TEST__.v2PostseasonRecordMatch=v2PostseasonRecordMatch;
+  }
+
+  // Coached postseason games. The finished battle's final state waits in callSheet.pendingPostseason; the stage itself then
+  // runs through Dynasty Lab's transactional postseason path and records that state for the user's game in place of a
+  // simulation. Card careers and the recorded flag are written inside the same transaction, so a rollback undoes them too
+  // and the in-battle rewards (granted only after a successful record) can never be paid twice.
+  if(typeof v2PostseasonExternalFor!=='undefined'){
+    v2PostseasonExternalFor=function coachedPostseasonGame(home,away,options){
+      const p=universe?.callSheet?.pendingPostseason;
+      if(!p||p.year!==universe.year||p.label!==options.label||String(p.homeId)!==String(home.id)||String(p.awayId)!==String(away.id))return null;
+      if(options.peek)return{state:true};
+      return{state:JSON.parse(JSON.stringify(p.state)),onRecorded(out){
+        const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true}
+        try{addCardCareer(p.tally,options.week)}catch(err){console.error(err)}
+        meta.recordedBattleSeed=p.seed;meta.lastPostseasonGameId=out?.result?.gameId||out?.record?.id||null;delete meta.pendingPostseason;
+      }};
+    };
+    const STAGE_RUN={conference:()=>simConferenceChampionships(),bowl:()=>simBowls(),playoff:()=>simPlayoff(),title:()=>simPlayoff()};
+    function recordPostseasonBattle(g,state,tally,key){
+      const seed=key||g.seed;
+      cardMeta().pendingPostseason={seed,year:universe.year,label:g.label,homeId:g.homeId,awayId:g.awayId,state:JSON.parse(JSON.stringify(state)),tally:tally&&typeof tally==='object'?JSON.parse(JSON.stringify(tally)):{}};
+      v2PostseasonLastError=null;v2PostseasonPauseForUser=true;
+      try{STAGE_RUN[g.stage]?.()}catch(err){console.error(err);v2PostseasonLastError=err}finally{v2PostseasonPauseForUser=false}
+      const meta=cardMeta(); // a rolled-back stage replaces the universe object
+      if(meta.recordedBattleSeed===seed){try{paintCardProgram()}catch(err){}return{ok:true,result:{gameId:meta.lastPostseasonGameId||null}}}
+      return{ok:false,error:v2PostseasonLastError?.message||`The ${g.label} could not be recorded.`};
+    }
+    // While a postseason card battle is open, the stage waits for it: the battle records the user's game itself.
+    const guardStage=(base,what,empty)=>function(...args){
+      if(!v2PostseasonPauseForUser&&openPostseasonBattle()){setStatus(`Resume your card battle and finish its rewards before simulating the ${what}.`);return empty}
+      return base.apply(this,args);
+    };
+    simConferenceChampionships=guardStage(simConferenceChampionships,'conference championships',undefined);
+    simBowls=guardStage(simBowls,'bowls',[]);
+    simPlayoff=guardStage(simPlayoff,'playoff',undefined);
+    globalThis.__callSheetPostseason={game:()=>currentCardGame(),record:recordPostseasonBattle};
   }
 
   // The offseason: integrations can graduate, award and reset here (ctx = {year}).
@@ -380,6 +455,10 @@ function normalizeCallSheet(u){
     if(n.evolved)return`<li class="cpn-news evolve">${wk}<b>${escH(n.team)}</b> evolved <span>${escH(cardName(n.evolved))}</span></li>`;
     return`<li class="cpn-news ${escH(n.rarity||'common')}">${wk}<b>${escH(n.team)}</b> pulled <span>${escH(cardName(n.card))}</span>${n.rarity&&n.rarity!=='common'?` <em>${escH(n.rarity)}</em>`:''}</li>`;
   }
+  function postCoachHTML(){
+    if(!POST_PHASES.includes(universe.phase))return'';const g=currentCardGame();
+    return g&&!cardGameBlocker()?`<button type="button" class="cpn-btn" data-coach-cards data-coach-post>Coach the ${escH(g.label)} with Cards</button>`:'';
+  }
   function cardProgramHTML(){
     const cs=universe.callSheet,pb=cs.playbook,on=INTEGRATIONS.filter(integrationOn).length;
     const stat=(k,v)=>`<div><span>${k}</span><b>${v}</b></div>`;
@@ -391,7 +470,7 @@ function normalizeCallSheet(u){
     return`<section id="cardProgram" class="card cpn" data-dview="week" aria-labelledby="cpnTitle">
       <div class="cpn-head"><div><span class="eyebrow">CALL SHEET</span><h3 id="cpnTitle">Card Program</h3></div>
       <button type="button" class="cpn-btn" data-card-deck>Build Deck</button><button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>
-      <div class="cpn-stats">${stats}</div>${cs.activeBattle?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':''}
+      <div class="cpn-stats">${stats}</div>${cs.activeBattle?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':postCoachHTML()}
       <p class="cpn-foot" data-card-connections>Facilities ${Math.round(selected().facilities||0)} · Deck limits ${pb?.capacity?.wrinkles||14} plays / ${pb?.capacity?.tactics||14} tactics${maxTeach?` · Coaching: up to +${maxTeach}% mastery on used cards`:""}<br>${escH(selected().offScheme)} / ${escH(selected().defScheme)} · Weekly preparation sharpens matching duels and mastery.</p>
       <div class="cpn-league"><span class="eyebrow">AROUND THE LEAGUE</span>${news}</div>
       <p class="cpn-foot muted">${escH(MODES.find(m=>m[0]===cs.settings.mode)?.[1]||'Key downs')} · ${escH(CONTROLS.find(c=>c[0]===cs.settings.control)?.[1]||'Offense')} · ${on}/${INTEGRATIONS.length} connections on</p>
@@ -400,6 +479,8 @@ function normalizeCallSheet(u){
   function paintCardProgram(){
     if(typeof document==='undefined'||typeof document.getElementById!=='function'||typeof document.createElement!=='function')return; // headless runs
     const dash=document.querySelector('#dashboard'),old=document.querySelector('#cardProgram');
+    // A coachable postseason game shows the panel (and its Coach button) even before the first card game.
+    if(dash&&universe&&!universe.callSheet&&selected()&&POST_PHASES.includes(universe.phase)&&postseasonCardGame()&&!cardGameBlocker())cardMeta();
     if(!dash||!universe?.callSheet||!selected()){old?.remove();return}
     const html=cardProgramHTML();
     if(old)old.outerHTML=html;else{const a=dash.querySelector('#broadcastFeature')||dash.querySelector('.command-center');a?a.insertAdjacentHTML('afterend',html):dash.insertAdjacentHTML('beforeend',html)}
@@ -654,7 +735,7 @@ function normalizeCallSheet(u){
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
-  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){if(cardMeta().activeBattle?.seed===`card:${universe.year}:${currentCardGame()?.week}:${selected().id}`){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
+  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();if(e.target.closest('[data-card-deck]')){const cg=currentCardGame();if(cg&&cardMeta().activeBattle?.seed===battleSeed(cg)){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()}})}});
 
   let host=null;
   globalThis.__callSheetDynasty={
@@ -662,6 +743,8 @@ function normalizeCallSheet(u){
     record(state,tally){
       const key=cardMeta().activeBattle?.seed;
       if(key&&cardMeta().recordedBattleSeed===key)return{ok:true};
+      const pg=currentCardGame();
+      if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key)}
       try{const week=findUserGame()?.week;const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;return{ok:true,result:out.result}}
       catch(err){console.error(err);return{ok:false,error:err.message||String(err)}}
     },

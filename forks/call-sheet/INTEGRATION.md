@@ -71,7 +71,7 @@ Rules every integration follows:
 
 | Idea | Hook(s) | Reads (Dynasty Lab) | Writes |
 | --- | --- | --- | --- |
-| Bowl, conference title and playoff card battles | record path | postseason games (archive-only today) | a postseason recorder like `recordV2GameLabResult` |
+| ✅ Bowl, conference title and playoff card battles | record path | postseason stage pairings | coached state through the transactional postseason stage |
 | Pitch with your playbook (interest bonus for archetype fit) | weekTick | recruit archetypes, your evolved cards | recruit interest through the existing pitch path |
 | Nemesis recruits (players you lost) | launch | recruiting history, opponent rosters | edge on that player's duels |
 | Signing-class pack reveal | offseason | commitments | presentation only |
@@ -83,7 +83,7 @@ Rules every integration follows:
 | Booster pack (once a season) and admin mandates | weekTick | NIL, admin confidence, mandates | packs; confidence through existing events |
 | Players of the Week and awards feed breakouts | weekTick | `players-of-week.js`, awards | signature breakout eligibility |
 | Records broken mid-battle | afterGame | records | ceremonies through the existing system |
-| Bowl, playoff and title packs | weekTick (postseason) | bowls and playoff results | packs |
+| ✅ Bowl, playoff and title packs | final / sim | postseason stage | five-card stage packs |
 | Battle moments in news and storylines | weekTick / afterGame | — | news events through the existing feed |
 | League-wide scouting of overused plays | weekTick | AI playbooks, your play log | an edge for opponents |
 | Retired numbers as Legacy cards | offseason | `retired-numbers.js` | Legacy card for a future player |

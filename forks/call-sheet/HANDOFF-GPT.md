@@ -25,6 +25,26 @@ The six tests cover facility thresholds/toggles, recruiting pitch and hidden-rat
 portal transfer/reserve/save continuity, postseason stat/reward recording, and fault-injected rollback.
 
 Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
+(Superseded Nov 17 — see the next section.)
+
+## Coached postseason — November 17, 2026
+
+- Conference championships, bowls and every playoff round the user reaches can be coached as card battles. The Card
+  Program panel shows "Coach the <game> with Cards" when the user has a game in the current stage (`postseasonCardGame`
+  in `card-gameday.js`; pairings mirror the stage functions exactly). Battles are neutral-site and seeded
+  `card:post:<year>:<label>:<teamId>`; `callSheet.postseasonBattle` keeps an open battle current until it closes.
+- Recording: the final state is stored in `callSheet.pendingPostseason`, then the stage runs through the existing
+  transactional path (`game-engine-v2-postseason.js`). `v2PostseasonExternalFor` hands the coached state to the user's
+  game; card careers and `recordedBattleSeed` are written inside the stage transaction, so a rollback undoes them and
+  the in-battle rewards (granted only after a successful record) are paid once. Classic stage buttons wait while a
+  postseason battle is open.
+- The playoff now commits one round per transaction with `universe.playoffProgress = {year, round, alive}` (cleared
+  when the champion is crowned; stale years ignored). The classic button still plays the whole remaining bracket;
+  the card flow sets `v2PostseasonPauseForUser` so it stops before the user's next uncoached round.
+- Postseason wins open five-card stage packs (Championship, Bowl, Playoff, National Title) with a legendary chance on
+  the last card; simulated postseason games use the same packs. Regular packs are unchanged.
+- Tests: `tests/card-postseason.js` (6, in `npm test`) and `tests/card-postseason-browser.js`
+  (`npm run test:card-postseason-browser`).
 Do not describe that UI as implemented. Alternate passing targets, additional combo recipes and the older
 optional integration wishlist remain future work, not prerequisites for this program-integration batch.
 
@@ -248,7 +268,7 @@ Postseason remains the next substantial feature; this review does not enable it.
 
 ## Next steps (in priority order)
 
-1. **Postseason card battles.** Conference championships, bowls and playoffs still use Classic Game Day
+1. ✅ **Postseason card battles** (done Nov 17; kept for history). Conference championships, bowls and playoffs still use Classic Game Day
    (`cardGameBlocker` blocks phases other than `regular`). Postseason results go only to `universe.gameArchive`
    (see `latestUserPostseasonGame`, `app/09-careers-bowls.js`), not through `recordV2GameLabResult`. Build a
    transactional postseason recorder that mirrors the regular-season one (validation, rollback, attribution).
