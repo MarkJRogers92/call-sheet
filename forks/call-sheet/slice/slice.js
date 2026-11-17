@@ -598,7 +598,7 @@ function finalScreen(){
   $('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
   const won=b.game.score[b.user]>b.game.score[b.user==='home'?'away':'home'];
   if(DYN&&!b._recorded){
-    try{b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b))}catch(e){b._saved={ok:false,error:e.message||String(e)}}
+    try{b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b),B.decidingMoments(b))}catch(e){b._saved={ok:false,error:e.message||String(e)}}
     if(!b._saved?.ok){
       const m=$('#modal');m.innerHTML=`<div class="mwrap"><p class="big red">RESULT NOT SAVED</p><p class="statline">${esc(b._saved?.error||'The result could not be recorded.')}</p><p>Your season and card rewards are unchanged. Retry to record this finished game.</p><button class="btn go" id="retryRecord">RETRY SAVE</button><button class="btn" id="leaveUnsaved">RETURN TO DYNASTY</button></div>`;
       m.classList.add('on');$('#retryRecord').onclick=()=>finalScreen();$('#leaveUnsaved').onclick=()=>HOST.close();return;

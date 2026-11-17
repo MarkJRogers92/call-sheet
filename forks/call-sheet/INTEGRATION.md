@@ -73,23 +73,23 @@ Rules every integration follows:
 | --- | --- | --- | --- |
 | ✅ Bowl, conference title and playoff card battles | record path | postseason stage pairings | coached state through the transactional postseason stage |
 | Pitch with your playbook (interest bonus for archetype fit) | weekTick | recruit archetypes, your evolved cards | recruit interest through the existing pitch path |
-| Nemesis recruits (players you lost) | launch | recruiting history, opponent rosters | edge on that player's duels |
-| Signing-class pack reveal | offseason | commitments | presentation only |
-| Visible development stamps | afterGame / offseason | development receipts | card grade before and after |
-| Camp and position-battle auditions | presentation + camp | camp battles | depth chart through the existing camp path |
+| ✅ Nemesis recruits (players you lost) | launch | recruiting history, opponent rosters | edge on that player's duels |
+| ✅ Signing-class pack | offseason | signing class positions | reward pack |
+| ✅ Visible development stamps | offseason | card OVR snapshot | card grade before and after |
+| ✅ Camp and position-battle auditions | camp | camp battles | depth chart through the existing camp path |
 | Coordinator card pools, cards leaving with staff | offseason | staff hires and departures | `callSheet.playbook` |
 | Position coaches speed evolution | afterGame | staff development ratings | mastery |
-| Facilities raise playbook capacity | offseason | `facilities` | `playbook.capacity` |
-| Booster pack (once a season) and admin mandates | weekTick | NIL, admin confidence, mandates | packs; confidence through existing events |
-| Players of the Week and awards feed breakouts | weekTick | `players-of-week.js`, awards | signature breakout eligibility |
+| ✅ Facilities raise playbook capacity | offseason | `facilities` | `playbook.capacity` |
+| ✅ Booster pack (once a season) | weekTick | fan support, schemes | reward pack |
+| ✅ Players of the Week feed breakouts | weekTick | `players-of-week.js` | signature card |
 | Records broken mid-battle | afterGame | records | ceremonies through the existing system |
 | ✅ Bowl, playoff and title packs | final / sim | postseason stage | five-card stage packs |
 | Battle moments in news and storylines | weekTick / afterGame | — | news events through the existing feed |
 | League-wide scouting of overused plays | weekTick | AI playbooks, your play log | an edge for opponents |
-| Retired numbers as Legacy cards | offseason | `retired-numbers.js` | Legacy card for a future player |
-| Coaching-tree cards | offseason | coaching tree | AI playbook of the new program |
-| Collection albums | presentation | history | — |
-| Duel moments in box scores and the archive | afterGame | archive record | play log annotations |
+| ✅ Retired numbers as Legacy cards | offseason | `retired-numbers.js` | Legacy card for a future player |
+| ✅ Coaching-tree cards | offseason / weekTick | coordinator scheme background | card in the collection |
+| ✅ Collection albums | presentation | collection | Album Pack |
+| ✅ Duel moments in box scores and the archive | record | archive record | `cardMoments` |
 
 ## People → duels
 

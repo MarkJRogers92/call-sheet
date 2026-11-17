@@ -112,7 +112,8 @@ Remaining sequence:
 - **Manual postseason card coaching: implemented (Nov 17).** See "Coached postseason" in `forks/call-sheet/HANDOFF-GPT.md`.
   Remaining polish: the This Week briefing's primary "Next: Play Bowl Games" button still simulates; the coach
   entry point is the Card Program panel's "Coach the … with Cards" button.
-- Alternate passing targets and more combo recipes are future battle upgrades.
+- Alternate passing targets (checkdowns) and the brainstorm list were built Nov 17; see "Expansion batches" in
+  `forks/call-sheet/HANDOFF-GPT.md`. More combo recipes remain future work.
 - Older wishlist items (nemesis recruits, signing-class reveals, coordinator-owned pools, booster packs, legacy
   cards, coaching-tree playbooks, albums) were not part of this finite integration batch and remain optional work.
 

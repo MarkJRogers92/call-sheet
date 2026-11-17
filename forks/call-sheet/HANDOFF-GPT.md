@@ -27,6 +27,30 @@ portal transfer/reserve/save continuity, postseason stat/reward recording, and f
 Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
 (Superseded Nov 17 — see the next section.)
 
+## Expansion batches — November 17, 2026 (after coached postseason)
+
+All in `card-gameday.js` sections 5–8 unless noted; each has an integration switch and a test suite in `npm test`.
+
+- **Earn cards (`program-cards`, tests/card-rewards.js):** Booster Pack (week 6+, fan support sets size/odds), Signing
+  Day Pack (weighted by the signing class's positions), Album Packs. Reward packs are drawn when earned, stored in
+  `callSheet.rewardPacks`, opened once from the Card Program (`[data-reward-pack]`) into the collection. Coaching-tree
+  cards from coordinator `preferredScheme` (`data.SCHEME_CARDS`). Giant Killer (upset a top 10), Flea Flicker (3
+  straight wins), Bluff Zero (winner held to 7), Jet Reverse (postseason win). Legacy signatures for retired numbers
+  (`leg_<playerId>` specs, fainter via `signatures.buildAny`). Rivalry stakes: borrow a rival's card for a season.
+- **People (`people-cards`, tests/card-people.js):** nemesis recruits (+1 money downs, from public recruitment
+  history), visit pitch on prospect cards, camp auditions in close battles (applied through the existing camp path),
+  portal arrivals bring a card, Players of the Week break out, mentors pass a Legacy card, development stamps.
+  Adapter supports per-player labeled edges via `program[side].conds`.
+- **Upgrades (`card-upgrades`, tests/card-upgrades.js):** evolution branches gated by the runner's trait
+  (`evolution.NEEDS`, checked in deck editor, slice and AI), weekly install focus (+6 reps, clears film), film wear
+  (30+ uses over 3 games → opponent Key −1 on that play), seasonal eras (+0.5 labeled, both teams).
+- **Battles (core, tests/card-battle-features.js):** progression reads/checkdowns (Checkdowns auto/off toggle; AI
+  skips on long 3rd/4th), two-minute drill cards (Sideline Out, Spike), weather cards, timeout tactics, momentum after
+  takeaways. Resolver `when` conditions (rain/snow/wind/clear/late/money) on effects, edges and matchups; `play` edges.
+- **Moments and albums (tests/card-moments-albums.js):** `battle.decidingMoments(b)` → archive `cardMoments`, shown
+  under "Card battle" in the game summary; seven collection albums.
+- Browser: `npm run test:card-program-browser` (reward pack, install focus, era, albums; desktop and phone).
+
 ## Coached postseason — November 17, 2026
 
 - Conference championships, bowls and every playoff round the user reaches can be coached as card battles. The Card

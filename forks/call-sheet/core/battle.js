@@ -688,6 +688,29 @@ function explainSnap(e){
 }
 
 // Save/resume: the whole battle is plain data except nothing — it serializes as-is.
+// Duel moments for the box score: the duel that decided the game (the snap where the winner took the lead for good) and
+// up to two more swings (takeaways and the longest plays). Plain sentences, named players, no hidden numbers.
+function decidingMoments(b){
+  const snaps=b.log.filter(e=>e.type==='snap'&&e.duels&&e.duelResults&&e.score),fs=b.game.score;if(!snaps.length||fs.home===fs.away)return[];
+  const winner=fs.home>fs.away?'home':'away',lead=sc=>Math.sign((sc?.home||0)-(sc?.away||0))*(winner==='home'?1:-1);
+  const q=p=>p>4?'OT':`Q${p}`,dd=s=>s.sit?.down?`${s.sit.down}${['th','st','nd','rd'][s.sit.down]||'th'} & ${s.sit.distance}`:'';
+  // A takeaway credits the defender who won his duel; anything else credits the offense's winning duel.
+  const line=(s,why)=>{
+    let best=null;
+    s.duels.forEach((d,i)=>{const r=s.duelResults[i];if(!r)return;if((s.turnover?!r.won:r.won)&&(!best||Math.abs(d.margin||0)>Math.abs(best.d.margin||0)))best={d,r}});
+    if(!best)return null;const w=best.r.won?best.d.offNames?.[0]:best.d.defNames?.[0],l=best.r.won?best.d.defNames?.[0]:best.d.offNames?.[0];
+    if(!w||!l)return null;
+    return`${why}: ${w} beat ${l} on ${best.d.label.toLowerCase()} (${q(s.sit.period)}${dd(s)?`, ${dd(s)}`:''}, ${D.PLAYS[s.play]?.name||s.play}).`;
+  };
+  let decider=null;for(let i=0;i<snaps.length;i++){const before=i?snaps[i-1].score:{home:0,away:0};if(lead(snaps[i].score)>0&&lead(before)<=0)decider=snaps[i]}
+  const out=[],used=new Set();
+  if(decider){const t=line(decider,'Deciding duel');if(t){out.push(t);used.add(decider)}}
+  // The lead can change on a field goal or a return, which is not a snap: then the winner's biggest play turned it.
+  if(!out.length){const big=snaps.filter(x=>x.offSide===winner&&!x.turnover).sort((a,c)=>(c.yards||0)-(a.yards||0))[0];const t=big&&line(big,'Turning point');if(t){out.push(t);used.add(big)}}
+  const swings=snaps.filter(s=>!used.has(s)&&(s.turnover||Math.abs(s.yards||0)>=25)).sort((a,c)=>(c.turnover?100:0)+Math.abs(c.yards||0)-((a.turnover?100:0)+Math.abs(a.yards||0))).slice(0,2);
+  for(const s of swings){const t=line(s,s.turnover==='interception'?'Interception':s.turnover==='fumble'?'Fumble':s.turnover?'Fourth-down stop':'Big play');if(t)out.push(t)}
+  return out.slice(0,3);
+}
 function save(b){return JSON.stringify(b)}
 function load(text){
   const b=JSON.parse(text);if(b.version!==VERSION)throw new Error('Unsupported battle version.');
@@ -720,5 +743,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap};
+return{VERSION,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap};
 });
