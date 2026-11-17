@@ -25040,7 +25040,7 @@ function normalizeCallSheet(u){
     const out={};for(const f of wp.focuses||[])for(const root of PRACTICE[f]||[])out[root]=(out[root]||0)+PRACTICE_REPS;
     return out;
   }
-  registerCardIntegration({id:'practice-reps',label:'Practice builds mastery',about:'Each week’s prep focus adds mastery reps to the matching cards.',
+  const PRACTICE_LINK=registerCardIntegration({id:'practice-reps',label:'Practice builds mastery',about:'Each week’s prep focus adds mastery reps to the matching cards.',
     hooks:{
       launch(ctx){ctx.cfg.practiceReps=practiceReps(ctx.me,ctx.opp)}, // a coached game: the battle adds them
       afterGame(ctx){if(ctx.coached)return;const pb=userPlaybook();for(const [root,n] of Object.entries(practiceReps(ctx.me,ctx.opp)))CS.evolution?.addReps(pb,root,n)}
@@ -26023,6 +26023,31 @@ function normalizeCallSheet(u){
     if(!POST_PHASES.includes(universe.phase))return'';const g=currentCardGame();
     return g&&!cardGameBlocker()?`<button type="button" class="cpn-btn" data-coach-cards data-coach-post>Coach the ${escH(g.label)} with Cards</button>`:'';
   }
+  // A read-only bridge to the existing Dynasty Lab decisions, not another preparation system.
+  function connectionsHTML(){
+    const me=selected(),cs=universe?.callSheet,pb=cs?.playbook;if(!me||!pb)return'';
+    const link=(tab,label)=>`<button type="button" class="cpn-link" data-card-dynasty-tab="${tab}">${label}</button>`;
+    const active=!!cs.activeBattle,g=universe.phase==='regular'?currentCardGame():null;
+    const opp=g&&!g.played?T(g.home===me.name?g.away:g.home):null;
+    const reps=opp&&integrationOn(PRACTICE_LINK)?practiceReps(me,opp):{};
+    const prep=active?'This battle’s roster, preparation and coaching are already locked in. Changes apply to a future game.':!opp?'Next regular-season opponent: preparation will appear when a game is scheduled.':!integrationOn(PRACTICE_LINK)?'Practice mastery is off in Card Settings.':Object.keys(reps).length?`${opp.name}: ${Object.entries(reps).map(([id,n])=>`${cardName(id)} +${n} reps`).join(' · ')}. Awarded with the game, not by opening this panel.`:`No matching practice reps set against ${opp.name}. Your existing preparation board trains cards as well as the team.`;
+    const rates=integrationOn(STAFF_LINK)?trainingFor(me,pb):{};
+    const teachers=['off','def'].map(side=>{const c=me.staff?.[side==='off'?'OC':'DC'];const roots=[...pb[side].base,...pb[side].wrinkles].map(id=>CS.packs.cardDef(id)).filter(Boolean).map(c=>c.evolvedFrom||c.upgradeOf||c.id);const n=Math.round(Math.max(0,...roots.map(id=>rates[id]||0))*100);return`${side==='off'?'Offensive':'Defensive'} staff${c?.name?` (${c.name})`:''}: ${n?`up to +${n}%`:'no extra'} mastery`;}).join(' · ');
+    const unavailable=(me.roster||[]).filter(p=>Number(p.injuryWeeks)>0).length;
+    return`<div class="cpn-connections" aria-label="Dynasty Lab connections"><h4>Dynasty Lab → Game Day</h4><div class="cpn-bridge-grid">
+      <article><b>This week’s preparation</b><p>${escH(prep)}</p>${opp&&!active?link('gamelab','Scout & prepare'):''}</article>
+      <article><b>Your people, your cards</b><p>${unavailable?`${unavailable} injured player${unavailable===1?' is':'s are'} unavailable. `:''}Roles & Depth chooses the real players on the field. Camp gains change their duel traits, not a second bonus.</p>${link('depth','Set the lineup')}${link('development','Develop players')}</article>
+      <article><b>Coaches teach what you call</b><p>${escH(teachers)}. Coordinator development and player coaching support contribute. Only cards used in games earn the coaching boost.</p>${link('staff','Manage staff')}</article>
+      <article><b>Recruit for your playbook</b><p>${integrationOn(RECRUIT_LINK)?'Prospect cards show archetype fit with your active deck. Matching strengths contribute to the existing recruiting pitch, without revealing hidden ratings.':'Playbook recruiting is off in Card Settings; the normal recruiting pitch is unchanged.'}</p>${link('recruiting','Find your next playmaker')}</article>
+    </div></div>`;
+  }
+  function openDynastyConnection(tab){
+    if(!['gamelab','depth','development','staff','recruiting'].includes(tab))return;
+    // Calling the existing router directly avoids the card-first Game Day nav shortcut.
+    goToTab(tab);
+    if(tab==='gamelab')document.querySelector('#v0102WeeklyCoaching')?.scrollIntoView?.({block:'start'});
+  }
+  document.addEventListener('click',e=>{const b=e.target.closest?.('[data-card-dynasty-tab]');if(b)openDynastyConnection(b.dataset.cardDynastyTab)});
   function cardProgramHTML(){
     const cs=universe.callSheet,pb=cs.playbook,on=INTEGRATIONS.filter(integrationOn).length;
     const stat=(k,v)=>`<div><span>${k}</span><b>${v}</b></div>`;
@@ -26036,7 +26061,7 @@ function normalizeCallSheet(u){
       <button type="button" class="cpn-btn" data-card-deck>Build Deck</button><button type="button" class="cpn-btn" data-card-settings>Card Settings</button></div>${(cs.rewardPacks||[]).length?`<button type="button" class="cpn-btn cpn-reward" data-reward-pack>Open ${escH(cs.rewardPacks[0].title)}${cs.rewardPacks.length>1?` (+${cs.rewardPacks.length-1} more)`:''}</button>`:''}
       <div class="cpn-stats">${stats}</div>${cs.activeBattle?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':postCoachHTML()}
       <p class="cpn-foot" data-card-connections>Facilities ${Math.round(selected().facilities||0)} · Deck limits ${pb?.capacity?.wrinkles||14} plays / ${pb?.capacity?.tactics||14} tactics${maxTeach?` · Coaching: up to +${maxTeach}% mastery on used cards`:""}<br>${escH(selected().offScheme)} / ${escH(selected().defScheme)} · Weekly preparation sharpens matching duels and mastery.</p>
-      ${upgradesHTML()}${albumsHTML()}${ringHTML()}${trophyCaseHTML()}
+      ${connectionsHTML()}${upgradesHTML()}${albumsHTML()}${ringHTML()}${trophyCaseHTML()}
       <div class="cpn-league"><span class="eyebrow">AROUND THE LEAGUE</span>${news}</div>
       <p class="cpn-foot muted">${escH(MODES.find(m=>m[0]===cs.settings.mode)?.[1]||'Key downs')} · ${escH(CONTROLS.find(c=>c[0]===cs.settings.control)?.[1]||'Offense')} · ${on}/${INTEGRATIONS.length} connections on</p>
     </section>`;
@@ -26066,7 +26091,7 @@ function normalizeCallSheet(u){
 #cardProgram{margin:14px 0;padding:16px 18px;border-radius:14px;background:linear-gradient(135deg,#10172a,#1a1030);color:#eef2ff;border:1px solid #2f3a66}
 #cardProgram .eyebrow{color:#9fb4ff;letter-spacing:.12em;font-size:11px}
 #cardProgram h3{margin:2px 0 0;font-size:20px;color:#fff}
-.cpn-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.cpn-connections{margin:16px 0}.cpn-connections h4{margin:0 0 8px;color:#fff}.cpn-bridge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}.cpn-bridge-grid article{background:rgba(255,255,255,.06);border:1px solid #394365;border-radius:10px;padding:12px}.cpn-bridge-grid p{font-size:13px;line-height:1.5;color:#c5cfee;margin:6px 0}.cpn-link{min-height:44px;margin:4px 8px 0 0;padding:6px 0;background:none;border:0;color:#ffe291;text-decoration:underline;font:inherit;font-size:13px;cursor:pointer}.cpn-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px}
 .cpn-btn{background:#ffd34d;color:#1a1300;border:0;border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer}
 .cpn-btn:focus-visible,#cardSettings :focus-visible{outline:3px solid #9fe3ff;outline-offset:2px}
 .cpn-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin:12px 0}
@@ -26362,7 +26387,7 @@ function normalizeCallSheet(u){
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
     setIntegration(id,on){cardMeta().settings.integrations[id]=!!on;try{applyCardMode()}catch(err){}},
-    recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),applyCardMode,cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,addRingForTest:entry=>{if(!globalThis.__DL_TEST__)return;const pb=userPlaybook();(pb.ringOfHonor??=[]).push({id:`sig_${entry.playerId}`,...entry})},returnBorrowed,albumProgress,checkAlbums,markArchive,trophyCaseHTML,walkOnBreakouts,bowlTheme,honorTiers,trophyEdge,coachDepartures,programMilestones,springGame,isWalkOn,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
+    connectionsHTML,openDynastyConnection,recruitingFit,trainingFor,syncProgramCapacity,programAwards,takeRewardCard,miniCard:(id)=>{const h=findPlayer(id);return h?miniCardHTML(h.p,h.team):''},prospectMini:(id)=>prospectMiniHTML(universe.recruits.find(x=>x.id===id),selected()),applyCardMode,cardGameIsDefault,coachableGame,nextLabel,eraFor,wornPlays,setInstallFocus,installable,noteUsage,installWeek,addRingForTest:entry=>{if(!globalThis.__DL_TEST__)return;const pb=userPlaybook();(pb.ringOfHonor??=[]).push({id:`sig_${entry.playerId}`,...entry})},returnBorrowed,albumProgress,checkAlbums,markArchive,trophyCaseHTML,walkOnBreakouts,bowlTheme,honorTiers,trophyEdge,coachDepartures,programMilestones,springGame,isWalkOn,rewards:{booster:boosterPack,signing:signingPack,scheme:schemeCards,legacy:legacyCards,portal:portalCards,potw:potwBreakouts,mentor:mentorCards,snapshot:gradeSnapshot},isNemesis,campAudition,register:registerCardIntegration,openSettings:openCardSettings,paint:paintCardProgram,news:()=>JSON.parse(JSON.stringify(universe?.callSheet?.newsLog||[])),recruitCard:(id)=>recruitCardHTML(universe.recruits.find(x=>x.id===id),selected()),playerCard:(id)=>{const h=findPlayer(id);return h?playerCardHTML(h.p,h.team):''},launch:()=>buildLaunch(),enable:()=>{cardMeta();userPlaybook()}};
   document.addEventListener('click',e=>{if(e.target.closest('[data-coach-cards]'))openCardGameDay()});
 })();
 

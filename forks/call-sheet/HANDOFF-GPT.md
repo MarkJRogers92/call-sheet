@@ -397,3 +397,14 @@ Postseason remains the next substantial feature; this review does not enable it.
 - **Recruits matter in the card game.** Recruiting and development should drive the battles.
 - **Everything connected:** the battler should use as much Dynasty Lab data as possible, and results should flow back.
 - He likes ideas and pushback, but stay impartial.
+
+## Dynasty Lab decision bridge — November 17, 2026
+
+The Card Program now includes a read-only Dynasty Lab → Game Day panel. It shows the current
+opponent's valid preparation reps by card, per-side staff teaching rates, and direct links to
+Roles & Depth, Development, Staff and Recruiting. Scout & Prepare uses the existing Game Day
+router directly, bypassing the card-first launch shortcut so the original preparation board remains
+reachable. An active battle is labeled as a locked launch snapshot and does not offer that prep link.
+This adds no new economy, reward, save field or simulation modifier. Integration switches and stale/
+postseason preparation are respected. `tests/card-dynasty-bridge.js` checks read-only behavior against
+the whole universe, current-week prep, toggles, active saves, legacy staff and escaped names.
