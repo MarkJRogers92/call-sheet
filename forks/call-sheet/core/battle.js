@@ -943,6 +943,17 @@ function filmFog(confidence){
   const spread=c>=FILM_EXACT?0:c>=FILM_NARROW?1:2;
   return{spread,exact:!spread,confidence:Math.round(c),nextAt:spread===2?FILM_NARROW:spread===1?FILM_EXACT:null};
 }
+// A duel as two vertical sums: each side's ability, plus the labeled modifiers that help that side, and a total.
+// Resolver mods are signed for the offense (raw = offGrade - defGrade + sum of mods), so a negative mod is listed as a
+// plus on the defense's column. Ability is rounded to 0.1 first and totals are added from the shown numbers, so the
+// arithmetic on screen always checks out; the edge is the difference of the two shown totals. Display only.
+function duelSum(d){
+  if(!d||!Number.isFinite(d.offGrade)||!Number.isFinite(d.defGrade))return null;
+  const r=x=>Math.round(x*10)/10,off={grade:r(d.offGrade),adds:[]},def={grade:r(d.defGrade),adds:[]};
+  for(const m of d.mods||[]){const v=Number(m.v)||0;if(!v)continue;(v>0?off:def).adds.push({v:r(Math.abs(v)),src:String(m.src||'Effect')})}
+  for(const c of [off,def])c.total=r(c.grade+c.adds.reduce((n,a)=>n+a.v,0));
+  return{off,def,edge:r(off.total-def.total)};
+}
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
   const tally=onlyMine=>{
@@ -1105,5 +1116,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{VERSION,duelSum,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

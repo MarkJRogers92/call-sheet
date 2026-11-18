@@ -74,3 +74,16 @@ test('field player tooltip only explains an earned card in the coach’s active 
  const html=tell('home','X');assert.ok(html.includes(esc(def.name))&&html.includes(esc(def.matchupText)));assert.match(html,/When you play/);
  assert.equal(tell('away','X'),'');assert.equal(tell('home','Z'),'');
 });
+test('the clash shows each side as an addition problem and states the edge, or that it is uncertain under fog',()=>{
+ const B=require('../forks/call-sheet/core/battle');
+ const d={offGrade:7.24,defGrade:6.51,offNames:['Ann <Ford>'],defNames:['Bo West'],mods:[{v:1,src:'Play design'},{v:-.5,src:'Loaded box'}],raw:1.23,p:.71};
+ const e={offSide:'home',defSide:'away'};
+ const ctx=fog=>({B,esc,fogSpread:()=>fog,isOpponentSide:side=>side==='away',fogRange:(g,pid,side)=>fog&&side==='away'?{lo:6,hi:8}:null});
+ let html=run('duelSumHTML',ctx(0),[d,e,true]);
+ assert.match(html,/Ann &lt;Ford&gt;/);assert.match(html,/<b>7\.2<\/b><span>Ability/);assert.match(html,/<b>\+ 1<\/b><span>Play design/);
+ assert.match(html,/class="dtotal"><b>8\.2<\/b>/);assert.match(html,/<b>\+ 0\.5<\/b><span>Loaded box/);assert.match(html,/class="dtotal"><b>7<\/b>/);
+ assert.match(html,/8\.2 vs 7 · your edge \+1\.2 · 71% to win this duel/);
+ html=run('duelSumHTML',ctx(0),[d,e,false]);assert.match(html,/your edge -1\.2 · 29% to win/,'defense sees its own edge');
+ html=run('duelSumHTML',ctx(1),[d,e,true]);assert.match(html,/<b>6–8<\/b><span>Ability/);assert.match(html,/<b>6\.5–8\.5<\/b><span>Total/);
+ assert.match(html,/edge is uncertain/);assert.doesNotMatch(html,/6\.5<\/b><span>Ability/,'the hidden grade is not shown under fog');
+});

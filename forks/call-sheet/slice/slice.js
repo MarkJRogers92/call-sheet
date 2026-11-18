@@ -603,6 +603,27 @@ function initials(n){return n.split(' ').map(x=>x[0]).join('')}
 // true grade; below 64 the range is wider. Your own players are always exact. The duel math never changes.
 function fogSpread(){return B.filmFog(DYN?.scouting?.confidence).spread}
 function isOpponentSide(side){return!!DYN&&side!==b.user}
+function fogRange(grade,pid,side){
+  const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return null;
+  let h=0;for(const ch of String(pid))h=(h*31+ch.charCodeAt(0))>>>0;const lo=Math.floor(grade)-(h%(sp+1));return{lo,hi:lo+sp+1};
+}
+// The duel as an addition problem: ability + each helping modifier = total, one column per side, totals face off.
+// The fog key matches fighterHTML (the player's name), so a range here equals the range on the fighter card.
+function duelSumHTML(d,e,uo){
+  const sum=B.duelSum(d);if(!sum)return'';
+  const n=v=>Number(v.toFixed(1)).toString();
+  const col=(c,cls,names,pid,side)=>{
+    const fog=fogRange(c.grade,pid,side),plus=c.adds.reduce((t,a)=>t+a.v,0);
+    const ability=fog?`${fog.lo}–${fog.hi}`:n(c.grade),total=fog?`${n(fog.lo+plus)}–${n(fog.hi+plus)}`:n(c.total);
+    return`<div class="dcol ${cls}"><div class="dwho">${esc(names.filter(Boolean).join(' & '))}</div>
+      <div class="add"><b>${ability}</b><span>Ability</span></div>
+      ${c.adds.map(a=>`<div class="add"><b>+ ${n(a.v)}</b><span>${esc(fog?a.src.replace(/ \(health \d+\)/g,''):a.src)}</span></div>`).join('')}
+      <div class="dtotal"><b>${total}</b><span>Total</span></div></div>`;
+  };
+  const fogged=!!fogSpread(),mine=uo?sum.edge:-sum.edge,chance=Math.round((uo?d.p:1-d.p)*100);
+  const verdict=fogged?'Their ability is a range at your film confidence, so the edge is uncertain.':`${n(sum.off.total)} vs ${n(sum.def.total)} · your edge ${mine>0?'+':''}${n(mine)} · ${chance}% to win this duel${Math.abs(d.raw)>=3?' (at the limit)':''}`;
+  return`<div class="dsum">${col(sum.off,'o',d.offNames||[],d.offNames?.[0]||'',e.offSide)}<div class="dvs">VS</div>${col(sum.def,'d',d.defNames||[],d.defNames?.[0]||'',e.defSide)}</div><div class="dverdict">${esc(verdict)}</div>`;
+}
 function fogGrade(grade,pid,side){
   const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return{text:String(Number(grade.toFixed(1))),fog:false};
   let h=0;for(const ch of String(pid))h=(h*31+ch.charCodeAt(0))>>>0;const lo=Math.floor(grade)-(h%(sp+1));
@@ -628,7 +649,7 @@ async function cinematic(e){
     clash.innerHTML=`<div class="cl"><div class="lab">${slot}${d.label.toUpperCase()===slot?'':' · '+esc(d.label)}</div>
       ${fighterHTML('o',d.offNames,d.offRoles,offLine,d.offGrade,offT.colors[0],e.offSide)}<div class="vs">VS</div>
       ${fighterHTML('d',d.defNames,d.defRoles,defLine,d.defGrade,defT.colors[0],e.defSide)}
-      <div class="clashmath">${duelMath(d,uo)}</div><div class="mods">${d.mods.map(m=>`<span class="${m.src==='Play design'?'design':((m.v>0)===uo?'':'neg')}">${m.v>0?'+':''}${m.v} ${esc(fogSpread()?m.src.replace(/ \(health \d+\)/g,''):m.src)}</span>`).join('')}</div>
+      <div class="clashmath">${duelSumHTML(d,e,uo)}</div>
       <div class="stamp ${userWon?'w':'l'}">${userWon?'WIN':'LOSE'}</div></div>`;
     for(const cv of clash.querySelectorAll('canvas.face')){const lu=cv.dataset.side==='o'?offLine:defLine,pl=Object.values(lu).find(x=>x.id===cv.dataset.pid);if(pl)paintPortrait(cv,pl,(cv.dataset.side==='o'?offT:defT).colors,64)}
     const fo=clash.querySelector('.fighter.o'),fd=clash.querySelector('.fighter.d'),vs=clash.querySelector('.vs');
@@ -637,7 +658,8 @@ async function cinematic(e){
     S.clash();FX.shake(stage,.9);FX.anim($('#flash'),[{opacity:.55},{opacity:0}],180);
     const r=stage.getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+r.height*.42,{n:36,speed:9,colors:['#fff','#ffe066','#ff9a3c']});
     FX.anim(vs,[{transform:'translateX(-50%) scale(2)',opacity:0},{transform:'translateX(-50%) scale(1)',opacity:1}],200);
-    for(const [j,m] of [...clash.querySelectorAll('.mods span')].entries()){await FX.wait(110);S.tick(j*2+4);FX.anim(m,[{opacity:0,transform:'scale(2.2) rotate(-6deg)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,1.6,.4,1)'})}
+    for(const [j,m] of [...clash.querySelectorAll('.dsum .add')].entries()){await FX.wait(110);S.tick(j*2+4);FX.anim(m,[{opacity:0,transform:'translateY(-8px)'},{opacity:1,transform:'none'}],{duration:200,easing:'cubic-bezier(.2,1.6,.4,1)'})}
+    for(const t of clash.querySelectorAll('.dsum .dtotal'))FX.anim(t,[{opacity:0,transform:'scale(1.6)'},{opacity:1,transform:'none'}],{duration:240,easing:'cubic-bezier(.3,1.5,.5,1)'});await FX.wait(200);
     await FX.wait(260);
     const st=clash.querySelector('.stamp');
     if(userWon){S.tone(660,.12,'square',.12);S.tone(990,.18,'square',.1,1,.08)}else S.tone(150,.25,'sawtooth',.14,.6);

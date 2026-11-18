@@ -124,6 +124,18 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .fighter.burn{box-shadow:0 0 0 3px #ff9a3c,0 0 30px #ff7a2a}
 .vs{position:absolute;left:50%;top:84px;transform:translateX(-50%);font-family:var(--cond);font-weight:800;font-size:44px;color:#fff;text-shadow:0 0 18px #ff5a2a}
 .mods{position:absolute;top:186px;left:0;right:0;display:flex;justify-content:center;gap:6px;flex-wrap:wrap}
+.dsum{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:start;text-align:left;margin-top:2px}
+.dcol{min-width:0;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:8px;row-gap:1px;align-items:baseline;font-family:var(--cond);font-weight:800;padding:4px 8px;border-radius:8px;background:#0e1626}
+.dcol.o{border-left:3px solid var(--gold)}.dcol.d{border-right:3px solid #9fb0c8}
+.dwho{grid-column:1/-1;font-size:13px;letter-spacing:.04em;color:#c9d3e3;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dcol .add,.dcol .dtotal{display:contents}
+.dcol b{text-align:right;font-size:18px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dcol span{font:12px/1.3 system-ui,sans-serif;color:#c9d3e3;overflow-wrap:anywhere}
+.dcol .dtotal b,.dcol .dtotal span{border-top:2px solid #f4edda;margin-top:3px;padding-top:2px}
+.dcol .dtotal b{font-size:24px;color:var(--gold)}
+.dvs{align-self:end;font-family:var(--cond);font-weight:800;font-size:18px;color:#f4edda;padding-bottom:4px}
+.dverdict{margin-top:6px;font:13px/1.4 system-ui,sans-serif;color:#e6ecf7;text-align:center}
+@media(max-width:600px){.dsum{gap:4px}.dcol{padding:3px 5px;column-gap:5px}.dcol b{font-size:15px}.dcol .dtotal b{font-size:18px}.dcol span{font-size:11px}.dvs{font-size:14px}.dwho{font-size:11px}}
 .mods span{font-family:var(--cond);font-weight:800;font-size:16px;padding:3px 10px;border-radius:10px;background:#ff9a3c;color:#1a0c00;opacity:0}
 .mods span.neg{background:#ff5a4f;color:#fff}.mods span.design{background:rgba(255,255,255,.18);color:#fff}
 .stamp{position:absolute;left:50%;top:64px;transform:translateX(-50%) rotate(-8deg) scale(3);font-family:var(--cond);font-weight:800;font-size:72px;letter-spacing:.06em;padding:0 18px;border:6px solid;border-radius:12px;opacity:0;background:rgba(0,0,0,.5)}

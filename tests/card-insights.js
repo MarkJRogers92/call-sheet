@@ -62,3 +62,16 @@ test('film fog thresholds are shared: exact at 82, one-point ranges from 64, wid
   assert.deepEqual(B.filmFog(50),{spread:2,exact:false,confidence:50,nextAt:64});
   assert.equal(B.filmFog(undefined).spread,0);assert.equal(B.filmFog('x').spread,0);
 });
+test('duel sum: each side adds its ability and its helping modifiers; the totals differ by the edge',()=>{
+  const d={offGrade:7.24,defGrade:6.51,mods:[{v:1,src:'Play design'},{v:-.5,src:'Loaded box'},{v:.5,src:'On fire'},{v:0,src:'Nothing'}],raw:7.24-6.51+1};
+  const s=B.duelSum(d);
+  assert.deepEqual(s.off,{grade:7.2,adds:[{v:1,src:'Play design'},{v:.5,src:'On fire'}],total:8.7});
+  assert.deepEqual(s.def,{grade:6.5,adds:[{v:.5,src:'Loaded box'}],total:7});
+  assert.equal(s.edge,1.7);assert.ok(Math.abs(s.edge-d.raw)<.1,'shown edge matches the resolver within rounding');
+  assert.equal(B.duelSum(null),null);assert.equal(B.duelSum({offGrade:NaN,defGrade:5}),null);
+  // Real resolver duels: the shown sums always add up, and the edge stays within rounding of the true edge.
+  const b=B.simulate({home:Ro.preset('ground'),away:Ro.preset('aerial'),seed:'sum'});
+  const duels=(b.log||[]).filter(e=>e.type==='snap'&&e.duels).flatMap(e=>e.duels);assert.ok(duels.length>20);
+  for(const x of duels){const t=B.duelSum(x),add=c=>Math.round((c.grade+c.adds.reduce((n,a)=>n+a.v,0))*10)/10;
+    assert.equal(t.off.total,add(t.off));assert.equal(t.def.total,add(t.def));assert.ok(Math.abs(t.edge-x.raw)<=.11,`edge ${t.edge} vs raw ${x.raw}`)}
+});
