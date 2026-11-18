@@ -112,3 +112,13 @@ test('the card program offers the postseason game only when the user has one',as
   const u=env.e.universe;u.phase='confReady';for(const t of u.teams)if(t.conference===env.me().conference){t.cw=9;t.w=12}env.me().cw=0;env.me().w=0;
   assert.equal(globalThis.__callSheetPostseason.game(),null);assert.match(cg.blocker(),/no postseason game/);
 });
+
+test('bowl and playoff games get an extra week of film; the conference championship does not',async()=>{
+  const base=await setup(907),regular=base.host.launch().scouting.confidence;
+  const conf=await setup(907,'conference');const c=conf.host.launch();assert.equal(c.stage,'conference');
+  const confNote=conf.cg.filmNote();assert.equal(confNote.prep,false);assert.doesNotMatch(confNote.text,/postseason film/);
+  const bowl=await setup(907,'bowl');const bcfg=bowl.host.launch();assert.equal(bcfg.stage,'bowl');
+  assert.equal(bcfg.scouting.confidence,Math.min(94,c.scouting.confidence+6),'bowl prep adds 6 within the 94 cap');
+  const note=bowl.cg.filmNote();assert.equal(note.prep,true);assert.match(note.text,/Includes \+6 for the extra week of postseason film\./);
+  assert.ok(Number.isFinite(regular));
+});

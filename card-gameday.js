@@ -205,9 +205,14 @@ function normalizeCallSheet(u){
   // Scouting fog: until your staff knows the opponent well, their players' ratings show as ranges.
   const FOG_LINK=registerCardIntegration({id:'scouting-fog',label:'Scouting fog',about:'Opponent ratings show as ranges until your film confidence is high. Scouting sharpens them.',
     hooks:{launch(ctx){
-      ctx.cfg.scouting={confidence:filmConfidence(ctx.me,ctx.opp)};
+      ctx.cfg.scouting={confidence:filmConfidence(ctx.me,ctx.opp,ctx.g)};
     }}});
-  function filmConfidence(me,opp){let confidence=70;try{const r=v0102WeeklyOpponentReport(me,opp);if(Number.isFinite(Number(r?.confidence)))confidence=Number(r.confidence)}catch(err){}return confidence}
+  // Postseason games after a layoff (bowls, playoff rounds, the title game; not the conference championship, which
+  // follows the season directly) get an extra week of film: +6 confidence, within the staff formula's 94 ceiling.
+  const PREP_WEEK=6,PREP_CAP=94;
+  const prepWeekFor=g=>!!(g?.postseason&&g.stage&&g.stage!=='conference');
+  function filmConfidence(me,opp,g=null){let confidence=70;try{const r=v0102WeeklyOpponentReport(me,opp);if(Number.isFinite(Number(r?.confidence)))confidence=Number(r.confidence)}catch(err){}
+    return prepWeekFor(g)?Math.min(PREP_CAP,confidence+PREP_WEEK):confidence}
   // Coordinator and head coach hiring: show how a candidate would change the card battle's film read, as a band (the
   // ratings themselves stay letter grades). Uses Dynasty's own staff-confidence formula on a copy of the staff.
   const FILM_BAND=c=>{const f=CS.battle.filmFog(c);return f.exact?'High (exact grades)':f.spread===1?'Medium (one-point ranges)':'Low (wide ranges)'};
@@ -227,9 +232,9 @@ function normalizeCallSheet(u){
     };
   }
   // Before kickoff: how sharply you will see their grades, and what actually changes that (staff, not recruiting).
-  function filmNote(me,opp){
-    if(!me||!opp||!integrationOn(FOG_LINK))return null;const f=CS.battle.filmFog(filmConfidence(me,opp));
-    return{...f,text:f.exact?`Film confidence ${f.confidence}%: you see ${opp.name}'s exact grades in the battle.`:`Film confidence ${f.confidence}% (your coordinators and head coach): ${opp.name}'s grades show as ranges in the battle. ${f.nextAt}% ${f.nextAt===82?'shows them exactly':'narrows them'}.`};
+  function filmNote(me,opp,g=null){
+    if(!me||!opp||!integrationOn(FOG_LINK))return null;const f=CS.battle.filmFog(filmConfidence(me,opp,g)),prep=prepWeekFor(g)?` Includes +${PREP_WEEK} for the extra week of postseason film.`:'';
+    return{...f,prep:!!prep,text:(f.exact?`Film confidence ${f.confidence}%: you see ${opp.name}'s exact grades in the battle.`:`Film confidence ${f.confidence}% (your coordinators and head coach): ${opp.name}'s grades show as ranges in the battle. ${f.nextAt}% ${f.nextAt===82?'shows them exactly':'narrows them'}.`)+prep};
   }
 
   // Practice reps: this week's prep focus trains the matching cards toward evolution.
@@ -507,7 +512,7 @@ function normalizeCallSheet(u){
       const cfg={home,away,userSide,week,season:universe.year,label:options.label||'Postseason',neutral:options.neutral!==false,stage:postStageOf(options.label||''),
         seed:`card:post:${universe.year}:${week}:${options.label||'post'}:${home.id}:${away.id}`,weather:battleWeather(conditions),conditions,
         playbook:userPlaybook(),practiceReps:{},moves:[],program:{home:{enabled:false},away:{enabled:false}},rivalry:(me.protectedRivalIds||[]).includes(opp.id)};
-      runHook('launch',{cfg,g:{week},home,away,me,opp,userSide});
+      runHook('launch',{cfg,g:{week,postseason:true,stage:cfg.stage},home,away,me,opp,userSide});
       for(const side of ['home','away'])cfg.program[side]={...cfg.program[side],...availabilityFor(cfg[side])};
       const sim=simulateCardGame(cfg);sim.week=week;sim.postseason=true;sim.ranks=rankSnapshot(opp);
       const out=postseasonRecordBase(home,away,{...options,externalState:sim.b.game});
@@ -1201,7 +1206,7 @@ function normalizeCallSheet(u){
     const lu=gameLineup(opp).lineup,byId=new Map((opp.roster||[]).map(p=>[String(p.id),p]));
     const top=[...Object.entries(lu.off),...Object.entries(lu.def)].map(([role,bp])=>({role,bp,p:byId.get(String(bp.id))})).filter(x=>x.p).sort((a,b)=>b.bp.ovr-a.bp.ovr).slice(0,4);
     if(!box){feature.insertAdjacentHTML('beforeend','<div id="matchupCards" class="cs-cards"></div>');box=feature.querySelector('#matchupCards')}
-    const history=rivalryHistory(me,opp),ident=opponentIdentityFor(me,opp),film=filmNote(me,opp),stakes=CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null});
+    const history=rivalryHistory(me,opp),ident=opponentIdentityFor(me,opp),film=filmNote(me,opp,g),stakes=CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null});
     box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4>${stakes.elevated?`<p class="cpn-foot" id="packStakes"><b>${escH(stakes.text)}</b></p>`:''}${history?`<p class="cpn-foot" id="rivalryHistory">${escH(history.text)}</p>`:''}${ident?`<p class="cpn-foot" id="opponentIdentity">${escH(ident.text)}</p>`:''}${film?`<p class="cpn-foot" id="filmNote">${escH(film.text)}</p>`:''}<div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
   }
   // The newsletter: this season's card moments (packs, breakouts, legacies, nemeses, rewards).
@@ -1857,7 +1862,7 @@ function normalizeCallSheet(u){
   }
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
-  globalThis.DynastyCardGameDay={hireFilmEffect,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home)):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+  globalThis.DynastyCardGameDay={hireFilmEffect,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
