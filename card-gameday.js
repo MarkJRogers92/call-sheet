@@ -1657,6 +1657,23 @@ function normalizeCallSheet(u){
     const lo=AD.toBattlePlayer({...r,...Object.fromEntries(D.TRAITS.map(k=>[k,range(est[k])[0]])),positionFamiliarity:{[r.pos]:100}},role).ovr,hi=AD.toBattlePlayer({...r,...Object.fromEntries(D.TRAITS.map(k=>[k,range(est[k])[1]])),positionFamiliarity:{[r.pos]:100}},role).ovr;
     return{role,conf,width,est,range,g,bp,strong,lo,hi};
   }
+  // One sentence comparing the prospect's possible signature with the deck you run now. Switching decks can change
+  // it; the player's projection never does. A preview only: no card is granted until a breakout earns it.
+  function prospectDeckFit(bp){
+    if(!bp?.role||!universe?.callSheet||!CS.signatures?.deckFit)return null;
+    const spec=CS.signatures.specFor(bp),pb=universe.callSheet.playbook;
+    return CS.signatures.deckFit(spec,pb?.off||CS.data.DEFAULT_DECKS?.off);
+  }
+  function prospectDeckFitHTML(bp){
+    const f=prospectDeckFit(bp);return f?`<p class="cs-pcard-note" data-deck-fit="${escH(f.fit)}"><b>With your current deck:</b> ${escH(f.text)}</p>`:'';
+  }
+  // The recruiting board's dossier: point at the card that lives in the full profile.
+  function recruitDossierCardHTML(id){
+    const r=universe?.recruits?.find(x=>String(x.id)===String(id)),u=selected();if(!r||!u||!pagesOn())return'';
+    const pe=prospectEstimate(r,u);if(!pe)return'';
+    const spec=CS.signatures.specFor(pe.bp),name=CS.signatures.describe(spec)?.def?.name,f=prospectDeckFit(pe.bp);
+    return`<div class="rw-card-hint" id="rwCardHint"><span class="eyebrow">CARD PREVIEW · PROSPECT</span><p>${name?`Possible signature <b>${escH(name)}</b> after a breakout. `:''}${f?escH(f.text):''}</p><small>Open Full Profile for the card. Nothing is granted until a breakout earns it.</small></div>`;
+  }
   function recruitCardHTML(r,u){
     const AD=CS.adapter,D=CS.data;if(!AD||!D||!r||!u)return'';
     const pe=prospectEstimate(r,u);if(!pe)return'';const {role,conf,est,range,g,bp,strong,lo,hi}=pe;
@@ -1677,6 +1694,7 @@ function normalizeCallSheet(u){
         <span class="eyebrow">PROSPECT CARD · SCOUTING ${Math.round(conf)}%</span>
         <h3>Projects as: ${escH(ROLE_NAMES[role]||role)}</h3>
         ${signatureStory({projection:bp})}
+        ${prospectDeckFitHTML(bp)}
         ${peopleOn()?visitPitchHTML(r,u):''}
         ${fit.plays.length?`<p class="cs-pcard-note"><b>Fits your active playbook:</b> ${escH(fit.plays.join(', '))}${fit.bonus?` · +${fit.bonus} to your recruiting pitch`:""}. Based on his archetype, not hidden ratings.</p>`:''}
         ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
@@ -1744,7 +1762,9 @@ function normalizeCallSheet(u){
     frame.srcdoc=globalThis.CallSheetBundle;host.appendChild(frame);
     document.body.appendChild(host);document.body.classList.add('cs-open');frame.focus();
   }
-  globalThis.DynastyCardGameDay={open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+  globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
+  if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
+  globalThis.DynastyCardGameDay={recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),

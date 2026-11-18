@@ -122,6 +122,24 @@ function describe(spec){
   b.def.text=base+' '+matchupText;
   return b;
 }
+// How a signature card's matchup lines up with the offense the coach runs. Only offensive cards whose edge or counter
+// names a play or play family depend on the deck; defensive cards and cards keyed to the defense's look depend on the
+// opponent, and say so instead of inventing a fit. Uses only public role/style and the coach's own deck.
+function deckFit(spec,offDeck){
+  const rule=matchupFor(spec);if(!rule)return null;
+  const deckDriven=w=>w&&(w.origin||w.family);
+  if(spec.side==='def'||(!deckDriven(rule.edge.when)&&!deckDriven(rule.counter.when)))
+    return{fit:spec.side==='def'?'opponent':'look',edge:{label:rule.edge.label},counter:{label:rule.counter.label},
+      text:spec.side==='def'?`Depends on what the offense calls, not your deck: better vs ${rule.edge.label}, worse vs ${rule.counter.label}.`:`Depends on the defense's look, not your deck: better vs ${rule.edge.label}, worse vs ${rule.counter.label}.`};
+  const ids=[...(offDeck?.base||[]),...(offDeck?.wrinkles||[])].filter(id=>D.PLAYS[id]);
+  const count=w=>!deckDriven(w)?null:ids.filter(id=>w.origin?id===w.origin||D.PLAYS[id].evolvedFrom===w.origin:D.PLAYS[id].family===w.family).length;
+  const e=count(rule.edge.when),c=count(rule.counter.when);
+  const fit=e===null?(c?'mixed':'neutral'):e>0&&!c?'strong':e>0?'mixed':'weak';
+  const n=(k,label)=>k===null?null:k?`${label} ×${k}`:`no ${label}`;
+  const parts=[n(e,rule.edge.label)&&`${n(e,rule.edge.label)} (its edge)`,n(c,rule.counter.label)&&`${n(c,rule.counter.label)} (its counter)`].filter(Boolean);
+  const lead={strong:'Strong fit with your deck',mixed:'Mixed fit with your deck',weak:'Weak fit with your deck',neutral:'Neutral fit with your deck'}[fit];
+  return{fit,edge:{label:rule.edge.label,count:e},counter:{label:rule.counter.label,count:c},text:`${lead}: ${parts.join(', ')}.`};
+}
 function register(spec){
   const b=describe(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
   table[spec.id]=b.def;D.RARITY[spec.id]='signature';return b;
@@ -164,5 +182,5 @@ function add(pb,spec,replaceIndex){
   return{full:false};
 }
 
-return{SLOTS,COOLDOWN,templateFor,build,buildAny,describe,register,registerAll,specFor,breakouts,candidate,add,lastName};
+return{SLOTS,COOLDOWN,deckFit,templateFor,build,buildAny,describe,register,registerAll,specFor,breakouts,candidate,add,lastName};
 });

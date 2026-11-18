@@ -83,3 +83,17 @@ test('legacy echoes have a smaller upside, full counter, and never gain an award
     }
   }
 });
+
+test('deck fit counts the edge and counter plays in the offense actually run, and defers to the opponent otherwise',()=>{
+ const S=require('../forks/call-sheet/core/signatures'),D=require('../forks/call-sheet/core/data');
+ const wall=S.specFor({id:'ol1',name:'Ann Wall',role:'C',pos:'C',archetype:'Leverage Center'});
+ const deck=(wrinkles,base=['inside_zone','outside_zone','quick_slant','stick'])=>({base,wrinkles});
+ let f=S.deckFit(wall,deck(['power','power']));assert.equal(f.fit,'mixed');assert.equal(f.edge.count,2);assert.equal(f.counter.count,1);assert.match(f.text,/Power ×2 \(its edge\), Outside Zone ×1 \(its counter\)/);
+ f=S.deckFit(wall,deck(['power'],['inside_zone','quick_slant','stick','pa_boot']));assert.equal(f.fit,'strong');assert.match(f.text,/no Outside Zone/);
+ f=S.deckFit(wall,deck([]));assert.equal(f.fit,'weak');assert.match(f.text,/no Power \(its edge\)/);
+ const evolved=Object.keys(D.PLAYS).find(id=>D.PLAYS[id].evolvedFrom==='power');
+ if(evolved)assert.equal(S.deckFit(wall,deck([evolved])).edge.count,1,'an evolved Power still runs Power');
+ const corner=S.specFor({id:'cb1',name:'Bo Lane',role:'FCB',pos:'CB',archetype:'Press Eraser'});
+ assert.equal(S.deckFit(corner,deck(['power'])).fit,'opponent');assert.equal(S.deckFit(corner,deck(['power'])).text,S.deckFit(corner,deck([])).text,'a defensive card ignores your deck');
+ const wr=S.specFor({id:'wr1',name:'Cy Moss',role:'X',pos:'WR',archetype:'Boundary Bully'});assert.equal(S.deckFit(wr,deck([])).fit,'look');
+});

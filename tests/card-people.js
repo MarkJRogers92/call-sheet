@@ -178,3 +178,22 @@ test('a cold dynasty archive is not mistaken for a signature player leaving foot
   assert.equal(book.signatures.length,0);assert.equal(book.ringOfHonor[0].playerId,p.id);
   assert.match(cg.playerCard(p.id),/12–2/);
 });
+
+test('a prospect preview states its deck fit; switching decks changes the advice, never the projection or ownership',async()=>{
+  const {e,cg,u,CS}=await setup(941);
+  const ol=u.recruits.find(r=>!r.committed&&['C','OG','OT','G','T','LT','RT','LG','RG','OL'].includes(r.pos)),db=u.recruits.find(r=>!r.committed&&['CB','S','FS','SS'].includes(r.pos));
+  assert.ok(ol&&db,'fixture has a lineman and a defensive back');
+  const pb=u.callSheet.playbook||cg.meta().playbook,owned=JSON.stringify([...(pb?.signatures||[]),...(pb?.reserveSignatures||[])]);
+  const before=cg.recruitDeckFit(ol.id);assert.ok(before.fit.edge.count>0,'the default deck runs the lineman\'s edge play');
+  assert.match(cg.recruitCard(ol.id),/With your current deck:/);
+  const live=u.callSheet.playbook;
+  const edgeId=Object.keys(CS.data.PLAYS).find(id=>CS.data.PLAYS[id].name===before.fit.edge.label);
+  assert.ok(!live.off.base.includes(edgeId),'edge play is a wrinkle, so the four base calls stay legal');
+  live.off.wrinkles=live.off.wrinkles.filter(id=>id!==edgeId&&CS.data.PLAYS[id].evolvedFrom!==edgeId);
+  const after=cg.recruitDeckFit(ol.id);
+  assert.equal(after.fit.edge.count,0);assert.notEqual(after.fit.text,before.fit.text,'advice follows the deck');
+  assert.deepEqual([after.ovr,after.archetype],[before.ovr,before.archetype],'talent projection does not move with the deck');
+  const d=cg.recruitDeckFit(db.id);assert.equal(d.fit.fit,'opponent');assert.match(d.fit.text,/not your deck/);
+  assert.equal(JSON.stringify([...(u.callSheet.playbook.signatures||[]),...(u.callSheet.playbook.reserveSignatures||[])]),owned,'a preview never grants the card');
+  assert.match(globalThis.DynastyRecruitCard.dossierHTML(ol.id),/CARD PREVIEW · PROSPECT[\s\S]*fit with your deck[\s\S]*Nothing is granted/);
+});
