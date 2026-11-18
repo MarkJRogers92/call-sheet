@@ -1432,8 +1432,11 @@ function normalizeCallSheet(u){
     let tipLine='';try{const tip=installTip();if(tip?.reason==='finish'&&!universe.callSheet.installFocus)tipLine=`<p class="cpn-last-card" id="installTipWeek"><span>Install:</span> ${escH(tip.text)} Pick it in Deck Room.</p>`}catch(err){console.error(err)}
     const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b>${wonLine}${tipLine}<button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}</div>`;
     if(old)old.outerHTML=shortcut;else dash.insertAdjacentHTML('beforeend',shortcut);
-    try{if(cardGameIsDefault()){const tabs=dash.querySelector(':scope > .dash-views'),feature=dash.querySelector(':scope > #broadcastFeature'),link=dash.querySelector(':scope > #cardDeskLink');
-      if(tabs&&feature&&tabs.nextElementSibling!==feature)tabs.after(feature);if(feature&&link&&feature.nextElementSibling!==link)feature.after(link)}}catch(err){console.error(err)}
+    try{if(cardGameIsDefault()){const tabs=dash.querySelector(':scope > .dash-views'),feature=dash.querySelector(':scope > #broadcastFeature'),link=dash.querySelector('#cardDeskLink'),desk=dash.querySelector(':scope > .command-center');
+      if(tabs&&feature&&tabs.nextElementSibling!==feature)tabs.after(feature);
+      // Cards & Deck is the first row of the weekly desk, right under the This Week tabs (dashboard-views keeps the desk
+      // directly after the tabs, so the strip goes inside it rather than competing for that slot).
+      if(desk&&link&&desk.firstElementChild!==link)desk.prepend(link);else if(!desk&&feature&&link&&feature.nextElementSibling!==link)feature.after(link)}}catch(err){console.error(err)}
     try{labelNextButton()}catch(err){console.error(err)}
     try{paintMatchupCards()}catch(err){console.error(err)}
     // Postseason with the card default off: offer the coached game beside the briefing's primary "Next" button.
