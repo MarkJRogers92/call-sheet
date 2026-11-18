@@ -93,6 +93,7 @@ test('a coach can switch paired calls with legal tactics and cannot select an un
    {slot:1,cost:1,card:{name:'Protection'}},{slot:2,cost:1,card:{name:'Extra'}},{slot:3,cost:0,card:{name:'Run tactic'}}]}},
   B:{sameLookPair:()=>({mate:{id:'pa_boot'}})},choosePlay:id=>{sel.play=id},tacticBlock:t=>t.slot===3,
   S:{tick(){}},refresh(){},document:{querySelector:()=>null}};
+ ctx.retainCallTactics=play=>run('retainCallTactics',ctx,[play]);
  const event={target:{closest:()=>({dataset:{sameLook:'pa_boot'}})}};
  run('switchSameLook',ctx,[event]);assert.equal(sel.play,'pa_boot');assert.deepEqual(sel.tac,[1]);
  sel.play='inside_zone';ctx.B.sameLookPair=()=>({mate:{id:'pa_boot',reason:'Needs an inline tight end'}});
