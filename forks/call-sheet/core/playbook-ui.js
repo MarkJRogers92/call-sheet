@@ -181,6 +181,7 @@ const EDITOR_CSS=`
 #deckEditor [data-more-options] section,#deckEditor [data-more-options] details{margin:15px 0}#deckEditor [data-more-options] p{margin:7px 0;color:#c4ceda;font-size:14px}#deckEditor [data-more-options] button{margin:5px 0}
 #deckEditor .de-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #354454;background:#171f2a}
 #deckEditor [data-deck-status]{font-size:13px;color:#b4dbce}#deckEditor [data-deck-status][data-error=true]{color:#ffcf9f}
+#deckEditor .de-family{margin:0 0 10px}#deckEditor .de-family>summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 2px;color:#f4edda}#deckEditor .de-family>summary small{font-weight:400;color:#9fb0c8;margin-left:6px}
 #deckEditor .de-suggest{margin:8px 0 0;padding:8px 11px;border:1px solid #ffdb7299;border-radius:9px;background:#2a2410;color:#f6ecd0;font-size:14px;line-height:1.4}#deckEditor .de-save-actions{display:flex;gap:7px;flex-shrink:0}#deckEditor [data-save]{background:#ffdb72;color:#251e0e;border-color:#ffdb72}
 @media(max-width:650px){#deckEditor{width:calc(100vw - 12px);height:94vh;height:94dvh;border-radius:12px}#deckEditor .de-head,#deckEditor .de-body,#deckEditor .de-foot{padding:12px}
 #deckEditor .de-side-nav button{font-size:13px;padding:6px 8px}#deckEditor .de-type-nav{gap:4px}
@@ -213,6 +214,17 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
   const cardName=(id)=>P.cardDef(id)?.name||id;
   const titleOf={wrinkles:'Plays',tactics:'Tactics',base:'Base calls',signatures:'Signatures'};
   const categories=Object.keys(titleOf),nounOf={wrinkles:'play',tactics:'tactic',signatures:'signature'};
+  // Plays and calls grouped by family (run, quick, deep...; zone, man, pressure) to shorten the list on a phone. Groups
+  // start collapsed on narrow screens; the choice survives the redraw after each add or remove.
+  const narrow=typeof matchMedia==='function'&&matchMedia('(max-width:600px)').matches,folded=new Set(),touched=new Set();
+  const familyOf=id=>(D.PLAYS[id]||D.CALLS[id])?.family||'other';
+  const FAMILY={run:'Run',quick:'Quick',deep:'Deep',constraint:'Constraint',trick:'Trick',zone:'Zone',man:'Man',pressure:'Pressure',other:'Other'};
+  const familyGroups=(rows,tile)=>{
+    const groups=new Map();for(const r of rows){const f=familyOf(r.id);(groups.get(f)||groups.set(f,[]).get(f)).push(r)}
+    const rank=Object.keys(FAMILY);return [...groups].sort((a,c)=>rank.indexOf(a[0])-rank.indexOf(c[0])).map(([f,list])=>{const key=side+':'+f,open=touched.has(key)?!folded.has(key):!narrow,inDeck=list.reduce((n,r)=>n+r.inDeck,0);
+      return`<details class="de-family" data-family="${esc(key)}" ${open?'open':''}><summary>${esc(FAMILY[f]||f)} <small>${list.length} card${list.length===1?'':'s'} · ${inDeck} in deck</small></summary><div class="de-grid">${list.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div></details>`}).join('');
+  };
+  dialog.addEventListener('toggle',e=>{const d=e.target;if(!d?.matches?.('details.de-family'))return;const key=d.dataset.family;touched.add(key);if(d.open)folded.delete(key);else folded.add(key)},true);
   const cardNames=ids=>{const groups=new Map();ids.forEach(id=>groups.set(id,(groups.get(id)||0)+1));return [...groups].map(([id,n])=>esc(cardName(id))+(n>1?' ×'+n:'')).join(' · ')||'None'};
   const info=id=>{const c=P.cardDef(id);return `<b>${esc(c.name)}</b><small>${c.cost} Command · ${esc(c.family||'Tactic')}</small><p>${esc(cleanText(c.text))}</p>`};
   const tooManyUnusedSignatures=()=>draft.reserveSignatures.length>maxUnusedSignatures;
@@ -261,7 +273,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
       list=rows.length?`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned,all.find(s=>s.id===r.id))).join('')}</div>`:'<p class="de-banner">No signatures yet. Player breakouts can earn them; you don’t need one to play.</p>';
     }else{
       const rows=ownedRows(deck[category],reserve[category]);
-      list=rows.length?`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div>`:`<p class="de-banner">You don’t own any ${adjective} ${titleOf[category].toLowerCase()} yet. You can still play with your base calls.</p>`;
+      list=rows.length?(category==='wrinkles'?familyGroups(rows,tile):`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div>`):`<p class="de-banner">You don’t own any ${adjective} ${titleOf[category].toLowerCase()} yet. You can still play with your base calls.</p>`;
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
@@ -304,6 +316,7 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
     const sig=b.hasAttribute('data-sig-store')||b.hasAttribute('data-sig-equip');
     if(b.dataset.move||sig){
       const add=sig?b.hasAttribute('data-sig-equip'):b.dataset.move==='add',id=b.closest('[data-owned-card]').dataset.ownedCard;
+      {const fam=b.closest('details.de-family')?.dataset.family;if(fam){touched.add(fam);folded.delete(fam)}} // keep the card you just changed in view
       act(()=>{if(sig){const from=add?draft.reserveSignatures:draft.signatures,to=add?draft.signatures:draft.reserveSignatures,i=from.findIndex(s=>s.id===id);if(i<0||add&&to.length>=S.SLOTS)throw Error('No signature slot available.');to.push(from.splice(i,1)[0])}
         else{const list=add?draft.reserve[side][category]:draft[side][category];P.moveCard(draft,side,category,list.indexOf(id),add)}},
         `${cardName(id)} ${add?'added to':'removed from'} deck.`,()=>focusCard(id,add?'add':'remove',sig));return;
