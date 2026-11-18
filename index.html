@@ -26599,12 +26599,30 @@ function normalizeCallSheet(u){
     if(!box){const head=host.querySelector('.section-head');(head||host.firstElementChild)?.insertAdjacentHTML('afterend','<div id="growthCards" class="cs-cards card"></div>');box=host.querySelector('#growthCards')}
     box.innerHTML=`<h3>Card growth since the season ended</h3><div class="cs-mini-row">${moved.map(x=>miniCardHTML(x.p,me)).join('')}</div>`;wireCards(box);
   }
+  // This week's regular-season game is already recorded and no battle is open: the hub still lists it as "next up"
+  // until the week advances, so the matchup card must not offer to coach it again.
+  function weekGamePlayed(){
+    const me=selected();if(!me||universe?.phase!=='regular'||universe.callSheet?.activeBattle)return false;
+    return !!(universe.schedule?.[universe.week]||[]).find(x=>x.played&&(x.home===me.name||x.away===me.name));
+  }
+  function markPlayedMatchup(feature){
+    const played=weekGamePlayed(),kicker=feature.querySelector('.broadcast-kicker');
+    feature.classList.toggle('cs-week-played',played);
+    if(kicker){if(played&&!kicker.dataset.csPlayed){kicker.dataset.csPlayed=kicker.textContent;kicker.textContent=kicker.textContent.replace(/NEXT MATCHUP/i,'FINAL RECORDED')}
+      else if(!played&&kicker.dataset.csPlayed){delete kicker.dataset.csPlayed}}
+    let note=feature.querySelector('#csPlayedNote');
+    if(played&&!note){feature.querySelector('.broadcast-actions')?.insertAdjacentHTML('afterbegin','<p id="csPlayedNote" class="cs-played-note">Game complete. Advance the week to meet your next opponent.</p>');note=feature.querySelector('#csPlayedNote')}
+    else if(!played)note?.remove();
+    if(!document.getElementById('csPlayedStyles')){const st=document.createElement('style');st.id='csPlayedStyles';st.textContent='#broadcastFeature.cs-week-played [data-coach-cards],#broadcastFeature.cs-week-played [data-coach-live]{display:none!important}.cs-played-note{margin:0;color:#d3dded;font-size:14px}';document.head.appendChild(st)}
+  }
   // The matchup: their four best starters as cards (nemeses marked).
   function paintMatchupCards(){
     const feature=document.querySelector('#broadcastFeature');if(!feature)return;let box=feature.querySelector('#matchupCards');
     // The matchup card is redrawn by its own presentation layer; repaint the strip whenever that wipes it.
     if(!feature.__cardsObs&&typeof MutationObserver==='function'){let queued=false;feature.__cardsObs=new MutationObserver(()=>{if(queued||feature.querySelector('#matchupCards')||!pagesOn())return;queued=true;(window.requestAnimationFrame||setTimeout)(()=>{queued=false;try{paintMatchupCards()}catch(err){}})});feature.__cardsObs.observe(feature,{childList:true})}
-    const g=pagesOn()?currentCardGame():null,me=selected();if(!g){box?.remove();return}
+    const g=pagesOn()?currentCardGame():null,me=selected();
+    try{markPlayedMatchup(feature)}catch(err){console.error(err)}
+    if(!g){box?.remove();return}
     const opp=T(g.home===me.name?g.away:g.home);if(!opp){box?.remove();return}
     const lu=gameLineup(opp).lineup,byId=new Map((opp.roster||[]).map(p=>[String(p.id),p]));
     const top=[...Object.entries(lu.off),...Object.entries(lu.def)].map(([role,bp])=>({role,bp,p:byId.get(String(bp.id))})).filter(x=>x.p).sort((a,b)=>b.bp.ovr-a.bp.ovr).slice(0,4);

@@ -78,7 +78,8 @@
     "test:card-default-browser": "node tests/card-default-browser.js",
     "test:card-pages-browser": "node tests/card-pages-browser.js",
     "test:card-journey-browser": "node tests/card-journey-browser.js",
-    "test:card-reward-locker-browser": "node tests/card-reward-locker-browser.js"
+    "test:card-reward-locker-browser": "node tests/card-reward-locker-browser.js",
+    "test:card-played-week-browser": "node tests/card-played-week-browser.js"
   },
   "devDependencies": {
     "@electron-forge/cli": "^8.0.1",
