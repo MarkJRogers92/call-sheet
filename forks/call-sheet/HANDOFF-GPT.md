@@ -452,3 +452,25 @@ Scripted the handoff's loop (fresh Dynasty → recruit profile → coach a down 
   - The strip sits below the briefing and matchup card (~1.3 screens down on desktop, ~2 on phone). Moving it higher would reorder This Week; that is Mark's call.
 - **The takeaway leads with the coach's own calls.** `postgameTakeaway` first looks for a repeatable problem among `userCalled` snaps (3 or more). Otherwise it can still name a staff-called play, labeled as such ("Your staff's Outside Zone calls…", "all called by your staff" / "you called 1, your staff 6"). The recommendation notes that staff calls come from your deck. It adds `caller` and `mine` to the result. Test: `tests/card-insights.js`.
 - **Seen, not touched:** after a game, This Week's matchup feature still reads "Week 1 · Next matchup" with "Coach with Cards" for the game just played (before advancing the week). Opponent record showed 0-0. This was present before these changes. I did not click it to see what it does to the save.
+
+## Twelve follow-ups plus the stacked duel math — November 18, 2026
+
+One commit each on `claude/new-session-8fuxi1`, in order. Every item comes with a unit or engine test, and the UI items were checked in Chromium at 1400×900 and 390×844.
+
+1. **Recorded week no longer offers a replay** (`d714a54`). After the week's card game, the matchup card reads "FINAL RECORDED" and hides Coach with Cards until the week advances. The old button was harmless (the blocker said "already complete") but misleading. `tests/card-played-week-browser.js` (new script `test:card-played-week-browser`).
+2. **Pinned last call** (`ccdc271`). Once staff snaps have run since the coach's own call, the quick board shows "Your last call · N snaps ago" with the deciding duel. This covers offensive and defensive calls. `B.lastUserCall`.
+3. **Full-suite baseline** (see the verification note below).
+4–5. **Prospect card fit** (`d74fb93`). The recruiting board's dossier names the possible signature and its deck fit, and points to Open Full Profile. The prospect card adds "With your current deck: …". `S.deckFit`: only lineman walls (Power vs Outside Zone) depend on the deck. Look-keyed and defensive cards say "depends on the opponent, not your deck". `recruiting-workspace.js` gains one optional hook, `DynastyRecruitCard.dossierHTML`.
+6. **Install suggestion** (`a0ffd38`). Deck Room suggests one install week. The order is: finish an evolution first, then reset film wear, then the furthest-along play. This Week shows it only when one install completes an evolution. `EV.installSuggestion`. Advice only.
+7. **Film confidence explained** (`dd9693a`). Film confidence is staff quality (OC/DC play-calling, HC development), so recruiting scouting never moved it. The battle hints that said "scout them" now name the coaches. This Week states the number and the next threshold. `B.filmFog` holds the 64/82 thresholds once.
+8. **Card Player of the Game in player stories** (`5f4c6e5`). It wraps `v0102PlayerStories`; the story engine is unchanged. Priority is 93: below injuries (100), above locker-room watches (92). New integration switch: "Card duels in player stories".
+9. **Deciding snap** (`5057a2a`). The first `decidingMoments` line appears on the final screen and on This Week's Last Final card, from the recorded archive text.
+10. **After-loss swap** (`682cafe`). "Stage swap: −1 X, +1 Y" opens the deck editor with the swap staged in the draft and an evidence banner. Cancel discards it. `P.lossSwap`; `playbookUI.open({suggest})`.
+11. **Pack at stake** (`9fbc668`). Rivalry and postseason weeks say which pack a win earns. `P.packStakes` follows `openPack`, and a test opens real packs to confirm titles and counts.
+12. **Opponent identity** (`2d6f13a`). One sentence before kickoff: the staff's pass estimate plus how often their call sheet brings pressure, and an answer only if your deck holds one. `P.opponentIdentity` is read-only: it never creates an AI playbook.
+13. **Stacked duel math** (`512272a`, Mark's request). The clash shows each side's Ability plus the modifiers that help it, a rule, and the Total; the totals face off ("13.5 vs 10.9 · your edge +2.6 · 81%"). `B.duelSum` rounds ability to 0.1 and adds from the shown numbers, so the arithmetic always checks. Fog shows ranges and calls the edge uncertain.
+
+**Known test issues, unrelated to these changes:**
+- `tests/game-engine-v2-cutover-browser.js` fails on the untouched V15 snapshot too ("quick/season simulation should remain on the legacy engine", 12 !== 0). In the card fork, simulated games route through the card sim when sim-with-cards is on. That base-game assertion predates the fork.
+- `tests/signing-day-stop-browser.js` and `card-deck-browser.js` each timed out once and then passed on rerun (3/3 and 2/2). Treat them as timing flakes.
+- The browser suites chain tests with `&&`, so one failure hides the rest. Run them one by one (see below) to get a real picture.
