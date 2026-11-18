@@ -954,6 +954,17 @@ function duelSum(d){
   for(const c of [off,def])c.total=r(c.grade+c.adds.reduce((n,a)=>n+a.v,0));
   return{off,def,edge:r(off.total-def.total)};
 }
+// Film on the opponent from one battle: their defensive call families and their offense's run/pass mix, counted from
+// the log. Stored by the dynasty so a later meeting can say what they actually did against you.
+function callFilm(b,side=b?.user){
+  if(!b?.log||!side)return null;const opp=side==='home'?'away':'home',film={def:{pressure:0,man:0,zone:0,total:0},off:{run:0,pass:0,total:0}};
+  for(const e of b.log){
+    if(e.type!=='snap'||e.penalty||e.category==='kick')continue;
+    if(e.defSide===opp){const c=D.CALLS[e.call];if(c&&film.def[c.family]!==undefined){film.def[c.family]++;film.def.total++}}
+    if(e.offSide===opp){const p=D.PLAYS[e.play];if(p){film.off[p.family==='run'?'run':'pass']++;film.off.total++}}
+  }
+  return film.def.total||film.off.total?film:null;
+}
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
   const tally=onlyMine=>{
@@ -1116,5 +1127,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,duelSum,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{VERSION,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

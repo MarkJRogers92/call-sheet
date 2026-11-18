@@ -75,3 +75,12 @@ test('duel sum: each side adds its ability and its helping modifiers; the totals
   for(const x of duels){const t=B.duelSum(x),add=c=>Math.round((c.grade+c.adds.reduce((n,a)=>n+a.v,0))*10)/10;
     assert.equal(t.off.total,add(t.off));assert.equal(t.def.total,add(t.def));assert.ok(Math.abs(t.edge-x.raw)<=.11,`edge ${t.edge} vs raw ${x.raw}`)}
 });
+test('call film counts the opponent\'s defensive families and offensive run/pass mix, and ignores penalties and kicks',()=>{
+  const snap=(o)=>({type:'snap',offSide:'away',defSide:'home',play:'inside_zone',call:'cover3',...o});
+  const b={user:'home',log:[snap({}),snap({play:'deep_cross'}),snap({penalty:{label:'Hold'}}),snap({category:'kick'}),
+    snap({offSide:'home',defSide:'away',call:'cover0'}),snap({offSide:'home',defSide:'away',call:'cover1'}),snap({offSide:'home',defSide:'away',call:'cover3'})]};
+  assert.deepEqual(B.callFilm(b),{def:{pressure:1,man:1,zone:1,total:3},off:{run:1,pass:1,total:2}});
+  assert.equal(B.callFilm({user:'home',log:[]}),null);assert.equal(B.callFilm(null),null);
+  const real=B.simulate({home:Ro.preset('ground'),away:Ro.preset('aerial'),seed:'film'});real.user='home';const f=B.callFilm(real);
+  assert.ok(f.def.total>20&&f.off.total>20);assert.equal(f.def.pressure+f.def.man+f.def.zone,f.def.total);assert.equal(f.off.run+f.off.pass,f.off.total);
+});

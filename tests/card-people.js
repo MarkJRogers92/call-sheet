@@ -236,3 +236,16 @@ test('the opponent identity line uses the staff report and their call sheet with
   assert.ok(Number.isFinite(id.passEstimate),'staff pass estimate from the weekly report');assert.match(id.text,/staff expects/);
   assert.ok(id.calls>0&&id.pressure>=0);assert.equal(JSON.stringify(u.callSheet),before,'reading it creates no AI playbook and changes nothing');
 });
+
+test('a simulated card game stores film on that opponent, which survives a save round trip and feeds the identity line',async()=>{
+  const {e,cg,u,me}=await setup(951);const g=e.findUserGame(),opp=e.T(g.home===me.name?g.away:g.home);
+  u.weeklyDecisions=[];e.simWeek();
+  const film=u.callSheet.oppFilm?.[String(opp.id)];assert.ok(Array.isArray(film)&&film.length===1,'one meeting recorded');
+  assert.ok(film[0].def.total>0&&film[0].off.total>0);assert.equal(film[0].def.pressure+film[0].def.man+film[0].def.zone,film[0].def.total);
+  const copy=JSON.parse(JSON.stringify({callSheet:u.callSheet}));copy.callSheet.oppFilm[String(opp.id)].push({year:'x',week:-4,def:{total:'9'},off:null},{junk:1},{},{});copy.callSheet.oppFilm['__proto__x']='bad';
+  e.normalizeCallSheet(copy);const kept=copy.callSheet.oppFilm[String(opp.id)];
+  assert.equal(kept.length,3,'at most three meetings');assert.ok(kept.every(x=>Number.isInteger(x.def.total)&&x.def.total>=0));assert.equal(copy.callSheet.oppFilm['__proto__x'],undefined);
+  // Next time they are the opponent, the line reads from film.
+  const id=globalThis.CallSheet.packs.opponentIdentity(globalThis.CallSheet.packs.newPlaybook(),{film,mine:u.callSheet.playbook,name:opp.name});
+  assert.equal(id.fromFilm,true);assert.match(id.text,/when you last met/);
+});

@@ -101,6 +101,10 @@ function normalizeCallSheet(u){
   cs.installFocus=typeof cs.installFocus==='string'&&cs.installFocus.length<60?cs.installFocus:null;
   cs.filmLog=(Array.isArray(cs.filmLog)?cs.filmLog:[]).filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),plays:Object.fromEntries(Object.entries(x.plays&&typeof x.plays==='object'?x.plays:{}).filter(([k,v])=>k.length<60&&Number.isFinite(Number(v))).slice(0,60).map(([k,v])=>[k,ci(v)]))}));
   cs.lastWeekNews=(Array.isArray(cs.lastWeekNews)?cs.lastWeekNews:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string').slice(0,60);
+  // Film on opponents from card battles against you: the last three meetings per team, counts only.
+  const fc=(o,keys)=>Object.fromEntries(keys.map(k=>[k,ci(o?.[k])]));
+  cs.oppFilm=Object.fromEntries(Object.entries(cs.oppFilm&&typeof cs.oppFilm==='object'?cs.oppFilm:{}).filter(([k,v])=>k.length<64&&Array.isArray(v)).slice(-80)
+    .map(([k,v])=>[k,v.filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),def:fc(x.def,['pressure','man','zone','total']),off:fc(x.off,['run','pass','total'])}))]));
 }
 
 (function(){
@@ -405,6 +409,11 @@ function normalizeCallSheet(u){
     };
   }
   // Card careers: every duel your players win or lose, and their highlight plays, from both coached and simulated games.
+  function recordOppFilm(oppId,film,week){
+    if(oppId==null||!film||typeof film!=='object')return;const meta=cardMeta(),key=String(oppId),n=v=>Math.max(0,Math.min(999,Number(v)|0));
+    const entry={year:universe.year,week:n(week),def:{pressure:n(film.def?.pressure),man:n(film.def?.man),zone:n(film.def?.zone),total:n(film.def?.total)},off:{run:n(film.off?.run),pass:n(film.off?.pass),total:n(film.off?.total)}};
+    meta.oppFilm??={};meta.oppFilm[key]=[...(meta.oppFilm[key]||[]),entry].slice(-3);
+  }
   function addCardCareer(tally,week){
     const me=selected();if(!me||!tally||typeof tally!=='object')return;
     const meta=cardMeta(),mine=new Set((me.roster||[]).map(p=>String(p.id))),book=meta.players,ours=[];
@@ -439,6 +448,7 @@ function normalizeCallSheet(u){
       if(breakout){const sg=CS.signatures.specFor(breakout.p,{season:universe.year,earned:sim.cfg.label});if(pb.signatures.length<CS.signatures.SLOTS)CS.signatures.add(pb,sg);else{(pb.reserveSignatures??=[]).push(sg);pb.lastSignatureGame=pb.gamesPlayed;CS.signatures.register(sg)}}
       (cardMeta().moments??=[]).push({year:universe.year,week:sim.week,kind:'reward',text:`${sim.cfg.label}: ${pack.title}${picked?' — '+(CS.packs.cardDef(picked.id)?.name||picked.id)+' added to the collection':''}.`});
       try{addCardCareer(CS.battle.duelTally(sim.b),sim.week)}catch(err){console.error(err)}
+      try{const oppSide=sim.cfg.userSide==='home'?'away':'home';recordOppFilm(sim.cfg[oppSide]?.id,CS.battle.callFilm(sim.b,sim.cfg.userSide),sim.week)}catch(err){console.error(err)}
       try{noteUsage(sim.b.game,sim.cfg.userSide)}catch(err){console.error(err)}
       {const us=sim.b.game.score[sim.cfg.userSide],them=sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];programAwards({won,us,them,postseason:!!sim.postseason,ranks:sim.ranks,oppName:opp?.name,opp})}
       runHook('afterGame',{b:sim.b,userSide:sim.cfg.userSide,me,opp,coached:false});
@@ -497,6 +507,7 @@ function normalizeCallSheet(u){
       return{state:JSON.parse(JSON.stringify(p.state)),onRecorded(out){
         const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true;if(p.moments?.length)out.record.cardMoments=p.moments}
         try{addCardCareer(p.tally,options.week)}catch(err){console.error(err)}
+        try{recordOppFilm(String(home.id)===String(selected().id)?away.id:home.id,p.film,options.week)}catch(err){console.error(err)}
         const side=String(home.id)===String(selected().id)?'home':'away',us=Number(p.state?.score?.[side])||0,them=Number(p.state?.score?.[side==='home'?'away':'home'])||0;
         try{noteUsage(p.state,side)}catch(err){console.error(err)}
         programAwards({won:us>them,us,them,postseason:true,ranks:p.ranks,oppName:p.oppName,opp:side==='home'?away:home});
@@ -504,10 +515,10 @@ function normalizeCallSheet(u){
       }};
     };
     const STAGE_RUN={conference:()=>simConferenceChampionships(),bowl:()=>simBowls(),playoff:()=>simPlayoff(),title:()=>simPlayoff()};
-    function recordPostseasonBattle(g,state,tally,key,moments){
+    function recordPostseasonBattle(g,state,tally,key,moments,film){
       const seed=key||g.seed;
       const oppTeam=teamById(String(g.homeId)===String(selected().id)?g.awayId:g.homeId);
-      cardMeta().pendingPostseason={seed,year:universe.year,label:g.label,homeId:g.homeId,awayId:g.awayId,ranks:rankSnapshot(oppTeam),oppName:oppTeam?.name||'',moments:cleanMoments(moments),state:JSON.parse(JSON.stringify(state)),tally:tally&&typeof tally==='object'?JSON.parse(JSON.stringify(tally)):{}};
+      cardMeta().pendingPostseason={seed,year:universe.year,label:g.label,homeId:g.homeId,awayId:g.awayId,ranks:rankSnapshot(oppTeam),oppName:oppTeam?.name||'',moments:cleanMoments(moments),state:JSON.parse(JSON.stringify(state)),tally:tally&&typeof tally==='object'?JSON.parse(JSON.stringify(tally)):{},film:film&&typeof film==='object'?JSON.parse(JSON.stringify(film)):null};
       v2PostseasonLastError=null;v2PostseasonPauseForUser=true;
       try{STAGE_RUN[g.stage]?.()}catch(err){console.error(err);v2PostseasonLastError=err}finally{v2PostseasonPauseForUser=false}
       const meta=cardMeta(); // a rolled-back stage replaces the universe object
@@ -1146,7 +1157,7 @@ function normalizeCallSheet(u){
     if(!me||!opp||!universe?.callSheet)return null;let pe=null;
     try{const r=v0102WeeklyOpponentReport(me,opp),est=r?.passEstimate??r?.metrics?.passEstimate;if(Number.isFinite(Number(est)))pe=Number(est)}catch(err){}
     // Read only: an opponent without a saved playbook uses the default one the AI would start from; nothing is written.
-    return CS.packs.opponentIdentity(universe.callSheet.ai?.[opp.id]||CS.packs.newPlaybook(),{passEstimate:pe,mine:universe.callSheet.playbook,name:opp.short||opp.name});
+    return CS.packs.opponentIdentity(universe.callSheet.ai?.[opp.id]||CS.packs.newPlaybook(),{film:universe.callSheet.oppFilm?.[String(opp.id)]||null,passEstimate:pe,mine:universe.callSheet.playbook,name:opp.short||opp.name});
   }
   // The matchup: their four best starters as cards (nemeses marked).
   function paintMatchupCards(){
@@ -1783,13 +1794,13 @@ function normalizeCallSheet(u){
     launch:buildLaunch,
     committedPlaybook:()=>JSON.parse(JSON.stringify(userPlaybook())),
     rewardContext:()=>({worldTaken:takenLegendaries(),pursuit:pursuit()}),
-    record(state,tally,moments){
+    record(state,tally,moments,film){
       const key=cardMeta().activeBattle?.seed;
       if(key&&cardMeta().recordedBattleSeed===key)return{ok:true};
       const pg=currentCardGame();
-      if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key,moments)}
+      if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key,moments,film)}
       try{const g=findUserGame(),week=g?.week,me=selected(),userSide=g&&g.home===me.name?'home':'away',opp=g?T(userSide==='home'?g.away:g.home):null,ranks=rankSnapshot(opp);
-        const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
+        const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}try{if(out?.ok!==false)recordOppFilm(opp?.id,film,week)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
         try{markArchive(out?.result?.gameId,{coached:true,moments})}catch(err){console.error(err)}
         try{noteUsage(state,userSide)}catch(err){console.error(err)}
         try{const us=Number(state?.score?.[userSide])||0,them=Number(state?.score?.[userSide==='home'?'away':'home'])||0;programAwards({won:us>them,us,them,postseason:false,ranks,oppName:opp?.name,opp})}catch(err){console.error(err)}

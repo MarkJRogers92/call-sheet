@@ -17,6 +17,8 @@ const {playCardBattle}=require('./helpers/play-card-battle');
     assert.ok(await coach.isVisible(),'the unplayed game can be coached');assert.match(await page.textContent('#broadcastFeature .broadcast-kicker'),/NEXT MATCHUP/);
     await coach.click();await playCardBattle(page,{timeout:240000});
     assert.equal(await page.evaluate(()=>window.DynastyCardGameDay.meta().games),1);
+    const film=await page.evaluate(()=>Object.values(window.DynastyCardGameDay.meta().oppFilm||{}));
+    assert.equal(film.length,1,'the coached game stored film on its opponent');assert.ok(film[0][0].def.total>0&&film[0][0].off.total>0);
     // The Last Final card repeats the recorded deciding snap (the same text the battle's final screen showed).
     const decider=page.locator('#highlightsCard #hlDecider');await decider.waitFor({timeout:10000});
     assert.match(await decider.innerText(),/Deciding snap[\s\S]+ beat [\s\S]+ on /i);

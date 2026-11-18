@@ -116,3 +116,14 @@ test('opponent identity reads their call sheet and the staff estimate, and names
   assert.match(P.opponentIdentity(zone,{mine}).text,/^They: their defense/,'no staff estimate, no offense claim');
   assert.equal(P.opponentIdentity(null),null);
 });
+
+test('opponent identity uses film from earlier meetings once it covers 8 snaps, and says so',()=>{
+  const mine=P.newPlaybook(),sheet=P.newPlaybook();
+  const film=[{year:2027,week:3,def:{pressure:11,man:3,zone:4,total:18},off:{run:14,pass:6,total:20}}];
+  let id=P.opponentIdentity(sheet,{film,passEstimate:60,mine,name:'PHI'});
+  assert.equal(id.fromFilm,true);assert.equal(id.lean,'blitz');
+  assert.match(id.text,/^PHI: they ran on 14 of 20 snaps when you last met; their defense brought pressure on 11 of 18 snaps when you last met\./);
+  id=P.opponentIdentity(sheet,{film:[...film,film[0]],mine,name:'PHI'});assert.match(id.text,/over your last 2 meetings/);
+  const thin=[{year:2027,week:3,def:{pressure:3,man:1,zone:1,total:5},off:{run:2,pass:2,total:4}}];
+  id=P.opponentIdentity(sheet,{film:thin,passEstimate:60,mine,name:'PHI'});assert.equal(id.fromFilm,false,'too little film falls back');assert.match(id.text,/staff expects about 60% passing; their defense mixes in pressure \(8 of 16 calls\)/);
+});
