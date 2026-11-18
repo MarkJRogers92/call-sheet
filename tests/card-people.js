@@ -276,3 +276,13 @@ test('coordinator candidates show how hiring would change the card film read, as
   assert.equal(me.staff.OC.playCall,76,'the preview does not change your staff');
   cg.setIntegration('scouting-fog',false);assert.equal(cg.hireFilmEffect(o,{playCall:99}),null,'follows the scouting-fog switch');
 });
+
+test('three simulated card games build a season recap in the Deck Room, kept to two seasons and validated on load',async()=>{
+  const {e,cg,u}=await setup(957);
+  for(let i=0;i<3;i++){u.weeklyDecisions=[];e.simWeek()}
+  const L=u.callSheet.seasonCalls[String(u.year)];assert.equal(L.games,3);assert.ok(L.snaps>60);assert.equal(L.mine,0,'all simulated: none of these were your calls');
+  const r=cg.seasonRecap();assert.ok(r&&r.lines.length>=2);assert.match(r.lines.at(-1),/You called 0 of \d+ offensive snaps across 3 games/);
+  assert.match(cg.cardProgramHTML(),new RegExp(`${u.year} in calls`));
+  const copy=JSON.parse(JSON.stringify({callSheet:u.callSheet}));copy.callSheet.seasonCalls['1999']={games:'2',plays:{x:{n:'3'}}};copy.callSheet.seasonCalls.bad={};copy.callSheet.seasonCalls['2001']={games:1};
+  e.normalizeCallSheet(copy);assert.ok(Object.keys(copy.callSheet.seasonCalls).length<=2);assert.equal(copy.callSheet.seasonCalls.bad,undefined);
+});

@@ -957,13 +957,28 @@ function duelSum(d){
 // Film on the opponent from one battle: their defensive call families and their offense's run/pass mix, counted from
 // the log. Stored by the dynasty so a later meeting can say what they actually did against you.
 function callFilm(b,side=b?.user){
-  if(!b?.log||!side)return null;const opp=side==='home'?'away':'home',film={def:{pressure:0,man:0,zone:0,total:0},off:{run:0,pass:0,total:0}};
+  if(!b?.log||!side)return null;const opp=side==='home'?'away':'home',film={def:{pressure:0,man:0,zone:0,total:0},off:{run:0,pass:0,total:0},own:{plays:{},snaps:0,mine:0}};
   for(const e of b.log){
     if(e.type!=='snap'||e.penalty||e.category==='kick')continue;
     if(e.defSide===opp){const c=D.CALLS[e.call];if(c&&film.def[c.family]!==undefined){film.def[c.family]++;film.def.total++}}
     if(e.offSide===opp){const p=D.PLAYS[e.play];if(p){film.off[p.family==='run'?'run':'pass']++;film.off.total++}}
+    // Your own offensive calls, for the season recap: calls, yards, stops, and how many you called yourself.
+    if(e.offSide===side&&D.PLAYS[e.play]&&Number.isFinite(e.yards)){const t=film.own.plays[e.play]??={n:0,yards:0,stops:0,mine:0};
+      t.n++;t.yards+=e.yards;t.stops+=e.turnover||e.yards<=0?1:0;t.mine+=e.userCalled?1:0;film.own.snaps++;film.own.mine+=e.userCalled?1:0}
   }
-  return film.def.total||film.off.total?film:null;
+  return film.def.total||film.off.total||film.own.snaps?film:null;
+}
+// A season of card battles summed by the dynasty: { games, snaps, mine, plays:{id:{n,yards,stops,mine}}, players:{id:{name,w,l}} }.
+// The recap names the best call and the worst habit (each with 5+ calls) and the season's top duel winner on your side.
+function seasonRecap(ledger){
+  if(!ledger||!(ledger.games>=3))return null;
+  const rows=Object.entries(ledger.plays||{}).filter(([id,t])=>D.PLAYS[id]&&t.n>=5).map(([id,t])=>({id,name:D.PLAYS[id].name,n:t.n,avg:t.yards/t.n,stops:t.stops,mine:t.mine}));
+  const best=rows.slice().sort((a,c)=>c.avg-a.avg||c.n-a.n)[0]||null;
+  const worst=rows.filter(r=>r!==best&&(r.avg<3||r.stops/r.n>=.5)).sort((a,c)=>a.avg-c.avg||c.n-a.n)[0]||null;
+  const star=Object.entries(ledger.players||{}).map(([id,p])=>({id,...p})).filter(p=>(p.w|0)>=10).sort((a,c)=>(c.w-c.l)-(a.w-a.l)||c.w-a.w)[0]||null;
+  const f=r=>`${r.name}: ${r.avg.toFixed(1)} yards per call on ${r.n} calls${r.mine?` (${r.mine} yours)`:''}`;
+  return{games:ledger.games,snaps:ledger.snaps,mine:ledger.mine,best,worst,star,
+    lines:[best&&`Best call · ${f(best)}.`,worst&&`Worst habit · ${f(worst)}, stopped ${worst.stops} times.`,star&&`Top duel winner · ${star.name}: won ${star.w} of ${star.w+star.l} duels.`,`You called ${ledger.mine} of ${ledger.snaps} offensive snaps across ${ledger.games} games; your staff called the rest.`].filter(Boolean)};
 }
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
@@ -1127,5 +1142,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{VERSION,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

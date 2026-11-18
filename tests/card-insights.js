@@ -79,8 +79,21 @@ test('call film counts the opponent\'s defensive families and offensive run/pass
   const snap=(o)=>({type:'snap',offSide:'away',defSide:'home',play:'inside_zone',call:'cover3',...o});
   const b={user:'home',log:[snap({}),snap({play:'deep_cross'}),snap({penalty:{label:'Hold'}}),snap({category:'kick'}),
     snap({offSide:'home',defSide:'away',call:'cover0'}),snap({offSide:'home',defSide:'away',call:'cover1'}),snap({offSide:'home',defSide:'away',call:'cover3'})]};
-  assert.deepEqual(B.callFilm(b),{def:{pressure:1,man:1,zone:1,total:3},off:{run:1,pass:1,total:2}});
+  const f0=B.callFilm(b);assert.deepEqual({def:f0.def,off:f0.off},{def:{pressure:1,man:1,zone:1,total:3},off:{run:1,pass:1,total:2}});
+  assert.equal(f0.own.snaps,0,'no yards recorded on these fixture snaps');
   assert.equal(B.callFilm({user:'home',log:[]}),null);assert.equal(B.callFilm(null),null);
   const real=B.simulate({home:Ro.preset('ground'),away:Ro.preset('aerial'),seed:'film'});real.user='home';const f=B.callFilm(real);
   assert.ok(f.def.total>20&&f.off.total>20);assert.equal(f.def.pressure+f.def.man+f.def.zone,f.def.total);assert.equal(f.off.run+f.off.pass,f.off.total);
+});
+test('season recap names the best call, the worst habit and the top duel winner, and counts your own calls',()=>{
+  assert.equal(B.seasonRecap({games:2,plays:{}}),null,'needs three games');
+  const L={games:4,snaps:200,mine:31,plays:{power:{n:14,yards:95,stops:2,mine:6},deep_cross:{n:11,yards:23,stops:6,mine:4},inside_zone:{n:20,yards:90,stops:5,mine:0},screen:{n:3,yards:40,stops:0,mine:3}},
+    players:{a:{name:'Ann Lee',w:40,l:12},b:{name:'Bo Kim',w:12,l:11},c:{name:'Cy Fox',w:6,l:0}}};
+  const r=B.seasonRecap(L);
+  assert.equal(r.best.id,'power','screen has too few calls to count');assert.equal(r.worst.id,'deep_cross');assert.equal(r.star.name,'Ann Lee');
+  assert.match(r.lines[0],/^Best call · Power: 6\.8 yards per call on 14 calls \(6 yours\)\.$/);
+  assert.match(r.lines[1],/^Worst habit · Deep Cross: 2\.1 yards per call on 11 calls \(4 yours\), stopped 6 times\.$/);
+  assert.match(r.lines[2],/^Top duel winner · Ann Lee: won 40 of 52 duels\.$/);assert.match(r.lines[3],/You called 31 of 200 offensive snaps across 4 games/);
+  const b2=B.simulate({home:Ro.preset('ground'),away:Ro.preset('aerial'),seed:'own'});b2.user='home';const own=B.callFilm(b2).own;
+  assert.ok(own.snaps>20);assert.equal(Object.values(own.plays).reduce((n,t)=>n+t.n,0),own.snaps);
 });
