@@ -208,3 +208,16 @@ test('the pre-game film note matches the battle\'s confidence and moves with the
   for(const r of u.recruits.slice(0,20))r.scouted=true; // recruiting scouting does not change film confidence
   assert.equal(cg.filmNote().confidence,low.confidence);
 });
+
+test('last game\'s card Player of the Game joins This Week\'s player stories, only for the latest game and while switched on',async()=>{
+  const {cg,u,me}=await setup(945);const stories=()=>globalThis.__DL_TEST__.weeklyPlayerStoriesDebug();
+  const before=stories(),p=me.roster.find(x=>!before.some(s=>String(s.playerId)===String(x.id)));
+  u.callSheet.moments.push({year:u.year,week:u.week,kind:'pog',playerId:p.id,text:`Card Player of the Game: ${p.name} won 7 of 9 duels.`});
+  const s=stories().find(x=>x.type==='card_duels');
+  assert.ok(s,'card story added');assert.equal(String(s.playerId),String(p.id));assert.match(s.summary,new RegExp(`Card battle, Week ${u.week}: ${p.name} won 7 of 9 duels`));
+  assert.ok(stories().length<=Math.max(before.length,5),'stays within the story limit');
+  assert.ok(!stories().some(x=>x.type==='injury'&&x.priority<s.priority),'injuries still outrank it');assert.equal(s.priority,93);
+  cg.setIntegration('card-player-stories',false);assert.ok(!stories().some(x=>x.type==='card_duels'),'integration switch is honored');cg.setIntegration('card-player-stories',true);
+  u.callSheet.moments.push({year:u.year,week:u.week+1,kind:'big',playerId:p.id,text:'later game'});
+  assert.ok(!stories().some(x=>x.type==='card_duels'),'a newer game replaces last game\'s story');
+});

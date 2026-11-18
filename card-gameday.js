@@ -385,6 +385,25 @@ function normalizeCallSheet(u){
   }
   function simWithCardsOn(){return!!universe?.callSheet&&integrationOn(SIM_WITH_CARDS)&&!!globalThis.CallSheet?.battle}
   const SIM_WITH_CARDS=registerCardIntegration({id:'sim-with-cards',label:'Simulated games use your playbook',about:'Coordinators use your deck, evolutions and signatures in regular-season and postseason games, with mastery and card rewards.',hooks:{}});
+  // Player stories: last game's card Player of the Game joins This Week's factual player stories. Reads the recorded
+  // moment (6+ duels won); no new evidence and no rating is shown. Kept within the stories' own limit.
+  function cardDuelStory(t){
+    const cs=universe?.callSheet;if(!cs||!t||t.id!==selected()?.id||!integrationOn(PLAYER_STORY_LINK))return null;
+    const m=[...(cs.moments||[])].reverse().find(x=>x.kind==='pog'&&x.year===universe.year);if(!m)return null;
+    const last=Math.max(...(cs.moments||[]).filter(x=>x.year===universe.year&&Number.isFinite(x.week)).map(x=>x.week));
+    if(m.week!==last||m.week<universe.week-1)return null; // only the most recent game, and only until the next one
+    const p=(t.roster||[]).find(x=>String(x.id)===String(m.playerId));if(!p)return null;
+    return{playerId:p.id,name:p.name,pos:p.pos,type:'card_duels',priority:93,title:`${p.name} — won the matchups`,summary:m.text.replace(/^Card Player of the Game: /,'Card battle, Week '+m.week+': '),tone:'good'};
+  }
+  const PLAYER_STORY_LINK=registerCardIntegration({id:'card-player-stories',label:'Card duels in player stories',about:'Last game’s card Player of the Game appears among This Week’s player stories.',hooks:{}});
+  if(typeof v0102PlayerStories==='function'){
+    const storiesBase=v0102PlayerStories;
+    v0102PlayerStories=function v0102PlayerStoriesWithCards(t=selected()){
+      const list=storiesBase(t);let extra=null;try{extra=cardDuelStory(t)}catch(err){console.error(err)}
+      if(!extra||list.some(x=>String(x.playerId)===String(extra.playerId)))return list;
+      return [...list,extra].sort((a,b)=>b.priority-a.priority||String(a.name).localeCompare(String(b.name))).slice(0,Math.max(list.length,5));
+    };
+  }
   // Card careers: every duel your players win or lose, and their highlight plays, from both coached and simulated games.
   function addCardCareer(tally,week){
     const me=selected();if(!me||!tally||typeof tally!=='object')return;
