@@ -16,8 +16,8 @@ const P=require('../forks/call-sheet/core/packs.js');
     const badScript=JSON.parse(JSON.stringify(u));badScript.callSheet.playbook.off.openingScript=stale;n(badScript);
     assert.equal(badScript.callSheet.playbook.off.openingScript,undefined);assert.deepEqual(badScript.callSheet.playbook.off.base,pb.off.base);
   }
-  const guided={callSheet:{version:1,playbook:P.newPlaybook(),settings:{guidedDrivePending:true,guidedDriveDone:true}}};
-  n(guided);assert.equal(guided.callSheet.settings.guidedDrivePending,true);assert.equal(guided.callSheet.settings.guidedDriveDone,true);
+  const guided={callSheet:{version:1,playbook:P.newPlaybook(),settings:{guidedDrivePending:true,guidedDriveDone:true,motion:'reduced',readMode:'primary'}}};
+  n(guided);assert.equal(guided.callSheet.settings.guidedDrivePending,true);assert.equal(guided.callSheet.settings.guidedDriveDone,true);assert.equal(guided.callSheet.settings.motion,'reduced');assert.equal(guided.callSheet.settings.readMode,'primary');
   const near=P.newPlaybook();near.reserve.off.wrinkles=Array(494).fill('draw');
   require('../forks/call-sheet/core/playbook-ui');
   const ui=globalThis.CallSheet.playbookUI,plan=ui.previewPlan(near,'off','ground',500);assert.equal(plan.storageBlock,null);

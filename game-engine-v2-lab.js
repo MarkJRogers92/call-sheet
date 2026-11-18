@@ -44,6 +44,8 @@ function withActors(names={},attribution){
   for(const c of Object.values(attribution.contexts||{})){if(!c)continue;
     for(const p of [c.qb,c.kicker,c.punter,c.kickReturner,c.puntReturner])if(p?.id!=null)players[p.id]=p.name;
     for(const list of [c.rushers,c.receivers,c.defenders,c.offensiveLine])for(const x of list||[]){const p=x?.player||x;if(p?.id!=null)players[p.id]=p.name}}
+  // Package substitutes may not appear in the regular rotation's weighted pools.
+  for(const rows of Object.values(attribution.playerStats||{}))for(const p of rows)if(p.id!=null)players[p.id]=p.name;
   return{...names,actors:attribution.playActors,players}
 }
 const yardsPhrase=y=>y>0?`for ${y} yard${y===1?'':'s'}`:y<0?`for a loss of ${Math.abs(y)}`:'for no gain';

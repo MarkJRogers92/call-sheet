@@ -116,8 +116,26 @@
     syncStatus();
   }
 
-  function openRail(){app.classList.add('client-rail-open');navToggle.setAttribute('aria-expanded','true')}
-  function closeRail(){app.classList.remove('client-rail-open');navToggle.setAttribute('aria-expanded','false')}
+  const narrow=window.matchMedia?.('(max-width:860px)'),moreButton=mobile.querySelector('[data-client-more]');
+  let railOpener=navToggle;
+  function setRail(open){
+    app.classList.toggle('client-rail-open',open);
+    rail.inert=!!narrow?.matches&&!open;
+    for(const button of [navToggle,moreButton]){
+      button.setAttribute('aria-controls',rail.id);button.setAttribute('aria-expanded',String(open));
+    }
+  }
+  function openRail(){
+    railOpener=document.activeElement;setRail(true);
+    (rail.querySelector('[aria-current="page"]')||rail.querySelector('button'))?.focus();
+  }
+  function closeRail(){
+    const restore=rail.contains(document.activeElement)&&!!narrow?.matches;
+    setRail(false);
+    if(restore&&railOpener?.isConnected)railOpener.focus({preventScroll:true});
+  }
+  narrow?.addEventListener?.('change',closeRail);
+  setRail(false);
 
   app.addEventListener('click',event=>{
     const nav=event.target.closest('[data-client-tab]');if(nav){event.preventDefault();go(nav.dataset.clientTab);return}

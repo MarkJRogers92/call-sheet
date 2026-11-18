@@ -15,7 +15,9 @@ test('every relevant rating point changes odds; unrelated traits do not',()=>{
  const improved=R.buildSnap(c).duels[1];assert.ok(improved.p>before.p);assert.ok(improved.p-before.p<.02);
  c.off.RB.traits.speed=99;assert.equal(R.buildSnap(c).duels[1].p,improved.p);
  c.off.RB.traits.iq=99;c.off.RB.traits.technique=99;c.def.MIKE.traits.iq=40;c.def.MIKE.traits.power=40;
- const dominant=R.buildSnap({...c,defTactics:[]}).duels[1];assert.equal(dominant.p,.85);assert.ok(dominant.p<1);
+ const dominant=R.buildSnap({...c,defTactics:[]}).duels[1];assert.ok(Math.abs(dominant.p-.7745)<1e-10,'published V17 chance for this matchup');
+ for(const p of Object.values(c.off))for(const trait of D.TRAITS)p.traits[trait]=80;
+ const grades=R.buildSnap(c).duels.map(d=>d.offGrade);assert.deepEqual(grades,[7.3,7.55,7.55]);
 });
 test('quarterback delivery affects deep catches even when receivers fight the duel',()=>{
  const c=context('vertical_shot'),before=R.buildSnap(c);c.off.QB.traits.power=99;c.off.QB.traits.technique=99;

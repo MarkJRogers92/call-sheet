@@ -40,7 +40,7 @@ registerSignatures();
 window.SliceCards.finishOf=id=>save.playbook?.finishes?.[id]||null;
 
 // ================================================================ state
-let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode='auto',fullSheet=false;
+let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode=save.settings.readMode==='primary'?'primary':'auto',fullSheet=false;
 const userSide=()=>b.user;
 const teamOf=s=>b.teams[s];
 const oppId=()=>W.opponentOf(save.world);
@@ -76,10 +76,17 @@ function drawField(){
 }
 const OFF_SPOTS={LT:[-1,194],LG:[-1,230],C:[-1,266],RG:[-1,302],RT:[-1,338],TE:[-1.3,376],X:[-1,70],Z:[-1,462],SLOT:[-2,412],QB:[-5,266],RB:[-7.5,266]};
 const DEF_SPOTS={RUSH:[1.3,176],NT:[1.3,246],DT3:[1.3,290],SET:[1.3,358],WILL:[5,212],MIKE:[5,268],BOXS:[6,352],NICKEL:[5.5,412],BCB:[7,70],FCB:[7,462],FS:[13,266]};
-function formation(st){
+function formation(st,e=null){
   if(!st||!st.possession||st.field==null)return null;
   const off=st.possession,def=off==='home'?'away':'home',dir=off==='home'?1:-1,los=X(absOf(st.field,off)),out={};
-  for(const[r,[dx,y]]of Object.entries(OFF_SPOTS))out[`o:${r}`]={x:los+dx*YD*dir,y,side:off,role:r,lineup:'off'};
+  const line=e?B.snapLineup(b,e,'off'):teamOf(off).lineup.off;
+  for(const [role,spot] of Object.entries(OFF_SPOTS)){
+    let [dx,y]=spot;
+    if(role==='SLOT'&&line.SLOT?.pos==='TE')[dx,y]=[-1.4,152];
+    if(role==='SLOT'&&['RB','FB','HB'].includes(line.SLOT?.pos))[dx,y]=[-5.5,214];
+    if(role==='TE'&&line.TE?.pos==='WR')[dx,y]=[-2,120];
+    out[`o:${role}`]={x:los+dx*YD*dir,y,side:off,role,lineup:'off'};
+  }
   for(const[r,[dx,y]]of Object.entries(DEF_SPOTS))out[`d:${r}`]={x:los+dx*YD*dir,y,side:def,role:r,lineup:'def'};
   return{los,dir,dots:out,off,def};
 }
@@ -102,7 +109,7 @@ function ensureDots(f,e){
   for(const[k,d]of Object.entries(f.dots)){
     let el=layer.dots[k];
     if(!el){
-      el=mk('g',{class:'pl',role:'img'},layer.players);el.dataset.key=k;
+      el=mk('g',{class:'pl',role:'button',tabindex:k==='o:QB'?'0':'-1'},layer.players);el.dataset.key=k;
       const c=mk('g',{class:'pc'},el);
       mk('rect',{class:'glow',x:-CW/2-2,y:-CH/2-2,width:CW+4,height:CH+4,rx:5,filter:'url(#plglow)'},c);
       mk('rect',{class:'cbody',x:-CW/2,y:-CH/2,width:CW,height:CH,rx:3,'stroke-width':1.5},c);
@@ -111,6 +118,15 @@ function ensureDots(f,e){
       mk('text',{class:'num',x:0,y:CH/2-5.2,'text-anchor':'middle','dominant-baseline':'central'},c);
       el.addEventListener('pointerenter',ev=>showTip(el,ev));el.addEventListener('pointermove',ev=>moveTip(ev));
       el.addEventListener('pointerleave',hideTip);el.addEventListener('pointerdown',ev=>{if(ev.pointerType!=='mouse'){ev.stopPropagation();tipFor===el?hideTip():showTip(el,ev)}});
+      const showFocused=()=>{const rect=el.getBoundingClientRect();showTip(el,{clientX:rect.right,clientY:rect.top+rect.height/2})};
+      el.addEventListener('focus',showFocused);el.addEventListener('blur',hideTip);
+      el.addEventListener('keydown',ev=>{
+        if(ev.key==='Escape'){hideTip();return}
+        if(ev.key==='Enter'||ev.key===' '){ev.preventDefault();showFocused();return}
+        if(!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key))return;
+        ev.preventDefault();const all=Object.values(layer.dots),step=['ArrowLeft','ArrowUp'].includes(ev.key)?-1:1;
+        const next=all[(all.indexOf(el)+step+all.length)%all.length];el.setAttribute('tabindex','-1');next.setAttribute('tabindex','0');next.focus();
+      });
       layer.dots[k]=el;
     }
     const team=teamOf(d.side),p=(e?B.snapLineup(b,e,d.lineup):team.lineup[d.lineup])[d.role],c=el.firstChild;
@@ -127,7 +143,7 @@ function ensureDots(f,e){
 }
 // Matchup glow for the coming snap. duels come from the read (preview), margin > 0 favors the offense.
 let glowNotes={};
-function clearGlow(){glowNotes={};for(const el of Object.values(layer.dots||{}))el.classList.remove('edge','risk','threat','won','dim')}
+function clearGlow(){$('#fieldLocator').hidden=true;svg.setAttribute('viewBox','0 0 1200 533');layer.route?.remove();layer.route=null;glowNotes={};for(const el of Object.values(layer.dots||{}))el.classList.remove('edge','risk','threat','won','dim')}
 function fieldGlow(duels,userOff){
   clearGlow();if(!duels||fogSpread())return;
   for(const d of duels){
@@ -214,7 +230,7 @@ function setMarkers(st,instant){
   layer.zone.setAttribute('x',Math.min(los,fd));layer.zone.setAttribute('width',Math.abs(fd-los));
 }
 async function setFormation(st,ms=380,e=null){
-  const f=formation(st);if(!f){layer.players.style.opacity=0;layer.ball.style.opacity=0;layer.shadow.style.opacity=0;return}
+  const f=formation(st,e);if(!f){layer.players.style.opacity=0;layer.ball.style.opacity=0;layer.shadow.style.opacity=0;return}
   layer.players.style.opacity=1;layer.ball.style.opacity=1;layer.shadow.style.opacity=1;
   ensureDots(f,e);setMarkers(st);
   const from={};for(const k of Object.keys(f.dots))from[k]=pos[k]||{x:f.dots[k].x,y:f.dots[k].y+(k[0]==='o'?40:-40)};
@@ -222,7 +238,7 @@ async function setFormation(st,ms=380,e=null){
 }
 // Run the play: everyone moves, the key actor carries the result.
 async function animatePlay(e){
-  const f=formation(e.sit);if(!f)return;
+  const f=formation(e.sit,e);if(!f)return;
   const dir=f.dir,los=f.los,P0={};for(const k of Object.keys(f.dots))P0[k]={...(pos[k]||f.dots[k])};
   const yards=e.yards||0,endX=Math.max(5,Math.min(1195,los+yards*YD*dir)),part=e.participants||{},pass=D.PLAYS[e.play]?.pass;
   const carrier=part.carrier?`o:${part.carrier}`:null,target=part.target?`o:${part.target}`:null,qb='o:QB';
@@ -257,6 +273,10 @@ async function animatePlay(e){
 // ================================================================ broadcast bug and side panel
 function clock(st){const q=b.game.status==='final'?'FINAL':st.period>4?'OT':`Q${st.period}`;if(st.period>4||b.game.status==='final')return q;return`${q} ${Math.floor(st.clock/60)}:${String(st.clock%60).padStart(2,'0')}`}
 function renderBug(st=sitNow(),score=b.game.score){
+  const options=!busy&&b&&B.sidelineOptions(b);
+  const sideline=$('#sidelineBtn');
+  sideline.hidden=!options||(!options.late&&!options.tactics.length);
+  if(options)sideline.textContent=options.late?`Clock · ${options.timeouts} TO`:options.keep?'Sideline · 1 held':'Sideline';
   const dd=st.possession&&st.down?`${['','1ST','2ND','3RD','4TH'][st.down]} & ${st.field+st.distance>=100?'GOAL':st.distance} · ${st.field>50?'OPP '+(100-st.field):st.field===50?'50':'OWN '+st.field}`:'';
   const tm=s=>`<div class="tm ${s}" style="background:${teamOf(s).colors[0]}"><span class="poss ${st.possession===s?'on':''}"></span><div><div class="ab">${esc(teamOf(s).short)}</div>${s===b.user?'<div class="you">YOU</div>':''}</div><div class="sc">${score[s]}</div></div>`;
   $('#bug').innerHTML=`<div class="bug">${tm('home')}<div class="mid"><div class="clk">${b.weather&&b.weather!=='clear'?`<span title="${WX[b.weather].label}">${WX[b.weather].icon}</span> `:''}${clock(st)}</div><div class="dd">${dd}</div></div>${tm('away')}</div>`;
@@ -265,49 +285,109 @@ const sitNow=()=>({down:b.game.down,distance:b.game.distance,field:b.game.fieldP
 function hotHTML(){
   const hot=[];for(const s of ['home','away'])for(const lu of ['off','def'])for(const p of Object.values(teamOf(s).lineup[lu]))if(b.fire[p.id])hot.push({p,s});
   if(!hot.length)return'';
-  return`<div class="box"><h3>On fire</h3>${hot.length?hot.map(({p,s})=>`<div class="hot"><span class="flame"></span>${esc(p.name)} <span class="mini">${esc(teamOf(s).short)} ${p.role}</span></div>`).join(''):'<div class="mini">Win every duel for three straight snaps to catch fire: +1 until you lose one.</div>'}</div>`;
+  return`<div class="box"><h3>On fire</h3>${hot.length?hot.map(({p,s})=>`<div class="hot"><span class="flame"></span>${esc(p.name)} <span class="mini">${esc(teamOf(s).short)} ${p.role}</span></div>`).join(''):'<div class="mini">Win every duel for three straight snaps to catch fire: +0.5 until you lose one.</div>'}</div>`;
 }
 const COMBOS=[...(D.COMBOS||[]).map(c=>({id:c.id,name:c.name,how:c.how,reward:c.reward})),{id:'chain_gang',name:'Chain Gang',how:'Three first downs in one drive',reward:'+1 Command next series'}];
 function comboHTML(){if(!save.combos.length)return'';return`<div class="box"><h3>Combo book</h3>${COMBOS.map(c=>{const f=save.combos.includes(c.id);return`<div class="combo ${f?'found':''}"><b>${f?esc(c.name):'? ? ?'}</b><br>${f?esc(c.how)+' · '+esc(c.reward):'Undiscovered'}</div>`}).join('')}</div>`}
 const fmtEdge=n=>`${n>0?'+':''}${Number(n.toFixed(1))}`;
-function duelMath(d,offense=true){
-  const traits=`${(d.offTraits||[]).join(' + ')} vs ${(d.defTraits||[]).join(' + ')}${d.qbTraits?' · Catch/throw blend: 70% receiver, 30% QB ('+d.qbTraits.join(' + ')+')':''}`;
-  if(fogSpread())return `<small class="duelmath">${esc(traits)} · Opponent ability uncertain</small>`;
-  const sign=offense?1:-1,talent=sign*(d.offGrade-d.defGrade),setup=sign*d.mods.reduce((n,m)=>n+m.v,0);
-  return `<small class="duelmath" title="${esc(traits)}">Ability ${fmtEdge(talent)} · Effects ${fmtEdge(setup)} · Edge ${fmtEdge(sign*d.raw)}<br>${Math.round((offense?d.p:1-d.p)*100)}% duel win chance${Math.abs(d.raw)>=3?' · at probability limit':''}</small>`;
-}
 function readHTML(){
   if(!req||req.kind!=='snap'){clearGlow();return''}
   if(!sel.play){clearGlow();return`<div class="box"><h3>The read</h3><div class="mini">Pick a play card. Drag it onto the field, or tap it and hit SNAP.</div></div>`}
   const tactics=sel.tac.map(i=>req.options.tactics.find(t=>t.slot===i)?.id).filter(Boolean);
-  const pv=B.preview(b,req.side,{play:sel.play,tactics});if(!pv)return'';
+  const pv=B.preview(b,req.side,snapChoice(tactics));if(!pv)return'';
   // Precise forecasts and matchup colors also reveal the hidden grades. Keep the read honest under fog.
   if(fogSpread()){
     clearGlow();
     const duels=req.role==='off'?pv.snap.duels:pv.vs.slice().sort((a,c)=>c.weight-a.weight)[0]?.snap.duels||[];
     const side=b.user==='home'?'away':'home';
-    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}%: scout them to sharpen the matchup. Exact forecasts are unavailable.</div>
+    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}% (from your coordinators and head coach). Exact forecasts are unavailable.</div>
       ${duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} vs ${esc(d.defNames.join(' & '))}<br>Opponent grade ${esc(fogGrade(req.role==='off'?d.defGrade:d.offGrade,(req.role==='off'?d.defNames:d.offNames)[0],side).text)}</span><span class="chip fogchip">?</span></div>`).join('')}</div>`;
   }
   if(req.role==='off'){
     fieldGlow(pv.snap.duels,true);
-    const bonus=pv.snap.duels.flatMap(d=>d.mods.filter(m=>m.src!=='Play design').map(m=>({...m,k:d.key})));
-    return`<div class="box"><h3>The read</h3><div class="mini">Estimate from the visible look; hidden adjustments can change it.</div>${DYN&&fogSpread()?`<div class="mini" style="color:#9fe3ff">Film confidence ${DYN.scouting.confidence}%: their ratings are ranges. Scout them to sharpen.</div>`:''}<div class="exp">${pv.ev.yards.toFixed(1)}<small>yds estimated</small></div>
+    // Each duel as the same stacked sum the replay shows, projected from the visible look (fogged reads return above).
+    return`<div class="box"><h3>The read</h3><div class="mini">Projection from the visible look; hidden adjustments can change it.</div><div class="exp">${pv.ev.yards.toFixed(1)}<small>yds estimated</small></div>
       <div class="kpis"><span>1ST DOWN <b>${Math.round(pv.ev.first*100)}%</b></span><span>TURNOVER <b>${(pv.ev.turnover*100).toFixed(0)}%</b></span></div>
-      ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}${(()=>{const dside=req.side===b.user?(b.user==='home'?'away':'home'):b.user,fg=fogGrade(d.defGrade,d.defNames[0],dside);return fg.fog?` <span class="muted">(${fg.text})</span>`:''})()}${duelMath(d)}</span><span class="chip ${d.chip}${fogSpread()&&DYN?' fogchip':''}">${d.chip}${fogSpread()&&DYN?'?':''}</span></div>`).join('')}
-      ${bonus.length?`<div class="bonus">${bonus.map(m=>`<span class="${m.v<0?'neg':''}">${m.k} ${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>`:''}</div>`;
+      ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}</span><span class="chip ${d.chip}">${d.chip}</span></div><div class="read-sum">${duelSumHTML(d,{offSide:req.side,defSide:req.side==='home'?'away':'home'},true)}</div>`).join('')}</div>`;
   }
   const rows=pv.vs.sort((a,c)=>c.weight-a.weight);fieldGlow(rows[0]?.snap.duels,false);
   const avg=rows.reduce((s,v)=>s+v.weight*v.ev.yards,0);
   return`<div class="box"><h3>The read</h3><div class="exp">${avg.toFixed(1)}<small>yds allowed</small></div>
     ${rows.map(v=>`<div class="drow"><span class="k">${Math.round(v.weight*100)}</span><span class="n"><b>If ${esc(v.family)}</b><br>${v.snap.duels.map(d=>`${d.key} <span class="chip ${D.chip(Math.max(-3,Math.min(3,-d.margin)))}" style="font-size:10px;padding:1px 5px">${D.chip(Math.max(-3,Math.min(3,-d.margin)))}</span>`).join(' ')}</span><span class="cond">${v.ev.yards.toFixed(1)}</span></div>`).join('')}</div>`;
 }
+function snapChoice(tactics){
+  return {play:sel.play,tactics,read:readMode,...(sel.target?{target:sel.target}:{}),...(sel.bracketRole&&tactics.includes('bracket')?{bracketRole:sel.bracketRole}:{})};
+}
+function selectedTactics(){return sel.tac.map(slot=>req.options.tactics.find(t=>t.slot===slot)?.id).filter(Boolean)}
+function choosePlay(id){if(sel.play!==id){delete sel.target;delete sel.bracketRole}sel.play=id;err=''}
+function matchupHTML(){
+  clearGlow();
+  const card=req.role==='off'?D.PLAYS[sel.play]:D.CALLS[sel.play];
+  if(!card||card.quickKick||card.id==='spike')return '';
+  const tactics=selectedTactics(),choice=snapChoice(tactics),pv=B.preview(b,req.side,choice);
+  const likely=pv?.vs?.slice().sort((a,c)=>c.weight-a.weight)[0],snap=pv?.snap||likely?.snap;
+  if(!snap?.duels?.length)return '';
+  const off=req.role==='off',fog=fogSpread(),gate=snap.duels[0];
+  const d=!fog&&gate.p<.5?gate:snap.duels.find(d=>d.key==='K')||gate;
+  const pct=duel=>Math.round(100*(off?duel.p:1-duel.p));
+  const label={G:'Gate',K:'Key',F:'Finish'}[d.key];
+  fieldGlow(snap.duels,off);
+  const roles=new Set([...d.offRoles.map(role=>'o:'+role),...d.defRoles.map(role=>'d:'+role)]);
+  for(const [key,el] of Object.entries(layer.dots||{}))el.classList.toggle('dim',!roles.has(key));
+  const path=off&&window.SliceCards.routeFor(card);
+  if(path){
+    const f=formation(req.situation);
+    if(f){
+      // The chalk face faces up; the field faces the opponent's end zone.
+      let across=6,offset=-34;
+      if(sel.target&&sel.target!==card.target){
+        const from=f.dots['o:'+card.target],to=f.dots['o:'+sel.target];
+        if(from&&to){across=(from.y-MIDY)*(to.y-MIDY)<0?-6:6;offset=to.y-(from.y+34)*across/6}
+      }
+      layer.route=mk('path',{d:path,fill:'none',stroke:'#ffe066','stroke-width':.8,'stroke-dasharray':'2 1',
+        transform:`matrix(0 ${across} ${-7*f.dir} 0 ${f.los+238*f.dir} ${offset})`},svg);
+      svg.insertBefore(layer.route,layer.players);
+    }
+  }
+  const spot=req.situation,center=X(absOf(spot.field,spot.possession))+(spot.possession==='home'?90:-90);
+  svg.setAttribute('viewBox',`${Math.max(0,Math.min(530,center-335))} 0 670 533`);
+  const locator=$('#fieldLocator');locator.hidden=false;
+  locator.querySelector('b').style.left=absOf(spot.field,spot.possession)+'%';
+  locator.querySelector('i').style.left=absOf(Math.min(100,spot.field+spot.distance),spot.possession)+'%';
+  let detail=fog?'Opponent grades uncertain':pct(d)+'% estimated duel win';
+  if(!fog&&tactics.length){
+    const plain=B.preview(b,req.side,{...choice,tactics:[],bracketRole:undefined});
+    const before=(plain?.snap||plain?.vs?.find(v=>v.family===likely?.family)?.snap)?.duels.find(row=>row.key===d.key);
+    if(before){const diff=pct(d)-pct(before);detail+=' · '+(diff>0?'+':'')+diff+' pts from selected tactics'}
+  }
+  return `<div class="quick-matchup"><b>${esc(label)} · ${esc(d.label)}${likely?' vs '+esc(likely.family):''}</b><span>${esc(d.offNames.join(' & '))} vs ${esc(d.defNames.join(' & '))}</span><small>${esc(detail)}</small></div>`;
+}
+function assignmentHTML(){
+  const off=req.role==='off',line=teamOf(off?req.side:(req.side==='home'?'away':'home')).lineup.off;
+  const options=off?(sel.play&&R.targetOptions?.(D.PLAYS[sel.play],line)):selectedTactics().includes('bracket')&&(B.bracketOptions||R.bracketOptions)?.(line);
+  if(!options||options.length<2)return '';
+  const key=off?'target':'bracketRole',fallback=off?D.PLAYS[sel.play].target:'';
+  return `<label class="assignment">${off?'Primary target':'Bracket assignment'} <select data-assignment="${key}">${off?'':'<option value="">Best receiver</option>'}${options.map(o=>`<option value="${esc(o.role)}" ${(sel[key]||fallback)===o.role?'selected':''}>${esc(o.name)} · ${esc(o.role)}${o.defRole?' vs '+esc(o.defRole):''}</option>`).join('')}</select></label>`;
+}
+function bindAssignment(root){
+  const el=root.querySelector('[data-assignment]');if(!el)return;
+  el.onchange=()=>{
+    sel[el.dataset.assignment]=el.value;
+    const play=req.options.plays.find(p=>p.id===sel.play);
+    const removed=req.options.tactics.filter(t=>sel.tac.includes(t.slot)&&tacticBlock(t,play));
+    sel.tac=sel.tac.filter(slot=>!removed.some(t=>t.slot===slot));
+    err=removed.length?'Removed incompatible tactics: '+removed.map(t=>t.card.name).join(', '):'';
+    refresh();root.querySelector('[data-assignment]')?.focus({preventScroll:true});
+  };
+}
 function tacticNoteHTML(quick=false){
   if(!sel.play||req?.kind!=='snap')return '';
-  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac);
-  if(!note)return '<p class="call-tactic-note">No clear pairing. Keep your Command for the next call.</p>';
-  const rest=sel.tac.slice(1).map(i=>req.options.tactics.find(t=>t.slot===i)?.card.name).filter(Boolean);
-  return `<p class="call-tactic-note"><b>${note.selected?'Selected':'Pair with'}: ${esc(note.name)} · ${note.cost} CMD</b> · ${esc(note.reason)}${rest.length?' Also selected: '+rest.map(esc).join(', ')+'.':''}${quick?' <small>Tactics: Full call sheet.</small>':''}</p>`;
+  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac,sel.target);
+  if(!note)return '<p class="call-tactic-note">Hold Command for the next call.</p>';
+  const hand=req.options.tactics,slot=note.selected?sel.tac[0]:hand.find(t=>t.id===note.id)?.slot;
+  const rest=sel.tac.slice(1).map(i=>hand.find(t=>t.slot===i)?.card.name).filter(Boolean);
+  const action=quick&&slot!=null?`<button class="tbtn" type="button" data-tactic-slot="${slot}" ${hand.find(t=>t.slot===slot)?.card.info?'':'aria-pressed="'+note.selected+'"'}>${note.selected?'Remove':hand.find(t=>t.slot===slot)?.card.info?'Play now':'Add tactic'} · ${esc(note.name)} · ${note.cost} CMD</button>`:'';
+  return `<div class="call-tactic-note">${action||`<b>${note.selected?'Selected':'Pair with'}: ${esc(note.name)} · ${note.cost} CMD</b>`} <span>${esc(note.reason)}${rest.length?' Also selected: '+rest.map(esc).join(', ')+'.':''}</span></div>`;
 }
 function coachingHTML(){
   const cues=B.coachingRead(req,sel.play);
@@ -323,6 +403,8 @@ function backfieldHTML(){
 function personnelHTML(){
   if(req?.kind!=='snap'||req.role!=='off'||!B.GROUPINGS)return'';
   const mode=b.grouping?.[req.side]||'auto',now=B.groupingFor(b,req.side);
+  const packages=B.groupingOptions?.(b,req.side);
+  if(packages)return `<div class="box"><h3><label for="personnel">Personnel</label></h3><select id="personnel" class="tbtn">${packages.map(p=>`<option value="${esc(p.id)}" ${p.id===mode?'selected':''} ${p.available===false?'disabled':''}>${esc(p.name)}${p.available===false?' · unavailable':''}</option>`).join('')}</select><p class="mini">${esc(packages.find(p=>p.id===mode)?.detail||'')}</p></div>`;
   return`<div class="box"><h3><label for="personnel">Personnel</label></h3><select id="personnel" class="tbtn" style="width:100%">${Object.entries(B.GROUPINGS).map(([id,name])=>`<option value="${id}" ${id===mode?'selected':''}>${esc(name)}${id==='auto'?` (now ${now})`:''}</option>`).join('')}</select><div class="mini">12/21: run +½ unless they load the box, receivers −½. 10: receivers +½ against one deep safety, run −½.</div></div>`;
 }
 function lastSnapHTML(){
@@ -344,7 +426,7 @@ function setupReceipt(e){
 }
 function matchupStoryHTML(e){
   const note=B.matchupStory(e);if(!note)return'';
-  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Scout them to sharpen your matchup read.':note.detail))}</span>`;
+  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Their grades are ranges at your film confidence.':note.detail))}</span>`;
 }
 function showMatchupStory(e){
   let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
@@ -356,23 +438,42 @@ function guidedDriveHTML(){
   if(!b?.guidedDrive?.active)return'';
   return`<section class="box" id="guidedDrive"><h3>Your opening drive</h3><p class="mini">You call every offensive snap on this drive. Your normal pace returns afterward.</p><details><summary>Why might this play fit?</summary><p class="mini">${esc(O.hint(req,sel.play))}</p></details><button class="tbtn" id="finishGuide">Finish guided drive</button></section>`;
 }
+function bindGuide(root){
+  const finish=root.querySelector('#finishGuide');if(!finish)return;
+  finish.onclick=()=>{if(busy)return;O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();refresh();$('#sheetToggle').focus()};
+}
 function adaptationHTML(){
   const clue=B.adaptationRead(b,req);if(!clue)return'';
   return`<section class="box" id="opponentAdjustment"><h3>Opponent adjustment</h3><p class="mini">${esc(clue.summary)}</p><details><summary>Your possible answer</summary><p class="mini">${esc(clue.detail)}${clue.counterPlay?` Try ${esc(D.PLAYS[clue.counterPlay]?.name||clue.counterPlay)} from your hand.`:''}</p></details></section>`;
 }
+// The one snap that decided it, with the duel that won it. The same text is recorded on the dynasty's game
+// archive, so This Week's Last Final card shows the identical line.
+function deciderHTML(){
+  let t='';try{t=B.decidingMoments(b)[0]||''}catch(e){}
+  return t?`<section class="box" id="decidingSnap" style="text-align:left"><h3>Deciding snap</h3><p>${esc(t)}</p></section>`:'';
+}
+// After a loss, one evidence-backed swap the coach can stage in the deck editor. Nothing changes until Save.
+function lossSwapFor(note){
+  const opp=b.user==='home'?'away':'home',lost=b.game?.score&&b.game.score[b.user]<b.game.score[opp];
+  return lost&&note?P.lossSwap(save.playbook,note):null;
+}
 function takeawayHTML(){
   const note=B.postgameTakeaway(b);if(!note)return'';
-  return`<section class="box" id="filmTakeaway" style="text-align:left"><h3>One takeaway</h3><p>${esc(note.summary)}</p><p class="mini">${esc(note.evidence)}</p><details><summary>Optional adjustment</summary><p class="mini">${esc(note.recommendation)}</p><button class="tbtn" data-film-deck>Review your deck</button><p class="mini">Nothing changes unless you choose and save an adjustment.</p></details></section>`;
+  const swap=lossSwapFor(note);
+  return`<section class="box" id="filmTakeaway" style="text-align:left"><h3>One takeaway</h3><p>${esc(note.summary)}</p><p class="mini">${esc(note.evidence)}</p><details><summary>Optional adjustment</summary><p class="mini">${esc(note.recommendation)}</p>${swap?`<button class="tbtn" data-film-swap>Stage swap: −1 ${esc(swap.removeName)}, +1 ${esc(swap.addName)}</button> `:''}<button class="tbtn" data-film-deck>Review your deck</button><p class="mini">Nothing changes unless you choose and save an adjustment.</p></details></section>`;
 }
 function renderSide(){
-  if(req?.kind==='snap'&&!fullSheet){clearGlow();$('#side').replaceChildren();return}
+  if(req?.kind==='snap'&&!fullSheet){$('#side').replaceChildren();return}
   const pb=save.playbook;
-  const ur=DYN?DYN.record:(save.world.userRecord||pb.record);
+  const ur=DYN?DYN.record:(save.world.userRecord||pb.record),opponent=teamOf(b.user==='away'?'home':'away');
   $('#side').innerHTML=guidedDriveHTML()+adaptationHTML()+backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
-   <div class="mini">vs ${esc(teamOf('away').name)} · ${esc(teamOf('away').coach.name)}</div>
-   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='moments'?'key moments':'all'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
-  const finish=$('#finishGuide');if(finish)finish.onclick=()=>{if(busy)return;O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();renderSide()};
-  const personnel=$('#personnel');if(personnel)personnel.onchange=()=>{if(busy)return;try{B.setGrouping(b,req.side,personnel.value);writeSave();renderSide()}catch(e){err=e.message;renderHand()}};
+   <div class="mini">vs ${esc(opponent.name)} · ${esc(opponent.coach.name)}</div>
+   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='all'?'all':'key moments'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button><button class="tbtn" id="bSim">Sim to end</button></div></div>`;
+  bindGuide($('#side'));
+  if(req?.kind==='snap'&&sel.play){
+    const featured=matchupHTML();if(featured)$('#coachingRead')?.insertAdjacentHTML('afterbegin',featured);
+  }
+  const personnel=$('#personnel');if(personnel)personnel.onchange=()=>{if(busy)return;try{req=B.setGrouping(b,req.side,personnel.value)||b.pending;sel={play:null,tac:[]};writeSave();setFormation(sitNow(),0);refresh();$('#personnel')?.focus({preventScroll:true})}catch(e){err=e.message;renderHand()}};
   const backfield=$('#backfield');if(backfield)backfield.onchange=()=>{
     if(busy)return;
     try{req=B.setBackfield(b,req.side,backfield.value);writeSave();sel={play:null,tac:[]};err='';hideTip();const f=formation(sitNow());if(f)ensureDots(f);refresh()}catch(e){err=e.message;renderHand()}
@@ -380,8 +481,8 @@ function renderSide(){
   $('#bHelp').onclick=()=>howToPlay();
   $('#bFast').onclick=()=>{save.settings.fast=!save.settings.fast;FX.speed=save.settings.fast?.45:1;writeSave();renderSide()};
   $('#bSound').onclick=()=>{save.settings.sound=!save.settings.sound;S.on=save.settings.sound;writeSave();renderSide()};
-  $('#bReplay').onclick=()=>{save.settings.replays=save.settings.replays==='moments'?'all':'moments';writeSave();renderSide()};
-  $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';renderSide()};
+  $('#bReplay').onclick=()=>{save.settings.replays=save.settings.replays==='all'?'moments':'all';writeSave();renderSide()};
+  $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';save.settings.readMode=readMode;writeSave();renderSide()};
   $('#bSim').onclick=()=>{if(busy)return;if(b.guidedDrive?.active){O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false}b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
 }
 
@@ -413,10 +514,15 @@ function renderLook(){
 function selCost(){const o=req.options,p=o.plays.find(x=>x.id===sel.play);return(p?p.cost:0)+sel.tac.reduce((s,i)=>s+(o.tactics.find(t=>t.slot===i)?.cost||0),0)}
 function tacticBlock(t,play){
   const lineup=teamOf(req.side).lineup[req.role];
-  return R.signatureBlocked(t.card,lineup)||(req.role==='off'&&!t.card.info&&play?R.tacticBlocked(t.card,play.card,lineup):null);
+  return R.signatureBlocked(t.card,lineup)||(req.role==='off'&&!t.card.info&&play?R.tacticBlocked(t.card,R.targetedPlay?.(play.card,sel.target,lineup)||play.card,lineup):null);
 }
 function blockedSelection(play){
   return req.options.tactics.find(t=>sel.tac.includes(t.slot)&&tacticBlock(t,play));
+}
+// Once staff snaps have run since the coach's last call, the ticker no longer shows it: pin one line on the board.
+function pinnedCallHTML(){
+  const c=B.lastUserCall(b);if(!c||c.since<1)return'';
+  return`<p class="pinned-call" id="pinnedCall"><span>Your last call${c.since?` · ${c.since} snap${c.since===1?'':'s'} ago`:''}</span> <b>${esc(c.name)} · ${esc(c.result)}</b>${c.summary?` <em class="${c.won?'won':'lost'}">${esc(c.summary)}</em>`:''}</p>`;
 }
 function quickSheetHTML(view){
   const opt=req.options,selected=opt.plays.find(p=>p.id===sel.play),cost=selCost();
@@ -427,19 +533,22 @@ function quickSheetHTML(view){
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   return `<div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
-    <p id="quickClue">${esc(view.clue)}</p>
+    ${pinnedCallHTML()}<p id="quickClue">${esc(view.clue)}</p>
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
-    ${tacticNoteHTML(true)}
+    ${assignmentHTML()}${matchupHTML()}${tacticNoteHTML(true)}
     <div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
-    ${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
+    ${guidedDriveHTML()}${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
 }
 function renderQuickHand(h){
-  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req));
+  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req,sel));
+  {const story=$('#matchupStory');if(story&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
   for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
     if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
-    S.init();sel.play=id;err='';S.tick(6);renderQuickHand(h);
+    S.init();choosePlay(id);S.tick(6);renderQuickHand(h);
     if(wasFocused)[...h.querySelectorAll('[data-quick-call]')].find(c=>c.dataset.quickCall===id)?.focus({preventScroll:true});
   };
+  bindAssignment(h);bindGuide(h);
+  const pair=h.querySelector('[data-tactic-slot]');if(pair)pair.onclick=()=>{const t=req.options.tactics.find(t=>t.slot===Number(pair.dataset.tacticSlot));if(t)tacticClick(t,tacticBlock(t,req.options.plays.find(p=>p.id===sel.play)))};
   $('#snapBtn').onclick=snap;
   $('#autoBtn').onclick=()=>{if(!busy){S.whoosh();go({type:'auto'})}};
   h.classList.remove('away');
@@ -447,6 +556,7 @@ function renderQuickHand(h){
 function renderHand(){
   const h=$('#hand'),live=req?.kind==='snap';
   $('#root').classList.toggle('quick-snap',live&&!fullSheet);
+  h.inert=!live;$('#battleSettings').hidden=!live;
   const toggle=$('#sheetToggle');toggle.hidden=!live;toggle.textContent=fullSheet?'Quick calls':'Full call sheet';toggle.setAttribute('aria-expanded',String(live&&fullSheet));
   if(!live){h.classList.add('away');return}
   if(!fullSheet){renderQuickHand(h);return}
@@ -466,7 +576,7 @@ function renderHand(){
   const cost=selCost(),total=Math.max(D.RULES.seriesCommand,o.command);
   let coins='';for(let i=0;i<total;i++){const gone=i>=o.command,spend=!gone&&i>=o.command-cost;coins+=`<span class="coin ${gone?'gone':''} ${spend?'spend':''}"></span>`}
   const over=cost>o.command,why=play&&(play.blocked||blockedSelection(play));
-  cmd.innerHTML=`<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
+  cmd.innerHTML=`${sel.play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}</strong>`:''}${assignmentHTML()}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
     <button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
@@ -474,10 +584,10 @@ function renderHand(){
     const el=card(t.id,{cost:t.cost,selected,blocked:!!why&&!selected,why:selected&&why?'Remove: '+why:why});
     if(!t.card.info)el.setAttribute('aria-pressed',String(selected));
     const n=o.tactics.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*5}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);
-    el.onclick=()=>tacticClick(t,why);fanT.appendChild(el);
+    el.dataset.tacticSlot=t.slot;el.onclick=()=>tacticClick(t,why);fanT.appendChild(el);
   });
   if(!o.tactics.length)fanT.insertAdjacentHTML('beforeend','<div class="mini" style="padding:40px 10px">Hand empty this series</div>');
-  h.append(fanP,cmd,fanT);
+  h.append(fanP,cmd,fanT);bindAssignment(h);
   if(err)h.insertAdjacentHTML('beforeend',`<div class="err">${esc(err)}</div>`);
   $('#snapBtn').onclick=()=>snap();
   $('#autoBtn').onclick=()=>{S.whoosh();go({type:'auto'})};
@@ -485,15 +595,17 @@ function renderHand(){
 }
 function tacticClick(t,why){
   if(busy)return;S.init();
+  const hadFocus=document.activeElement?.dataset.tacticSlot===String(t.slot);
+  const restore=()=>{if(hadFocus)($('#hand [data-tactic-slot="'+t.slot+'"]')||$('#hand [aria-pressed="true"]')||$('#autoBtn'))?.focus({preventScroll:true})};
   if(t.card.info){
-    if(t.cost>req.options.command){err='Not enough Command.';S.error();renderHand();return}
-    try{const keep=sel.play;req=B.submit(b,{type:'info',tactic:t.id});writeSave();sel={play:keep,tac:[]};err='';S.chime();FX.shake($('#look'),.4)}catch(e){err=e.message;S.error()}
-    if(req&&req.kind==='snap'){refresh();return}
+    if(t.cost>req.options.command){err='Not enough Command.';S.error();renderHand();restore();return}
+    try{const keep=sel.play,target=sel.target;req=B.submit(b,{type:'info',tactic:t.id});writeSave();sel={play:keep,target,tac:[]};err='';S.chime();FX.shake($('#look'),.4)}catch(e){err=e.message;S.error()}
+    if(req&&req.kind==='snap'){refresh();restore();return}
     go(undefined);return;
   }
   const i=sel.tac.indexOf(t.slot);
-  if(i<0&&why){err=why;S.error();renderHand();return}
-  if(i>=0)sel.tac.splice(i,1);else sel.tac.push(t.slot);err='';S.tick(sel.tac.length*3);refresh();
+  if(i<0&&why){err=why;S.error();renderHand();restore();return}
+  if(i>=0)sel.tac.splice(i,1);else sel.tac.push(t.slot);err='';S.tick(sel.tac.length*3);refresh();restore();
 }
 function wirePlayCard(el,p){
   let start=null,ghost=null;
@@ -506,10 +618,10 @@ function wirePlayCard(el,p){
   el.addEventListener('pointerup',e=>{
     const wasDrag=!!ghost;if(ghost){ghost.remove();ghost=null;el.style.opacity='';$('#drop').classList.remove('on','hover')}
     if(!start)return;start=null;
-    if(wasDrag){if(overStage(e)){sel.play=p.id;snap()}return}
-    S.init();sel.play=sel.play===p.id?null:p.id;err='';S.tick(6);refresh();
+    if(wasDrag){if(overStage(e)){choosePlay(p.id);snap()}return}
+    S.init();choosePlay(sel.play===p.id?null:p.id);S.tick(6);refresh();
   });
-  el.addEventListener('click',e=>{if(e.detail!==0||busy||p.blocked)return;sel.play=p.id;err='';refresh();[...$('#hand').querySelectorAll('.card')].find(c=>c.dataset.id===p.id)?.focus({preventScroll:true})});
+  el.addEventListener('click',e=>{if(e.detail!==0||busy||p.blocked)return;choosePlay(p.id);refresh();[...$('#hand').querySelectorAll('.card')].find(c=>c.dataset.id===p.id)?.focus({preventScroll:true})});
   el.addEventListener('pointercancel',()=>{if(ghost){ghost.remove();ghost=null;el.style.opacity='';$('#drop').classList.remove('on','hover')}start=null});
 }
 function overStage(e){const r=$('#stage').getBoundingClientRect();return e.clientX>r.left&&e.clientX<r.right&&e.clientY>r.top&&e.clientY<r.bottom-40}
@@ -519,17 +631,66 @@ function snap(){
   const blocked=blockedSelection(req.options.plays.find(p=>p.id===sel.play));
   if(blocked){err='Remove '+blocked.card.name+' in the full sheet or choose a compatible play.';S.error();renderHand();return}
   if(selCost()>req.options.command){err='Not enough Command.';S.error();renderHand();return}
-  S.init();go({type:'call',play:sel.play,tactics,...(readMode==='primary'?{read:'primary'}:{})});
+  S.init();go({type:'call',...snapChoice(tactics)});
 }
 function refresh(){renderLook();renderHand();renderSide()}
 $('#sheetToggle').onclick=()=>{if(busy||req?.kind!=='snap')return;fullSheet=!fullSheet;refresh()};
 
+const preferences=$('#battlePreferences');
+$('#battleSettings').onclick=()=>{
+  if(busy)return;
+  preferences.querySelector('#motionMode').value=save.settings.motion||'system';
+  preferences.querySelector('#replayMode').value=save.settings.replays==='all'?'all':'moments';
+  preferences.querySelector('#fastMode').checked=!!save.settings.fast;
+  preferences.querySelector('#soundMode').checked=save.settings.sound!==false;
+  preferences.querySelector('#readPolicy').value=readMode;
+  preferences.showModal();
+};
+preferences.onchange=()=>{
+  const settings=save.settings;
+  settings.motion=$('#motionMode').value;FX.setMotion(settings.motion);
+  settings.replays=$('#replayMode').value;settings.fast=$('#fastMode').checked;FX.speed=settings.fast?.45:1;
+  settings.sound=$('#soundMode').checked;S.on=settings.sound;
+  settings.readMode=readMode=$('#readPolicy').value;writeSave();refresh();
+};
+$('#settingsHelp').onclick=()=>{preferences.close();howToPlay()};
+preferences.addEventListener('close',()=>{if(!$('#modal').classList.contains('on'))$('#battleSettings').focus({preventScroll:true})});
+
+// The same overlay hosts several game screens. Inert the field only while that overlay is showing.
+const modal=$('#modal');let modalInvoker=null,modalOpen=false;
+new MutationObserver(()=>{
+  const open=modal.classList.contains('on');
+  if(open&&!modalOpen){modalInvoker=document.activeElement;$('#root').inert=true}
+  if(open){
+    const heading=modal.querySelector('.big, h1, h2, h3');
+    modal.setAttribute('aria-label',heading?.textContent.trim()||'Game decision');
+    if(!modal.contains(document.activeElement))modal.focus({preventScroll:true});
+  }else if(modalOpen){
+    $('#root').inert=false;
+    if(modalInvoker?.isConnected&&modalInvoker!==document.body)modalInvoker.focus({preventScroll:true});
+    if(document.activeElement===document.body&&!busy&&!$('#sheetToggle').hidden)$('#sheetToggle').focus({preventScroll:true});
+  }
+  modalOpen=open;
+}).observe(modal,{attributes:true,attributeFilter:['class'],childList:true});
+modal.addEventListener('keydown',ev=>{
+  if(ev.key==='Escape'){
+    const back=modal.querySelector('#gotIt,#back,#toTitle');
+    if(back&&!(back.id==='gotIt'&&modal.querySelector('#guideStart'))){ev.preventDefault();back.click()}
+    return;
+  }
+  if(ev.key!=='Tab')return;
+  const controls=[...modal.querySelectorAll('button:not(:disabled),select:not(:disabled),summary,[tabindex="0"]')].filter(el=>el.getClientRects().length);
+  if(!controls.length){ev.preventDefault();return}
+  if(ev.shiftKey&&(document.activeElement===controls[0]||document.activeElement===modal)){ev.preventDefault();controls.at(-1).focus()}
+  else if(!ev.shiftKey&&document.activeElement===controls.at(-1)){ev.preventDefault();controls[0].focus()}
+});
+
 // ================================================================ flow
 async function go(action){
-  if(busy&&action!==null)return;busy=true;$('#sheetToggle').hidden=true;$('#hand').classList.add('away');err='';
+  if(busy&&action!==null)return;busy=true;$('#sheetToggle').hidden=true;$('#hand').classList.add('away');$('#hand').inert=true;err='';
   try{req=action===undefined||action===null?B.advance(b):B.submit(b,action)}
   catch(e){err=e.message;busy=false;S.error();refresh();return}
-  const story=$('#matchupStory');if(story)story.hidden=true;
+  clearGlow();const story=$('#matchupStory');if(story)story.hidden=true;
   sel={play:null,tac:[]};writeSave();
   await present();
   busy=false;FX.skipping=false;$('#skip').classList.remove('on');
@@ -542,6 +703,7 @@ function guidedDriveDone(){
 function decide(){
   if(O.update(b)){save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();if(req){guidedDriveDone();return}}
   if(!req){finalScreen();return}
+  if(req.kind==='halftime'){halftimeDialog();return}
   if(req.kind==='fourth'){fourthModal();return}
   if(req.kind==='plan'){go({type:'plan',calls:[]});return}
   renderBug();setFormation(sitNow());refresh();
@@ -555,7 +717,7 @@ async function present(){
     if(e.type==='halftime'){ticker('HALFTIME · tendencies cool off, decks reshuffle');await callout('HALFTIME','cool small',900);continue}
     if(e.type==='kick'){await quickKick(e);continue}
     if(e.type!=='snap')continue;
-    if(e.userCalled&&e.duelResults&&(save.settings.replays!=='moments'||e.sit.down>=3||e.sit.field>=80||e.turnover||e.yards>=20))await cinematic(e);else await quick(e);
+    if(!FX.instant&&e.userCalled&&e.duelResults&&(save.settings.replays==='all'||e.sit.down>=3||e.sit.field>=80||e.turnover||e.yards>=20||scored(e)))await cinematic(e);else await quick(e);
   }
   renderBug();
 }
@@ -572,6 +734,7 @@ async function quick(e){
   const good=userOff(e);
   if(td){await callout('TOUCHDOWN',good?'':'bad',1100,teamOf(e.offSide).short);if(good){PT.confetti(90);S.fanfare()}else S.groan()}
   else if(e.turnover){await callout(e.turnover==='interception'?'PICKED OFF':'FUMBLE',good?'bad':'',900);good?S.groan():S.crowd(1,.3)}
+  else if(e.userCalled&&e.after?.down===1&&e.after.possession===e.offSide){await callout('FIRST DOWN','small',500,`${e.yards} yards`)}
   else if(e.kind==='sack'&&!good&&b.control!=='offense'){await callout('SACK','',700)}
   for(const ev of e.events||[])if(ev.side===b.user)await eventCallout(ev);
   await FX.wait(120);
@@ -589,10 +752,31 @@ async function quickKick(e){
 function initials(n){return n.split(' ').map(x=>x[0]).join('')}
 // Scouting fog (Dynasty Lab film confidence): below 82, opponent grades show as a range that always contains the
 // true grade; below 64 the range is wider. Your own players are always exact. The duel math never changes.
-function fogSpread(){const c=DYN?.scouting?.confidence;return c==null||c>=82?0:c>=64?1:2}
+function fogSpread(){return B.filmFog(DYN?.scouting?.confidence).spread}
 function isOpponentSide(side){return!!DYN&&side!==b.user}
+function fogRange(grade,pid,side){
+  const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return null;
+  let h=0;for(const ch of String(pid))h=(h*31+ch.charCodeAt(0))>>>0;const lo=Math.floor(grade)-(h%(sp+1));return{lo,hi:lo+sp+1};
+}
+// The duel as an addition problem: ability + each helping modifier = total, one column per side, totals face off.
+// The fog key matches fighterHTML (the player's name), so a range here equals the range on the fighter card.
+function duelSumHTML(d,e,uo){
+  const sum=B.duelSum(d);if(!sum)return'';
+  const n=v=>Number(v.toFixed(2)).toString();
+  const col=(c,cls,names,pid,side)=>{
+    const fog=fogRange(c.grade,pid,side),plus=c.adds.reduce((t,a)=>t+a.v,0);
+    const ability=fog?`${fog.lo}–${fog.hi}`:n(c.grade),total=fog?`${n(fog.lo+plus)}–${n(fog.hi+plus)}`:n(c.total);
+    return`<div class="dcol ${cls}"><div class="dwho">${esc(names.filter(Boolean).join(' & '))}</div>
+      <div class="add" title="Relevant traits scaled to a matchup grade; card modifiers are added separately."><b>${ability}</b><span>Ability</span></div>
+      ${c.adds.map(a=>`<div class="add"><b>+ ${n(a.v)}</b><span>${esc(fog?a.src.replace(/ \(health \d+\)/g,''):a.src)}</span></div>`).join('')}
+      <div class="dtotal"><b>${total}</b><span>Total</span></div></div>`;
+  };
+  const fogged=!!fogSpread(),mine=uo?sum.edge:-sum.edge,chance=Math.round((uo?d.p:1-d.p)*100);
+  const verdict=fogged?'Their ability is a range at your film confidence, so the edge is uncertain.':`${n(sum.off.total)} vs ${n(sum.def.total)} · your edge ${mine>0?'+':''}${n(mine)} · ${chance}% to win this duel${Math.abs(d.raw)>=3?' (at the limit)':''}`;
+  return`<div class="dsum">${col(sum.off,'o',d.offNames||[],d.offNames?.[0]||'',e.offSide)}<div class="dvs">VS</div>${col(sum.def,'d',d.defNames||[],d.defNames?.[0]||'',e.defSide)}</div><div class="dverdict">${esc(verdict)}</div>`;
+}
 function fogGrade(grade,pid,side){
-  const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return{text:String(Number(grade.toFixed(1))),fog:false};
+  const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return{text:String(Number(grade.toFixed(2))),fog:false};
   let h=0;for(const ch of String(pid))h=(h*31+ch.charCodeAt(0))>>>0;const lo=Math.floor(grade)-(h%(sp+1));
   return{text:`${lo}–${lo+sp+1}`,fog:true};
 }
@@ -616,7 +800,7 @@ async function cinematic(e){
     clash.innerHTML=`<div class="cl"><div class="lab">${slot}${d.label.toUpperCase()===slot?'':' · '+esc(d.label)}</div>
       ${fighterHTML('o',d.offNames,d.offRoles,offLine,d.offGrade,offT.colors[0],e.offSide)}<div class="vs">VS</div>
       ${fighterHTML('d',d.defNames,d.defRoles,defLine,d.defGrade,defT.colors[0],e.defSide)}
-      <div class="clashmath">${duelMath(d,uo)}</div><div class="mods">${d.mods.map(m=>`<span class="${m.src==='Play design'?'design':((m.v>0)===uo?'':'neg')}">${m.v>0?'+':''}${m.v} ${esc(fogSpread()?m.src.replace(/ \(health \d+\)/g,''):m.src)}</span>`).join('')}</div>
+      <div class="clashmath">${duelSumHTML(d,e,uo)}</div>
       <div class="stamp ${userWon?'w':'l'}">${userWon?'WIN':'LOSE'}</div></div>`;
     for(const cv of clash.querySelectorAll('canvas.face')){const lu=cv.dataset.side==='o'?offLine:defLine,pl=Object.values(lu).find(x=>x.id===cv.dataset.pid);if(pl)paintPortrait(cv,pl,(cv.dataset.side==='o'?offT:defT).colors,64)}
     const fo=clash.querySelector('.fighter.o'),fd=clash.querySelector('.fighter.d'),vs=clash.querySelector('.vs');
@@ -625,7 +809,8 @@ async function cinematic(e){
     S.clash();FX.shake(stage,.9);FX.anim($('#flash'),[{opacity:.55},{opacity:0}],180);
     const r=stage.getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+r.height*.42,{n:36,speed:9,colors:['#fff','#ffe066','#ff9a3c']});
     FX.anim(vs,[{transform:'translateX(-50%) scale(2)',opacity:0},{transform:'translateX(-50%) scale(1)',opacity:1}],200);
-    for(const [j,m] of [...clash.querySelectorAll('.mods span')].entries()){await FX.wait(110);S.tick(j*2+4);FX.anim(m,[{opacity:0,transform:'scale(2.2) rotate(-6deg)'},{opacity:1,transform:'none'}],{duration:220,easing:'cubic-bezier(.2,1.6,.4,1)'})}
+    for(const [j,m] of [...clash.querySelectorAll('.dsum .add')].entries()){await FX.wait(110);S.tick(j*2+4);FX.anim(m,[{opacity:0,transform:'translateY(-8px)'},{opacity:1,transform:'none'}],{duration:200,easing:'cubic-bezier(.2,1.6,.4,1)'})}
+    for(const t of clash.querySelectorAll('.dsum .dtotal'))FX.anim(t,[{opacity:0,transform:'scale(1.6)'},{opacity:1,transform:'none'}],{duration:240,easing:'cubic-bezier(.3,1.5,.5,1)'});await FX.wait(200);
     await FX.wait(260);
     const st=clash.querySelector('.stamp');
     if(userWon){S.tone(660,.12,'square',.12);S.tone(990,.18,'square',.1,1,.08)}else S.tone(150,.25,'sawtooth',.14,.6);
@@ -698,11 +883,63 @@ async function bigMoment(text,good,sub){
 }
 
 // ================================================================ fourth down
+function coachingDialog(title,body){
+  const dialog=document.createElement('dialog');
+  dialog.className='coaching-dialog';dialog.setAttribute('aria-labelledby','coachingTitle');
+  dialog.innerHTML=`<h2 id="coachingTitle">${esc(title)}</h2>${body}`;
+  document.body.appendChild(dialog);
+  dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+  dialog.showModal();
+  return dialog;
+}
+function halftimeDialog(){
+  renderBug();setFormation(sitNow());refresh();
+  const r=req,preferred=D.TACTICS[r.suggestion];
+  const evidence=[r.lostProtection?`${r.lostProtection} lost protection Gate${r.lostProtection===1?'':'s'} on offense`:'',
+    r.allowedPasses?`${r.allowedPasses} completion${r.allowedPasses===1?'':'s'} of 10+ yards allowed`:''].filter(Boolean).join(' · ');
+  const dialog=coachingDialog('Halftime adjustment',`
+    ${evidence?`<p class="statline">${esc(evidence)}</p>`:''}
+    <p>Make one adjustment. Feature a personnel package on offense or script an equipped tactic for its unit’s first second-half hand. The tactic replaces one normal draw.</p>
+    ${preferred?`<p>Staff suggestion · <b>${esc(preferred.name)}</b> · ${esc(preferred.text)}</p>`:''}
+    <label>Second-half adjustment <select id="halfTactic"><option value="">Keep the game plan</option>${(r.packages||[]).map(o=>`<option value="package:${esc(o.id)}">${esc(o.name)} personnel</option>`).join('')}${r.options.map(({id,role})=>`<option value="${esc(id)}">${esc(D.TACTICS[id].name)} · ${role==='off'?'offense':'defense'}</option>`).join('')}</select></label><p id="halfDetail" aria-live="polite"></p>
+    <button type="button" class="btn go" id="halfContinue">Start the second half</button>`);
+  const select=dialog.querySelector('select');
+  select.onchange=()=>{
+    const id=select.value,group=r.packages?.find(p=>'package:'+p.id===id);
+    dialog.querySelector('#halfDetail').textContent=group?.detail||D.TACTICS[id]?.text||'';
+  };
+  const finish=id=>{dialog.close();go({type:'halftime',adjustment:id||null})};
+  dialog.querySelector('#halfContinue').onclick=()=>finish(dialog.querySelector('select').value);
+  dialog.oncancel=e=>{e.preventDefault();finish(null)};
+}
+$('#sidelineBtn').onclick=()=>{
+  if(busy)return;
+  const o=B.sidelineOptions(b);if(!o)return;
+  const threat=B.revealedThreat(b,b.game.possession);
+  const dialog=coachingDialog('Sideline instructions',`
+    ${o.tactics.length?`<label>Keep on a first down <select id="keepTactic"><option value="">Draw a fresh hand</option>${o.tactics.map(id=>`<option value="${esc(id)}" ${id===o.keep?'selected':''}>${esc(D.TACTICS[id].name)}</option>`).join('')}</select></label>
+       <p>If this tactic is still in hand when you earn a first down, keep one copy and draw one fewer. A change of possession clears the choice.</p>`:''}
+    ${o.retained?`<p>You carried ${esc(D.TACTICS[o.retained]?.name||o.retained)} into this series.</p>`:''}
+    ${o.late&&o.offense?`<label>Two-minute tempo <select id="clockIntent">${[['normal','Normal snap timing'],['preserve','Hurry to the line · up to 13 seconds'],['drain','Use the play clock · up to 10 extra seconds']].map(([id,label])=>`<option value="${id}" ${id===o.intent?'selected':''}>${label}</option>`).join('')}</select></label><p>Applies to running-clock snaps for the rest of this half. Stoppages and opponent timeouts still apply.</p>`:''}
+    ${o.late?`<label class="timeout-choice"><input type="checkbox" id="clockTimeout" ${o.timeoutNext?'checked':''} ${o.timeouts?'':'disabled'}> Call timeout after this snap if the clock would run · ${o.timeouts} left</label>`:''}
+    ${threat?`<p>Recent film · ${esc(b.personnel[threat.playerId]?.name||'The same player')} gained ${threat.yards} yards on ${threat.count} productive ${esc(D.PLAYS[threat.play].name)} calls.</p>`:''}
+    <div><button type="button" class="btn go" id="sidelineApply">Apply</button> <button type="button" class="btn" id="sidelineCancel">Cancel</button></div>`);
+  dialog.querySelector('#sidelineApply').onclick=()=>{
+    B.setSideline(b,{keep:dialog.querySelector('#keepTactic')?.value||null,
+      intent:dialog.querySelector('#clockIntent')?.value||o.intent,timeoutNext:!!dialog.querySelector('#clockTimeout')?.checked});
+    writeSave();dialog.close();renderBug();
+  };
+  dialog.querySelector('#sidelineCancel').onclick=()=>dialog.close();
+};
 function fourthModal(){
-  renderBug();setFormation(sitNow());refresh();$('#hand').classList.add('away');
+  renderBug();setFormation(sitNow());refresh();$('#hand').classList.add('away');$('#hand').inert=true;
   const r=req,m=$('#modal');
   const lab={go:'GO FOR IT',punt:'PUNT',field_goal:`FIELD GOAL · ${Math.round(r.fgChance*100)}%${r.kicker?.adjust?` (${r.kicker.name?esc(r.kicker.name)+' ':''}${r.kicker.adjust>0?'+':''}${Math.round(r.kicker.adjust*100)}%)`:''}`};
-  m.innerHTML=`<div class="mwrap"><p class="big gold">4TH DOWN</p><p class="statline">${r.situation.distance} to go · staff says <b>${esc(lab[r.recommended]||r.recommended)}</b></p>
+  const last=B.lastCallRecap(b),nth=['','1st','2nd','3rd','4th'][last?.down]||'Last';
+  // Keep the coach's own call in view: this modal opens right after it and would otherwise cover the matchup story.
+  const story=$('#matchupStory');if(story&&last)story.hidden=true; // the recap now carries it; avoid a ghost behind the scrim
+  const recap=last?`<p class="fourth-last" id="lastCall"><span class="eyebrow">Your ${nth}-down call</span><b>${esc(last.name)} · ${esc(last.result)}</b>${last.summary?`<span class="${last.offWon?'won':'lost'}">${esc(last.summary)}</span>`:''}</p>`:'';
+  m.innerHTML=`<div class="mwrap"><p class="big gold">4TH DOWN</p>${recap}<p class="statline">${r.situation.distance} to go · staff says <b>${esc(lab[r.recommended]||r.recommended)}</b></p>
     <div>${r.options.map(o=>`<button class="btn ${o===r.recommended?'go':''}" data-o="${o}">${esc(lab[o])}</button>`).join('')}</div></div>`;
   m.classList.add('on');
   m.querySelectorAll('[data-o]').forEach(el=>el.onclick=()=>{m.classList.remove('on');S.whoosh();go({choice:el.dataset.o})});
@@ -718,7 +955,7 @@ function freezeReward(won){
   return P.freezeGamePack(save.playbook,drawGamePack(won),{key:DYN.seed,year:DYN.season,source:`${DYN.stage?DYN.label:'Week '+DYN.week} vs ${opponent.name}`});
 }
 function breakoutSpec(){
-  const c=b._breakout;return SG.specFor(c.p,{season:DYN?DYN.season:save.world.season,colors:teamOf(b.user).colors,earned:`${c.wins} of ${c.duels} duels won${c.fire?`, caught fire ${c.fire}×`:''} vs ${teamOf(b.user==='home'?'away':'home').short}`});
+  return SG.breakoutCard(b,b.user,b._breakout,{season:DYN?DYN.season:save.world.season,colors:teamOf(b.user).colors});
 }
 // Close the battle and bank the offer in the SAME host save. No currency, automatic pick or week gate.
 function bankAndReturn(){
@@ -780,10 +1017,10 @@ function refreshMilestone(){const box=$('#milestoneReward');if(box){box.outerHTM
 
 function finalScreen(){
   if(b._packPicked){const over=P.overCapacity(save.playbook);if(over)cutScreen(over);else afterPack();return}
-  $('#sheetToggle').hidden=true;$('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
+  $('#sheetToggle').hidden=true;$('#hand').classList.add('away');$('#hand').inert=true;$('#look').innerHTML='';renderBug();
   const won=b.game.score[b.user]>b.game.score[b.user==='home'?'away':'home'];
   if(DYN&&!b._recorded){
-    try{b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b),B.decidingMoments(b))}catch(e){b._saved={ok:false,error:e.message||String(e)}}
+    try{b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b),B.decidingMoments(b),B.callFilm(b))}catch(e){b._saved={ok:false,error:e.message||String(e)}}
     if(!b._saved?.ok){
       const m=$('#modal');m.innerHTML=`<div class="mwrap"><p class="big red">RESULT NOT SAVED</p><p class="statline">${esc(b._saved?.error||'The result could not be recorded.')}</p><p>Your season and card rewards are unchanged. Retry to record this finished game.</p><button class="btn go" id="retryRecord">RETRY SAVE</button><button class="btn" id="leaveUnsaved">RETURN TO DYNASTY</button></div>`;
       m.classList.add('on');$('#retryRecord').onclick=()=>finalScreen();$('#leaveUnsaved').onclick=()=>HOST.close();return;
@@ -814,12 +1051,14 @@ function finalScreen(){
     <p class="statline">${esc(teamOf('home').short)} <b>${b.game.score.home}</b> — <b>${b.game.score.away}</b> ${esc(teamOf('away').short)}${DYN?'':` · record <b>${save.playbook.record.w}-${save.playbook.record.l}</b>`}</p>
     ${DYN?(b._saved?.ok?'<p class="statline" style="color:var(--win)">✓ SAVED TO YOUR SEASON</p>':`<p class="statline" style="color:var(--lose)">NOT SAVED: ${esc(b._saved?.error||'unknown error')}. Your season is unchanged.</p>`):''}
     <div style="margin:14px 0">${top.map(p=>`<div class="statline" style="font-size:16px"><b>${esc(p.name)}</b> ${p.role} · ${esc(line(p))}</div>`).join('')}</div>
-    ${takeawayHTML()}
+    ${deciderHTML()}${takeawayHTML()}
     ${b.rivalry?(DYN?`<p class="statline">RIVALRY ${won?'WON':'LOST'}</p>`:`<div class="trophyWrap ${won?'won':''}">${trophyImg()}<p class="statline">${won?`<b>${esc(trophyName())}</b> ${save.world.trophy.holder==='user'?'stays':'comes'} home`:`${esc(specOf(oppId()).short)} keeps <b>${esc(trophyName())}</b>`}</p></div>`):''}
     ${milestoneHTML()}
     <button class="btn go" id="openPack">${b._breakout&&!b._breakoutResolved?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>${bankButton()}</div>`;
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
+  const swapBtn=m.querySelector('[data-film-swap]');if(swapBtn)swapBtn.onclick=()=>{const swap=lossSwapFor(B.postgameTakeaway(b));if(!swap){swapBtn.remove();return}
+    window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
   const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
   bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
@@ -830,7 +1069,7 @@ async function packScreen(won){
   const pc=pack.type==='title'?['#fff2b0','#8a5a00']:post?['#d8dee9','#2c3448']:pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
   const m=$('#modal');
   m.innerHTML=`<div class="mwrap"><p class="big ${won?'gold':''}" style="font-size:clamp(40px,7vw,80px)">${esc(pack.title.toUpperCase())}</p><p class="statline">${esc(pack.subtitle)}</p>
-    <div class="pack" id="pk" style="--pa:${pc[0]};--pb:${pc[1]}"><div class="pt">${post?post.wrap:pack.type==='rivalry'?'RIVALRY':won?'VICTORY':'FILM<br>STUDY'}</div><div class="ps">TAP TO OPEN</div></div>
+    <button type="button" class="pack" id="pk" aria-label="Open pack" style="--pa:${pc[0]};--pb:${pc[1]}"><div class="pt">${post?post.wrap:pack.type==='rivalry'?'RIVALRY':won?'VICTORY':'FILM<br>STUDY'}</div><div class="ps">TAP TO OPEN</div></button>
     <div class="reveal" id="rv"></div><div id="pkMsg" class="statline"></div><div id="pkBtns">${bankButton()}</div></div>`;
   bindBank();
   const pk=$('#pk');
@@ -899,7 +1138,7 @@ async function choose(pack,slots,i,want){
   slots[i].classList.add('chosen');
   for(const [j,s] of slots.entries()){if(j===i)continue;s.classList.add('burn');const r=s.getBoundingClientRect();S.burn();PT.embers(r.left+r.width/2,r.top+r.height*.7)}
   await FX.wait(1000);
-  const res=P.applyPick(save.playbook,c,{serial:b._gamePack?.serial??save.playbook.packsOpened,stored:dest==='stored'});b._packPicked=true;writeSave();
+  const res=P.applyPick(save.playbook,c,{serial:b._gamePack?.serial??save.playbook.packsOpened,stored:dest==='stored',from:b._gamePack?{pack:b._gamePack.key,source:b._gamePack.source}:null});b._packPicked=true;writeSave();
   if(c.finish)callout(c.finish==='gold'?'GOLD PRINT':'FOIL PRINT','small',900,`${P.cardDef(c.id)?.name||c.id} · a ${c.finish} card for your collection`);
   const def=P.cardDef(c.id);
   $('#pkMsg').innerHTML=`<b>${esc(def.name)}</b> ${dest==='upgrade'?'upgraded.':dest==='stored'?'added to your collection, not your deck.':'added to your deck.'}`;
@@ -1140,7 +1379,7 @@ function scoutingReport(){
 function evolutionScreen(r){
   const pb=save.playbook,m=$('#modal'),from=r.rootId,held=[...pb[r.side].base,...pb[r.side].wrinkles].find(id=>EV.rootOf(id)===from)||from;
   m.innerHTML=`<div class="mwrap"><p class="big gold">EVOLUTION</p>
-    <p class="statline"><b>${esc(P.cardDef(held).name)}</b> has <b>${pb.mastery[from]}</b> reps. Your program has mastered it. <b>Choose its future.</b> This is permanent.</p>
+    <p class="statline"><b>${esc(P.cardDef(held).name)}</b> has <b>${pb.mastery[from]}</b> reps. Your program has mastered it. <b>Choose its future.</b> ${DYN?'One branch can be retrained each offseason.':'This choice is permanent.'}</p>
     <div class="evo"><div class="evoRoot" id="evoRoot"></div></div>
     <div class="branches">${r.options.map(id=>`<div class="branch${r.locks?.[id]?' locked':''}" data-b="${id}" ${r.locks?.[id]?`title="${esc(r.locks[id])}" style="opacity:.55"`:''}><div class="btag">${esc(EV.branchTag(id).toUpperCase())}${r.locks?.[id]?` · 🔒 ${esc(r.locks[id])}`:''}</div></div>`).join('')}</div>${DYN?'<button class="btn" id="deferEvolution">DECIDE LATER IN DECK ROOM</button>':''}</div>`;
   m.classList.add('on');
@@ -1193,7 +1432,7 @@ function dynastyStart(){
   const AD=window.CallSheet.adapter;
   const opp=DYN.oppPlaybook?sanitizePlaybook(DYN.oppPlaybook):null;if(opp)SG.registerAll(opp);
   const deckFor=side=>DYN.userSide===side?P.decksOf(save.playbook):(opp?P.decksOf(opp):null);
-  b=B.create({home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
+  b=B.create({coachingWindows:true,home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
     user:DYN.userSide,mode:save.settings.mode,control:save.settings.control,seed:DYN.seed,weather:DYN.weather||'clear',rivalry:!!DYN.rivalry,conditions:DYN.conditions||null});
   b._trainingRates=DYN.trainingRates||{};
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
@@ -1236,7 +1475,7 @@ function leagueScreen(){
 
 // ================================================================ start
 function resumeBattle(){
-  try{b=B.load(save.activeBattle.battle)}catch(e){err='Could not resume this battle: '+e.message;return}
+  try{b=B.load(save.activeBattle.battle);b.coachingWindows=true}catch(e){err='Could not resume this battle: '+e.message;return}
   for(const side of ['home','away']){
     const roster=DYN?DYN[side]?.roster:Ro.lineupPlayers(side==='home'?save.world?.userLineup:save.world?.programs[oppId()]?.lineup);
     if(roster)Ro.syncBattleUniforms(b,side,roster,DYN?'jerseyNumber':'number');
@@ -1247,7 +1486,7 @@ function resumeBattle(){
 }
 function startGame(){
   const oid=oppId(),me=W.teamFor(save.team,save.playbook,save.world.userLineup),opp=W.teamFor(oid,save.world.programs[oid].playbook,save.world.programs[oid].lineup);
-  b=B.create({home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
+  b=B.create({coachingWindows:true,home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
   if(save.settings.guidedDrivePending)O.start(b);
   setWeather(b.weather);
   seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
@@ -1257,7 +1496,7 @@ function startGame(){
 }
 $('#skip').onclick=()=>{FX.skipping=true};
 $('#stage').addEventListener('click',()=>{if(busy&&$('#skip').classList.contains('on'))FX.skipping=true});
-FX.speed=save.settings.fast?.45:1;S.on=save.settings.sound!==false;
+FX.speed=save.settings.fast?.45:1;S.on=save.settings.sound!==false;FX.setMotion(save.settings.motion||'system');
 PT.mount($('#fx'));
 // Test hook: lets automated checks drive the slice without pixel hunting.
 window.__slice={resumeBattle,seasonEndScreen,signingDayScreen,rosterView,howToPlay,get b(){return b},get req(){return req},get busy(){return busy},save:()=>save,go,startGame,title,evolutionScreen,leagueScreen,breakoutScreen,setWeather,scoutingReport};

@@ -14,7 +14,8 @@ test('guided drive panel offers an explicit exit and optional help',()=>{
 });
 test('postgame takeaway is optional, escapes evidence and never silently edits the deck',()=>{
  const B={postgameTakeaway:()=>({summary:'<edge>',evidence:'3 plays',recommendation:'Try draw',playId:'draw'})};
- const html=run('takeawayHTML',{B,b:{},esc});assert.match(html,/&lt;edge&gt;/);assert.match(html,/3 plays/);assert.match(html,/Optional adjustment/);assert.match(html,/data-film-deck/);
+ const swap={removeName:'Short Pass',addName:'Draw'};
+ const html=run('takeawayHTML',{B,b:{},esc,lossSwapFor:()=>swap});assert.match(html,/data-film-swap/);assert.match(html,/&lt;edge&gt;/);assert.match(html,/3 plays/);assert.match(html,/Optional adjustment/);assert.match(html,/data-film-deck/);
  assert.equal(run('takeawayHTML',{B:{postgameTakeaway:()=>null},b:{},esc}), '');
 });
 test('adaptation panel makes clues readable without declaring a guaranteed counter',()=>{
@@ -49,9 +50,9 @@ test('setup receipt names the actual players and result only for an adjustment t
 test('quick sheet shows only offered calls, escaped public read, costs and optional full-sheet access',()=>{
  const req={role:'off',options:{command:2,plays:[{id:'screen',cost:1,card:{name:'Screen'}},{id:'draw',cost:0,card:{name:'Draw'}}]}};
  const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.'}]};
- const html=run('quickSheetHTML',{req,b:{},sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,tacticNoteHTML:()=>'<p>Pair with a tactic</p>',esc,err:''},[view]);
+ const html=run('quickSheetHTML',{req,b:{},sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',tacticNoteHTML:()=>'<p>Pair with a tactic</p>',esc,err:''},[view]);
  assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);assert.match(html,/Snap.*Screen/i);
- assert.doesNotMatch(html,/data-quick-call="draw"/);assert.match(html,/Pair with a tactic/);
+ assert.match(html,/Your last call/);assert.match(html,/Featured duel/);assert.match(html,/Finish guided drive/);assert.doesNotMatch(html,/data-quick-call="draw"/);assert.match(html,/Pair with a tactic/);
 });
 test('standalone signing day previews the named recruit’s possible signature and matchup without awarding a card',()=>{
  const SG=require('../forks/call-sheet/core/signatures'),D=require('../forks/call-sheet/core/data');

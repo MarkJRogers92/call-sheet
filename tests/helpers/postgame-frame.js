@@ -11,8 +11,8 @@ function postgameFrame(host){
   };
   const doc={querySelector:get,createElement:get,createElementNS:(_,s)=>get(s),addEventListener:noop};
   const window={parent:{__callSheetDynasty:host},CallSheet:{...globalThis.CallSheet,onboarding:require('../../forks/call-sheet/core/onboarding')},
-    SliceCards:{esc:String,card:get,paintPortrait:noop},SliceFX:{reduce:true,sfx:effects,particles:effects,wait:async()=>{},anim:async()=>{}}};
-  vm.runInNewContext(source,{window,document:doc,console,cancelAnimationFrame:noop});
+    SliceCards:{esc:String,card:get,paintPortrait:noop},SliceFX:{setMotion:noop,reduce:true,sfx:effects,particles:effects,wait:async()=>{},anim:async()=>{}}};
+  vm.runInNewContext(source,{window,document:doc,MutationObserver:class{observe(){}},console,cancelAnimationFrame:noop});
   return{get,api:window.__slice};
 }
 module.exports={postgameFrame};

@@ -3,7 +3,7 @@
 //   node forks/call-sheet/tools/bundle.js <output.html>   → a page to open anywhere or publish
 //   require('./bundle.js').bundle({document:true})          → a full document for Dynasty Lab's game-day frame
 'use strict';
-const fs=require('fs'),path=require('path');
+const fs=require('fs'),path=require('path'),crypto=require('crypto');
 const sliceDir=path.join(__dirname,'../slice');
 
 function bundle(opts={}){
@@ -19,7 +19,14 @@ function bundle(opts={}){
   });
   // Images → data URIs.
   body=body.replace(/src="([^"]+\.(webp|png|jpg))"/g,(m,rel,ext)=>`src="data:image/${ext==='jpg'?'jpeg':ext};base64,${fs.readFileSync(path.resolve(sliceDir,rel)).toString('base64')}"`);
-  const head=`<title>Call Sheet</title>\n<meta name="description" content="A college football card battler: call plays, win duels, open packs, evolve your playbook.">\n<style>${style}</style>\n`;
+  // Content identity is usable in a source ZIP or a dirty worktree. Both
+  // entry points embed the same rules, presentation and Dynasty bridge.
+  const hash=crypto.createHash('sha256').update(style).update(body);
+  const root=path.resolve(sliceDir,'../../..');
+  for(const filename of ['card-gameday.js','game-engine-v2-attribution.js','game-engine-v2-lab-integration.js'])hash.update(fs.readFileSync(path.join(root,filename)));
+  const id=hash.digest('hex').slice(0,12);
+  body=body.replace('<small data-battle-build hidden></small>',`<small data-battle-build>Battle build ${id}</small>`);
+  const head=`<meta name="call-sheet-build" content="${id}"><title>Call Sheet</title>\n<meta name="description" content="A college football card battler: call plays, win duels, open packs, evolve your playbook.">\n<style>${style}</style>\n`;
   if(opts.document)return`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">${head}</head><body>${body}</body></html>`;
   return head+body;
 }
@@ -27,6 +34,6 @@ module.exports={bundle};
 
 if(require.main===module){
   const out=process.argv[2];if(!out){console.error('Usage: bundle.js <output.html>');process.exit(1)}
-  const page=bundle();fs.writeFileSync(out,page);
+  const page=bundle({document:true});fs.writeFileSync(out,page);
   console.log(`Wrote ${out} (${(page.length/1024).toFixed(0)} KB)`);
 }

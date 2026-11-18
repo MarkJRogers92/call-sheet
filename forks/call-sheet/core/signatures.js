@@ -122,20 +122,59 @@ function describe(spec){
   b.def.text=base+' '+matchupText;
   return b;
 }
+// How a signature card's matchup lines up with the offense the coach runs. Only offensive cards whose edge or counter
+// names a play or play family depend on the deck; defensive cards and cards keyed to the defense's look depend on the
+// opponent, and say so instead of inventing a fit. Uses only public role/style and the coach's own deck.
+function deckFit(spec,offDeck){
+  const rule=matchupFor(spec);if(!rule)return null;
+  const deckDriven=w=>w&&(w.origin||w.family);
+  if(spec.side==='def'||(!deckDriven(rule.edge.when)&&!deckDriven(rule.counter.when)))
+    return{fit:spec.side==='def'?'opponent':'look',edge:{label:rule.edge.label},counter:{label:rule.counter.label},
+      text:spec.side==='def'?`Depends on what the offense calls, not your deck: better vs ${rule.edge.label}, worse vs ${rule.counter.label}.`:`Depends on the defense's look, not your deck: better vs ${rule.edge.label}, worse vs ${rule.counter.label}.`};
+  const ids=[...(offDeck?.base||[]),...(offDeck?.wrinkles||[])].filter(id=>D.PLAYS[id]);
+  const count=w=>!deckDriven(w)?null:ids.filter(id=>w.origin?id===w.origin||D.PLAYS[id].evolvedFrom===w.origin:D.PLAYS[id].family===w.family).length;
+  const e=count(rule.edge.when),c=count(rule.counter.when);
+  const fit=e===null?(c?'mixed':'neutral'):e>0&&!c?'strong':e>0?'mixed':'weak';
+  const n=(k,label)=>k===null?null:k?`${label} ×${k}`:`no ${label}`;
+  const parts=[n(e,rule.edge.label)&&`${n(e,rule.edge.label)} (its edge)`,n(c,rule.counter.label)&&`${n(c,rule.counter.label)} (its counter)`].filter(Boolean);
+  const lead={strong:'Strong fit with your deck',mixed:'Mixed fit with your deck',weak:'Weak fit with your deck',neutral:'Neutral fit with your deck'}[fit];
+  return{fit,edge:{label:rule.edge.label,count:e},counter:{label:rule.counter.label,count:c},text:`${lead}: ${parts.join(', ')}.`};
+}
 function register(spec){
   const b=describe(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
   table[spec.id]=b.def;D.RARITY[spec.id]='signature';return b;
 }
 function registerAll(pb){for(const s of [...(pb?.signatures||[]),...(pb?.reserveSignatures||[])])register(s)}
+// Keep the grant itself and the latest milestones even after its owner leaves the roster.
+function cardHistory(entries){
+  const rows=Array.isArray(entries)?entries.filter(x=>typeof x==='string'&&x.trim()).map(x=>x.slice(0,260)):[];
+  return rows.length>14?[rows[0],...rows.slice(-13)]:rows;
+}
+function remember(spec,event){
+  const rows=cardHistory(spec.provenance);
+  if(event&&rows.at(-1)!==event)spec.provenance=cardHistory([...rows,event]);
+}
+function breakoutCard(b,side,c,info={}){
+  const opp=side==='home'?'away':'home',name=b.teams[opp].name||b.teams[opp].short;
+  const score=b.game.score,season=info.season,performance=`${c.wins} of ${c.duels} duels won${c.fire?`, caught fire ${c.fire}×`:''}`;
+  const spec=specFor(c.p,{...info,earned:`${performance} vs ${name}`});
+  remember(spec,`${season?season+' · ':''}${b.teams[side].name||b.teams[side].short} ${score[side]}–${score[opp]} ${name}. ${performance}.`);
+  const recap=B.decidingMoments(b)[0];if(recap)remember(spec,'Game recap · '+recap);
+  return spec;
+}
 function specFor(player,info={}){
   const template=templateFor(player),b=build({template,role:player.role,last:lastName(player.name),name:player.name,id:'x'});
   const legacy=info.legacy&&typeof info.legacy==='object'?{playerId:String(info.legacy.playerId),name:String(info.legacy.name||'').slice(0,60),last:String(info.legacy.last||'').slice(0,40),number:info.legacy.number??null}:null;
   const tier=Math.max(0,Math.min(3,Number(info.tier)||0));
   return{id:`${legacy?'leg':'sig'}_${player.id}`,...(legacy?{legacy}:{}),...(tier?{tier}:{}),template,playerId:player.id,name:player.name,last:lastName(player.name),role:player.role,pos:player.pos,archetype:player.archetype,number:player.number,portraitSeed:player.portraitSeed,
-    side:b.side,pile:b.kind==='tactic'?'tactics':'wrinkles',earned:info.earned||'',season:info.season||1,colors:info.colors||null};
+    ...(info.provenance?{provenance:cardHistory(info.provenance)}:{}),side:b.side,pile:b.kind==='tactic'?'tactics':'wrinkles',earned:info.earned||'',season:info.season||1,colors:info.colors||null};
 }
 // Who broke out in this game? A dominant share of his duels, or catching fire again and again.
 // Plus a cooldown: at most one breakout every COOLDOWN games, so a signature card stays an event.
+// The breakout bar, in one place: in a single game, win BREAKOUT.wins+ duels at BREAKOUT.rate or better, or catch fire
+// BREAKOUT.fire times. A program earns at most one new signature every COOLDOWN games.
+const BREAKOUT={wins:15,rate:.8,fire:5};
+function breakoutGoal(){return`Earn it with a breakout game: win ${BREAKOUT.wins}+ duels at ${Math.round(BREAKOUT.rate*100)}% or better, or catch fire ${BREAKOUT.fire} times. A program earns at most one new signature every ${COOLDOWN} games.`}
 function breakouts(b,side){
   const tally=new Map();
   const touch=(p,won)=>{if(!p)return;const t=tally.get(p.id)||{p,wins:0,duels:0,fire:0};t.duels++;if(won)t.wins++;tally.set(p.id,t)};
@@ -147,7 +186,7 @@ function breakouts(b,side){
       if(e.defSide===side)for(const r of d.defRoles)touch(lu.def[r],!won);});
     for(const ev of e.events||[])if(ev.type==='fire'&&ev.side===side){const t=tally.get(ev.id);if(t)t.fire++}
   }
-  return[...tally.values()].filter(t=>t.fire>=5||(t.wins>=15&&t.wins/t.duels>=.8)).map(t=>({...t,score:t.wins+t.fire*4})).sort((a,c)=>c.score-a.score);
+  return[...tally.values()].filter(t=>t.fire>=BREAKOUT.fire||(t.wins>=BREAKOUT.wins&&t.wins/t.duels>=BREAKOUT.rate)).map(t=>({...t,score:t.wins+t.fire*4})).sort((a,c)=>c.score-a.score);
 }
 // The best breakout who doesn't already have a card.
 const COOLDOWN=3;
@@ -164,5 +203,5 @@ function add(pb,spec,replaceIndex){
   return{full:false};
 }
 
-return{SLOTS,COOLDOWN,templateFor,build,buildAny,describe,register,registerAll,specFor,breakouts,candidate,add,lastName};
+return{BREAKOUT,breakoutGoal,deckFit,SLOTS,COOLDOWN,templateFor,build,buildAny,describe,register,registerAll,specFor,cardHistory,remember,breakoutCard,breakouts,candidate,add,lastName};
 });

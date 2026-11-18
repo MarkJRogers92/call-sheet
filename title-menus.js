@@ -115,6 +115,7 @@
       </div>
       <div class="title-about-facts" aria-label="Build information">
         <div><span>VERSION</span><strong data-about-version>${titleVersion()}</strong></div>
+        <div><span>BATTLE BUILD</span><strong data-about-battle-build></strong></div>
         <div><span>UNIVERSE</span><strong>Fictional</strong></div>
         <div><span>SAVES</span><strong>${desktopStorage?'Desktop + JSON':'Browser + JSON'}</strong></div>
       </div>
@@ -140,6 +141,7 @@
       showPanel('titleAboutPanel');
       setStatus(`Dynasty Lab ${titleVersion()} · game and build information.`);
     });
+    panel.querySelector('[data-about-battle-build]').textContent=document.querySelector('meta[name="call-sheet-build"]')?.content||'Development';
     panel.querySelector('[data-title-about-back]')?.addEventListener('click',()=>showPanel());
   }
 

@@ -1,24 +1,41 @@
 // Call Sheet slice: sound, particles, tweens and screen shake. No dependencies.
 (function(root){
 'use strict';
-const reduce=typeof matchMedia==='function'&&matchMedia('(prefers-reduced-motion: reduce)').matches;
-const FX={reduce,speed:1,skipping:false};
+const media=root.matchMedia?.('(prefers-reduced-motion: reduce)');
+const FX={reduce:false,instant:false,speed:1,skipping:false,preference:'system'};
+let hostBody=null;
+try{if(root.parent!==root)hostBody=root.parent.document.body}catch(e){}
+function syncMotion(){
+  FX.instant=FX.preference==='instant';
+  FX.reduce=FX.instant||FX.preference==='reduced'||!!media?.matches||!!hostBody?.classList.contains('motion-reduced');
+  root.document?.documentElement.classList.toggle('motion-reduced',FX.reduce);
+}
+FX.setMotion=mode=>{FX.preference=mode;syncMotion()};
+media?.addEventListener?.('change',syncMotion);
+if(hostBody&&typeof MutationObserver==='function')new MutationObserver(syncMotion).observe(hostBody,{attributes:true,attributeFilter:['class']});
+syncMotion();
 
 // ---------------------------------------------------------------- timing
-FX.wait=ms=>new Promise(r=>setTimeout(r,FX.skipping?0:ms*FX.speed));
+FX.wait=ms=>new Promise(r=>setTimeout(r,FX.skipping||FX.instant?0:ms*FX.speed));
 FX.tween=(ms,fn,ease=t=>t)=>new Promise(res=>{
-  const dur=FX.skipping?0:ms*FX.speed;if(dur<=0){fn(1);res();return}
+  const dur=FX.skipping||FX.reduce?0:ms*FX.speed;if(dur<=0){fn(1);res();return}
   const t0=performance.now();const step=now=>{const t=Math.min(1,(now-t0)/dur);fn(ease(t));if(t<1&&!FX.skipping)requestAnimationFrame(step);else{fn(1);res()}};requestAnimationFrame(step);
 });
 FX.ease={out:t=>1-Math.pow(1-t,3),in:t=>t*t*t,inOut:t=>t<.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2,back:t=>{const c=1.70158;return 1+(c+1)*Math.pow(t-1,3)+c*Math.pow(t-1,2)}};
 FX.anim=(el,frames,opts)=>{
   if(!el)return Promise.resolve();
-  const dur=FX.skipping?1:(typeof opts==='number'?opts:opts.duration)*FX.speed;
+  if(FX.reduce||FX.skipping){
+    const final=frames[frames.length-1];
+    // Keep the final visibility and geometry without playing any entrance or flash.
+    for(const prop of ['opacity','transform','filter'])if(final[prop]!==undefined)el.style[prop]=final[prop];
+    return Promise.resolve();
+  }
+  const dur=(typeof opts==='number'?opts:opts.duration)*FX.speed;
   const a=el.animate(frames,{fill:'forwards',easing:'cubic-bezier(.2,.8,.2,1)',...(typeof opts==='object'?opts:{}),duration:Math.max(1,dur)});
   return a.finished.catch(()=>{});
 };
 FX.shake=(el,power=1)=>{
-  if(reduce||FX.skipping||!el)return;
+  if(FX.reduce||FX.skipping||!el)return;
   const p=8*power,frames=[];for(let i=0;i<8;i++)frames.push({transform:`translate(${(Math.random()*2-1)*p*(1-i/8)}px,${(Math.random()*2-1)*p*(1-i/8)}px)`});frames.push({transform:'none'});
   el.animate(frames,{duration:380+power*80});
 };
@@ -62,7 +79,7 @@ FX.sfx=S;
 const P={canvas:null,ctx:null,parts:[],running:false};
 P.mount=canvas=>{P.canvas=canvas;P.ctx=canvas.getContext('2d');const fit=()=>{canvas.width=innerWidth*devicePixelRatio;canvas.height=innerHeight*devicePixelRatio};fit();addEventListener('resize',fit)};
 P.burst=(x,y,o={})=>{
-  if(reduce||FX.skipping||!P.ctx)return;const n=o.n??40,colors=o.colors||['#f2d34c','#fff6d5','#e08a3c'];
+  if(FX.reduce||FX.skipping||!P.ctx)return;const n=o.n??40,colors=o.colors||['#f2d34c','#fff6d5','#e08a3c'];
   for(let i=0;i<n;i++){
     const a=(o.angle??-Math.PI/2)+(Math.random()-.5)*(o.spread??Math.PI*2),sp=(o.speed??7)*(.4+Math.random());
     P.parts.push({x,y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,g:o.gravity??.18,life:o.life??60+Math.random()*40,age:0,size:(o.size??4)*(.6+Math.random()*.8),

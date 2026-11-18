@@ -71,6 +71,8 @@ test('two coached runs draw a visible run lean; the suggested boot gets the real
  home.coach={...home.coach,film:true};away.coach={...away.coach,discipline:2};
  const b=B.create({home,away,user:'home',control:'both',mode:'snap',seed:'coach-drive-3'});
  B.advance(b);
+ // Keep the tight end on the field so the coach can call the edge-blocking counter.
+ B.setGrouping(b,'home','11');
  for(const play of ['inside_zone','inside_zone'])B.submit(b,{type:'call',play,tactics:[]});
  const view=B.snapDecisions(b);assert.match(view.clue,/leaning on the run/i);
  assert.equal(view.choices[0].id,'pa_boot');assert.ok(view.choices.some(c=>D.PLAYS[c.id].family==='run'),'the coach can still stay on the ground');

@@ -46,21 +46,50 @@ function loadPreset(pb,index){
   const preset=pb.deckPresets?.[index],{data:D,packs:P}=root.CallSheet;
   if(!Number.isInteger(index)||!validPreset(preset))throw new Error('Choose a valid saved preset.');
   const next=copyDeck(pb);P.ensureCollection(next);
+  const changes=[],name=id=>P.cardDef(id)?.name||id;
+  function current(id){
+    const nextId=P.awardedId(pb,id);
+    if(nextId!==id)changes.push(`${name(id)} now uses ${name(nextId)}.`);
+    return nextId;
+  }
   for(const side of ['off','def']){
-    const d=preset[side],table=side==='off'?D.PLAYS:D.CALLS;
-    if(!d||!Array.isArray(d.base)||d.base.length!==4||new Set(d.base).size!==4||d.base.some(id=>!table[id]||table[id].trick||table[id].signature)||!d.base.some(id=>table[id].cost===0&&!table[id].needs))throw new Error('Preset needs four valid base calls, including a free unrestricted call.');
+    const d=copyDeck(preset[side]),table=side==='off'?D.PLAYS:D.CALLS;
+    const baseOK=id=>Object.hasOwn(table,id)&&!table[id].trick&&!table[id].signature;
+    const free=id=>table[id].cost===0&&!table[id].needs;
+    if(d.base.length!==4||new Set(d.base).size!==4||!d.base.every(baseOK)||!d.base.some(free))throw new Error('Preset needs four valid base calls, including a free unrestricted call.');
     for(const pile of ['wrinkles','tactics']){
-      if(!Array.isArray(d[pile])||d[pile].length>pb.capacity[pile])throw new Error('Preset exceeds your current deck capacity.');
+      if(d[pile].length>pb.capacity[pile])throw new Error('Preset exceeds your current deck capacity.');
+      const catalog=pile==='wrinkles'?table:D.TACTICS;
+      if(!d[pile].every(id=>Object.hasOwn(catalog,id)&&catalog[id].side===side&&!catalog[id].signature))throw new Error('A preset card is not available in this catalog.');
       const available=[...(pile==='wrinkles'?pb[side].base:[]),...pb[side][pile],...next.reserve[side][pile]];
-      for(const id of [...(pile==='wrinkles'?d.base:[]),...d[pile]]){
-        const i=available.indexOf(id);if(i<0)throw new Error('A preset card is no longer available. Save a new version after evolutions or roster changes.');available.splice(i,1);
+      const take=id=>{const i=available.indexOf(id);if(i<0)return false;available.splice(i,1);return true};
+      if(pile==='wrinkles'){
+        const requested=d.base.map(current),selected=[];
+        d.base=requested.map(id=>{
+          if(!selected.includes(id)&&take(id)){selected.push(id);return id}
+          return null;
+        });
+        for(const [slot,id] of d.base.entries())if(!id){
+          const needFree=!selected.some(free),choices=available.filter(x=>baseOK(x)&&!selected.includes(x));
+          const replacement=choices.find(x=>!needFree||free(x));
+          if(!replacement)throw new Error('No owned replacement can keep this preset’s four base calls playable.');
+          take(replacement);selected.push(replacement);d.base[slot]=replacement;
+          changes.push(`Base slot ${slot+1} uses ${name(replacement)} in place of ${name(requested[slot])}.`);
+        }
+        if(!d.base.some(free))throw new Error('Choose a free unrestricted base call before loading this preset.');
       }
+      d[pile]=d[pile].map(current).filter(id=>{
+        if(take(id))return true;
+        changes.push(`${name(id)} is unavailable. One ${pile==='wrinkles'?'play':'tactic'} slot is open for an owned replacement.`);return false;
+      });
       next.reserve[side][pile]=available;
     }
-    next[side]=copyDeck(d);
-    if(side==='off'&&!D.canScriptOpener(next.off,next.off.openingScript))delete next.off.openingScript;
+    next[side]=d;
+    if(side==='off'&&d.openingScript){d.openingScript=current(d.openingScript);if(!D.canScriptOpener(d,d.openingScript))delete d.openingScript}
   }
   pb.off=next.off;pb.def=next.def;pb.reserve=next.reserve;
+  return [...new Set(changes)];
+
 }
 function deckAdvice(pb,lineup=null){
   const {data:D,resolver:R}=root.CallSheet,off=lineup?.off||lineup;
@@ -88,6 +117,26 @@ function deckAdvice(pb,lineup=null){
   return{identity:total&&runs/total>=.6?'Run-heavy':total&&runs/total<=.25?'Pass-first':'Balanced',warnings,suggestions:[...new Set(suggestions)].slice(0,3)};
 }
 // Ground the opener in the user's own depth chart. No opponent call, forecast or hidden rating here.
+// The first hand is sampled without replacement. If a legal script misses the
+// hand, the engine substitutes it for the top draw, leaving the other slots intact.
+function firstHandChance(pb,side,id,lineup=null){
+  const {data:D,resolver:R}=root.CallSheet,deck=pb[side],card=D.TACTICS[id]||D.PLAYS[id]||D.CALLS[id];
+  if(!card||card.side!==side||card.special)return 0;
+  if(deck.base.includes(id))return 1;
+  const tactic=!!D.TACTICS[id],pile=tactic?'tactics':'wrinkles';
+  const draws=[...deck[pile],...(pb.signatures||[]).filter(s=>s.side===side&&s.pile===pile).map(s=>s.id)].filter(x=>!D.TACTICS[x]?.special);
+  const n=draws.length,count=draws.filter(x=>x===id).length,hand=Math.min(n,tactic?D.RULES.tacticHand:D.RULES.wrinkleRow);
+  if(!count||!hand)return 0;
+  function allFrom(eligible,total,k){
+    let p=1;for(let i=0;i<k;i++){if(i>=eligible)return 0;p*=(eligible-i)/(total-i)}return p;
+  }
+  const chance=1-allFrom(n-count,n,hand);
+  const opener=deck.openingScript,off=lineup?.off||lineup;
+  if(tactic||side!=='off'||!D.canScriptOpener(deck,opener)||off&&R.playBlocked(D.PLAYS[opener],off))return chance;
+  if(id===opener)return 1;
+  const scripts=draws.filter(x=>x===opener).length;
+  return Math.max(0,chance-count/n*allFrom(n-count-scripts,n-1,hand-1));
+}
 function openingScriptHTML(deck,lineup){
   const {data:D,resolver:R}=root.CallSheet;
   const choices=[...new Set(deck.wrinkles)].filter(id=>D.canScriptOpener(deck,id));
@@ -181,7 +230,8 @@ const EDITOR_CSS=`
 #deckEditor [data-more-options] section,#deckEditor [data-more-options] details{margin:15px 0}#deckEditor [data-more-options] p{margin:7px 0;color:#c4ceda;font-size:14px}#deckEditor [data-more-options] button{margin:5px 0}
 #deckEditor .de-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #354454;background:#171f2a}
 #deckEditor [data-deck-status]{font-size:13px;color:#b4dbce}#deckEditor [data-deck-status][data-error=true]{color:#ffcf9f}
-#deckEditor .de-save-actions{display:flex;gap:7px;flex-shrink:0}#deckEditor [data-save]{background:#ffdb72;color:#251e0e;border-color:#ffdb72}
+#deckEditor .de-family{margin:0 0 10px}#deckEditor .de-family>summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 2px;color:#f4edda}#deckEditor .de-family>summary small{font-weight:400;color:#9fb0c8;margin-left:6px}
+#deckEditor .de-suggest{margin:8px 0 0;padding:8px 11px;border:1px solid #ffdb7299;border-radius:9px;background:#2a2410;color:#f6ecd0;font-size:14px;line-height:1.4}#deckEditor .de-save-actions{display:flex;gap:7px;flex-shrink:0}#deckEditor [data-save]{background:#ffdb72;color:#251e0e;border-color:#ffdb72}
 @media(max-width:650px){#deckEditor{width:calc(100vw - 12px);height:94vh;height:94dvh;border-radius:12px}#deckEditor .de-head,#deckEditor .de-body,#deckEditor .de-foot{padding:12px}
 #deckEditor .de-side-nav button{font-size:13px;padding:6px 8px}#deckEditor .de-type-nav{gap:4px}
 #deckEditor [data-category]{display:grid;justify-content:center;justify-items:center;gap:4px;font-size:12px;padding:6px 2px;min-height:44px}
@@ -191,16 +241,20 @@ const EDITOR_CSS=`
 @media(max-width:720px){#deckEditor button,#deckEditor input,#deckEditor select,#deckEditor [data-side],#deckEditor [data-category]{min-height:44px}#deckEditor summary{display:list-item;min-height:44px;align-content:center}}
 @media(max-width:360px){#deckEditor h2{font-size:20px}#deckEditor .de-top{gap:5px}#deckEditor .de-side-nav{padding:1px}#deckEditor .de-side-nav button{padding:5px}#deckEditor .de-body{scrollbar-gutter:auto}}
 `;
-function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,maxUnusedSignatures=Infinity}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
-  let side='off',category='wrinkles',planKey='';
+  let side='off',category='wrinkles',planKey='',presetChanges=[],repairingPreset=null;
+  // A suggested swap is staged in the draft only; Save keeps it, Cancel discards it with everything else.
+  let staged=null;
+  if(suggest?.remove&&suggest?.add){const deck=draft.off.wrinkles,res=draft.reserve.off.wrinkles,i=deck.indexOf(suggest.remove),j=res.indexOf(suggest.add);
+    if(i>=0&&j>=0){deck.splice(i,1);res.splice(j,1);deck.push(suggest.add);res.push(suggest.remove);staged=suggest}}
   const dialog=document.createElement('dialog');dialog.id='deckEditor';dialog.setAttribute('aria-labelledby','de-title');
   dialog.innerHTML=`<style>${EDITOR_CSS}</style><div class="de-head"><div class="de-top"><div><div class="de-kicker">DECK ROOM</div><h2 id="de-title">Choose your cards</h2></div>
     <div class="de-side-nav" role="group" aria-label="Choose a side"><button type="button" data-side="off">Offense</button><button type="button" data-side="def">Defense</button></div></div>
     <p class="de-intro">Keep 4 base calls on each side. All other slots are optional. Cards you remove stay in your collection.</p>
-    <p class="de-type-legend">IN DECK / LIMIT</p><div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div></div>
+    <p class="de-type-legend">IN DECK / LIMIT</p><div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div>${staged?`<p class="de-suggest" data-suggested-swap><b>Staged from last game:</b> −1 ${esc(staged.removeName||staged.remove)}, +1 ${esc(staged.addName||staged.add)}. ${esc(staged.why||'')} Save deck to keep it, or Cancel to change nothing.</p>`:''}</div>
     <div class="de-body"></div><div class="de-foot"><div data-deck-status role="status" aria-live="polite"></div>
     <div class="de-save-actions"><button type="button" data-cancel>Cancel</button><button type="button" data-save>Save deck</button></div></div>`;
   document.body.appendChild(dialog);
@@ -209,6 +263,17 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
   const cardName=(id)=>P.cardDef(id)?.name||id;
   const titleOf={wrinkles:'Plays',tactics:'Tactics',base:'Base calls',signatures:'Signatures'};
   const categories=Object.keys(titleOf),nounOf={wrinkles:'play',tactics:'tactic',signatures:'signature'};
+  // Plays and calls grouped by family (run, quick, deep...; zone, man, pressure) to shorten the list on a phone. Groups
+  // start collapsed on narrow screens; the choice survives the redraw after each add or remove.
+  const narrow=typeof matchMedia==='function'&&matchMedia('(max-width:600px)').matches,folded=new Set(),touched=new Set();
+  const familyOf=id=>(D.PLAYS[id]||D.CALLS[id])?.family||'other';
+  const FAMILY={run:'Run',quick:'Quick',deep:'Deep',constraint:'Constraint',trick:'Trick',zone:'Zone',man:'Man',pressure:'Pressure',other:'Other'};
+  const familyGroups=(rows,tile)=>{
+    const groups=new Map();for(const r of rows){const f=familyOf(r.id);(groups.get(f)||groups.set(f,[]).get(f)).push(r)}
+    const rank=Object.keys(FAMILY);return [...groups].sort((a,c)=>rank.indexOf(a[0])-rank.indexOf(c[0])).map(([f,list])=>{const key=side+':'+f,open=touched.has(key)?!folded.has(key):!narrow,inDeck=list.reduce((n,r)=>n+r.inDeck,0);
+      return`<details class="de-family" data-family="${esc(key)}" ${open?'open':''}><summary>${esc(FAMILY[f]||f)} <small>${list.length} card${list.length===1?'':'s'} · ${inDeck} in deck</small></summary><div class="de-grid">${list.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div></details>`}).join('');
+  };
+  dialog.addEventListener('toggle',e=>{const d=e.target;if(!d?.matches?.('details.de-family'))return;const key=d.dataset.family;touched.add(key);if(d.open)folded.delete(key);else folded.add(key)},true);
   const cardNames=ids=>{const groups=new Map();ids.forEach(id=>groups.set(id,(groups.get(id)||0)+1));return [...groups].map(([id,n])=>esc(cardName(id))+(n>1?' ×'+n:'')).join(' · ')||'None'};
   const info=id=>{const c=P.cardDef(id);return `<b>${esc(c.name)}</b><small>${c.cost} Command · ${esc(c.family||'Tactic')}</small><p>${esc(cleanText(c.text))}</p>`};
   const tooManyUnusedSignatures=()=>draft.reserveSignatures.length>maxUnusedSignatures;
@@ -235,18 +300,21 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
     const full=g.active>=g.limit,noun=nounOf[category],unused=group[category].stored||0;
     const note=category==='base'?'Exactly 4 different calls, always available. Swap a call below; its old card takes the new card’s place. Keep one free call with no special requirements.':
       shared?`Pick up to ${g.limit} across the whole team. These use no regular slots. You can only play a signature when its player is on the field.`:
-      `Pick up to ${g.limit} ${adjective} ${titleOf[category].toLowerCase()}. Each copy uses one slot. ${category==='wrinkles'?'Extra copies make a play more likely to turn up.':'Tactics support your play. Leave out any copies you don’t want.'}`;
+      `Pick up to ${g.limit} ${adjective} ${titleOf[category].toLowerCase()}. Each copy uses one slot. ${category==='wrinkles'?'Extra copies make a play more likely to turn up.':'A larger pile gives you more options but dilutes each draw.'}`;
     const wrong=invalidDraft();
     const warning=wrong&&wrong.category===category&&(shared||side===wrong.side)?wrong.msg:full&&unused>0&&noun?`All ${g.limit} slots are in use. Remove one ${noun} from the deck before adding another.`:'';
     const help=`<h3 id="de-list-title" tabindex="-1">${heading}</h3><p class="de-sub">${note}</p>${warning?`<p class="de-banner" id="de-limit-note">${esc(warning)}</p>`:''}`;
     function tile(id,inDeck,owned,sg=null){
       const def=P.cardDef(id),baseAlso=category==='wrinkles'&&deck.base.includes(id);
+      const unavailable=sg&&lineup&&root.CallSheet.resolver.signatureBlocked(def,lineup[sg.side]||{});
+      const probability=book=>Math.round(100*firstHandChance(book,sg?.side||side,id,lineup));
+      const access=unavailable?esc(unavailable):def.special?'Special teams · available in its game situation':`First ${(sg?.side||side)==='off'?'offensive':'defensive'} series · saved ${probability(pb)}% → draft ${probability(draft)}%`;
       const edition=[originOf(id,def),D.rarityOf(id)!=='common'&&D.rarityOf(id),draft.finishes?.[id]].filter(Boolean).join(' · ');
       const addDisabled=inDeck>=owned||full,removeDisabled=!inDeck;
       const control=(add,disabled)=>`<button type="button" ${sg?(add?'data-sig-equip':'data-sig-store')+'="'+esc(id)+'"':'data-move="'+(add?'add':'remove')+'"'} aria-label="${add?'Add one':'Remove one'} ${esc(def.name)} ${add?'to':'from'} deck"${disabled?' disabled':''}${add&&full&&warning?' aria-describedby="de-limit-note"':''}>${add?'Add to deck':'Remove from deck'}</button>`;
       return `<article class="de-card" data-owned-card="${esc(id)}" data-selected="${inDeck>0}" tabindex="-1"><div class="de-card-title"><h4>${esc(def.name)}</h4><span data-copy-count title="${owned} owned in this type">${inDeck} of ${owned} in deck</span></div>
         <small>${sg?esc(sg.name)+' · '+esc(sg.role)+' · ':''}${def.cost} Command · ${esc(def.family||'Tactic')}${baseAlso?' · 1 more copy is a base call':''}${edition?' · <span class="de-edition">'+esc(edition)+'</span>':''}</small>
-        <p class="de-text">${esc(cleanText(def.text))}</p><div class="de-card-actions">${control(true,addDisabled)}${control(false,removeDisabled)}</div></article>`;
+        <p class="de-text">${esc(cleanText(def.text))}</p><small data-draw-chance>${access}</small><div class="de-card-actions">${control(true,addDisabled)}${control(false,removeDisabled)}</div></article>`;
     }
     let list='';
     if(category==='base'){
@@ -257,11 +325,11 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
       list=rows.length?`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned,all.find(s=>s.id===r.id))).join('')}</div>`:'<p class="de-banner">No signatures yet. Player breakouts can earn them; you don’t need one to play.</p>';
     }else{
       const rows=ownedRows(deck[category],reserve[category]);
-      list=rows.length?`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div>`:`<p class="de-banner">You don’t own any ${adjective} ${titleOf[category].toLowerCase()} yet. You can still play with your base calls.</p>`;
+      list=rows.length?(category==='wrinkles'?familyGroups(rows,tile):`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div>`):`<p class="de-banner">You don’t own any ${adjective} ${titleOf[category].toLowerCase()} yet. You can still play with your base calls.</p>`;
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
-    body.innerHTML=help+list+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
+    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
     <p>Each series, draw up to ${D.RULES.wrinkleRow} extra plays and ${D.RULES.tacticHand} tactics. Base calls are always available. Special-teams tactics trigger in their own situations instead of being drawn.</p>
     ${side==='off'?openingScriptHTML(deck,lineup):''}
 <details data-plans ${plansOpen?'open':''}><summary>Try a different ${adjective} build</summary>
@@ -274,7 +342,7 @@ ${plan.storageBlock?`<small>This build would leave out more than ${maxStored} ${
 <label>Preset name<input id="deckPresetName" maxlength="40" placeholder="Power run, Balanced, Two-minute…"></label><button type="button" data-preset-save>Save current selections as preset</button>
 <p class="de-muted">Presets include offense and defense. Changes are kept only when you choose Save deck. Reusing a name replaces that preset.</p>
 ${(draft.deckPresets||[]).map((p,i)=>`<div><b>${esc(p.name)}</b> <button type="button" data-preset-load="${i}">Load ${esc(p.name)}</button> <button type="button" data-preset-delete="${i}" aria-label="Delete preset ${esc(p.name)}">Delete</button></div>`).join('')}</details>
-${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}</h3><p class="de-muted">Your practice and game reps earned a permanent upgrade. It takes effect when you save this deck.</p><div class="de-cards">${r.options.map(id=>`<article class="${faceClass(id)}">${originHTML(id)}${info(id)}${r.locks?.[id]?`<small class="de-lock">🔒 ${esc(r.locks[id])}</small><button type="button" disabled>Locked</button>`:`<button type="button" data-evolve="${r.rootId}:${id}">Choose ${esc(P.cardDef(id).name)}</button>`}</article>`).join('')}</div></section>`).join('')}
+${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}</h3><p class="de-muted">Your practice and game reps earned a playbook branch. It takes effect when you save this deck.</p><div class="de-cards">${r.options.map(id=>`<article class="${faceClass(id)}">${originHTML(id)}${info(id)}${r.locks?.[id]?`<small class="de-lock">🔒 ${esc(r.locks[id])}</small><button type="button" disabled>Locked</button>`:`<button type="button" data-evolve="${r.rootId}:${id}">Choose ${esc(P.cardDef(id).name)}</button>`}</article>`).join('')}</div></section>`).join('')}
 
 <details><summary>Achievements · ${draft.achievements.length}/${P.ACHIEVEMENTS.length}</summary>${P.ACHIEVEMENTS.map(a=>`<p><b>${draft.achievements.includes(a.id)?'✓ ':''}${esc(a.name)}</b> — ${esc(a.how)}<small>Reward: ${esc(P.cardDef(a.reward).name)} · added to your collection once</small></p>`).join('')}</details>
 <details><summary>More cards to discover</summary><p class="de-muted">Win or lose, every completed game awards a choice pack. Achievements unlock specific cards. Repeated use evolves plays; player breakouts create signatures.</p><div class="de-cards">${P.POOL.filter(c=>c.side===side&&![...deck.base,...deck.wrinkles,...deck.tactics,...reserve.wrinkles,...reserve.tactics].includes(c.id)).map(c=>`<article class="${faceClass(c.id)}">${originHTML(c.id)}${info(c.id)}<small>${esc(c.rarity)} · Pack reward</small></article>`).join('')}</div></details>
@@ -296,18 +364,19 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
     if(b.hasAttribute('data-side')){side=b.dataset.side;if(category==='signatures')category='wrinkles';planKey='';render({reset:true,focus:at('[data-side',side)});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
     if(b.hasAttribute('data-category')){category=b.dataset.category;render({reset:true,focus:at('[data-category',category)});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
     if(b.hasAttribute('data-cancel')){close();return}
-    if(b.hasAttribute('data-save')){const wrong=invalidDraft();if(wrong){side=wrong.side;category=wrong.category;render({reset:true,focus:'#de-list-title'});status(wrong.msg,true);return}onSave(draft);close();return}
+    if(b.hasAttribute('data-save')){const wrong=invalidDraft();if(wrong){side=wrong.side;category=wrong.category;render({reset:true,focus:'#de-list-title'});status(wrong.msg,true);return}if(repairingPreset&&draft.deckPresets.includes(repairingPreset))savePreset(draft,repairingPreset.name);onSave(draft);close();return}
     const sig=b.hasAttribute('data-sig-store')||b.hasAttribute('data-sig-equip');
     if(b.dataset.move||sig){
       const add=sig?b.hasAttribute('data-sig-equip'):b.dataset.move==='add',id=b.closest('[data-owned-card]').dataset.ownedCard;
+      {const fam=b.closest('details.de-family')?.dataset.family;if(fam){touched.add(fam);folded.delete(fam)}} // keep the card you just changed in view
       act(()=>{if(sig){const from=add?draft.reserveSignatures:draft.signatures,to=add?draft.signatures:draft.reserveSignatures,i=from.findIndex(s=>s.id===id);if(i<0||add&&to.length>=S.SLOTS)throw Error('No signature slot available.');to.push(from.splice(i,1)[0])}
         else{const list=add?draft.reserve[side][category]:draft[side][category];P.moveCard(draft,side,category,list.indexOf(id),add)}},
         `${cardName(id)} ${add?'added to':'removed from'} deck.`,()=>focusCard(id,add?'add':'remove',sig));return;
     }
-    if(b.hasAttribute('data-plan-apply')){const plan=previewPlan(draft,side,planKey,maxStored);if(!plan||plan.storageBlock)return;const name=GAME_PLANS[side][planKey].name;draft[side]=plan.deck;draft.reserve[side]=plan.reserve;planKey='';category='wrinkles';render({reset:true,focus:'#de-list-title'});status(name+' selected. Save deck to keep it.');return}
+    if(b.hasAttribute('data-plan-apply')){const plan=previewPlan(draft,side,planKey,maxStored);if(!plan||plan.storageBlock)return;const name=GAME_PLANS[side][planKey].name;draft[side]=plan.deck;draft.reserve[side]=plan.reserve;planKey='';category='wrinkles';presetChanges=[];repairingPreset=null;render({reset:true,focus:'#de-list-title'});status(name+' selected. Save deck to keep it.');return}
     if(b.hasAttribute('data-preset-save')){act(()=>savePreset(draft,$('#deckPresetName').value),'Preset saved in this draft.',()=>$('[data-preset-save]')?.focus({preventScroll:true}));return}
-    if(b.hasAttribute('data-preset-load')){const i=Number(b.dataset.presetLoad);act(()=>loadPreset(draft,i),'Preset selected.',()=>$(at('[data-preset-load',String(i)))?.focus({preventScroll:true}));return}
-    if(b.hasAttribute('data-preset-delete')){act(()=>draft.deckPresets.splice(Number(b.dataset.presetDelete),1),'Preset removed from this draft.',()=>$('[data-preset-save]')?.focus({preventScroll:true}));return}
+    if(b.hasAttribute('data-preset-load')){const i=Number(b.dataset.presetLoad);act(()=>{presetChanges=loadPreset(draft,i);repairingPreset=presetChanges.length?draft.deckPresets[i]:null},'Preset selected.',()=>$(at('[data-preset-load',String(i)))?.focus({preventScroll:true}));return}
+    if(b.hasAttribute('data-preset-delete')){act(()=>{const [removed]=draft.deckPresets.splice(Number(b.dataset.presetDelete),1);if(removed===repairingPreset){repairingPreset=null;presetChanges=[]}},'Preset removed from this draft.',()=>$('[data-preset-save]')?.focus({preventScroll:true}));return}
     if(b.dataset.evolve){const [from,to]=b.dataset.evolve.split(':');act(()=>root.CallSheet.evolution.evolve(draft,from,to,{lineup}),cardName(to)+' selected. Save deck to keep it.',()=>$('[data-more-options] summary')?.focus({preventScroll:true}));return}
   });
   dialog.addEventListener('change',e=>{
@@ -317,5 +386,5 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
   });
   render();const initialIssue=invalidDraft();status(initialIssue?.msg||'Ready to play.',!!initialIssue);dialog.showModal();return dialog;
 }
-root.CallSheet.playbookUI={openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS};
+root.CallSheet.playbookUI={firstHandChance,openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS};
 })(typeof window==='object'?window:globalThis);

@@ -71,3 +71,19 @@ test('returning a rival card keeps a scripted duplicate, but clears the last cop
   const promoted=pb.off.wrinkles[0];CS.packs.setOpeningScript(pb,promoted);returnOne(pb.off.base[0]);
   assert.ok(pb.off.base.includes(promoted));assert.equal(pb.off.openingScript,undefined);
 });
+
+test('a base coordinator card leaves once and a replacement of the same scheme restores one loan',async()=>{
+  const {cg,u,me,CS}=await setup(988),pb=u.callSheet.playbook,coach=me.staff.OC,dest=u.teams.find(t=>t!==me&&t.staff?.OC);
+  const count=()=>[...pb.off.base,...pb.off.wrinkles,...pb.reserve.off.wrinkles].filter(id=>id==='counter_trey').length;
+  coach.preferredScheme='Ground Pressure';cg.rewards.scheme();
+  CS.packs.setBase(pb,'off',0,'counter_trey');dest.staff.OC=coach;me.staff.OC=null;cg.coachDepartures();
+  assert.equal(count(),0);assert.equal(new Set(pb.off.base).size,4);
+  assert.ok(pb.off.base.some(id=>{const c=CS.packs.cardDef(id);return c.cost===0&&!c.needs}));
+  me.staff.OC={...coach,id:'same-scheme-successor',name:'New Coach'};cg.rewards.scheme();cg.rewards.scheme();assert.equal(count(),1);
+  CS.packs.grantCard(pb,'counter_trey',{kind:'independent'});me.staff.OC=null;cg.coachDepartures();assert.equal(count(),1);
+  assert.equal(u.callSheet.ai[dest.id].off.wrinkles.filter(id=>id==='counter_trey').length,1);
+  me.staff.OC=coach;dest.staff.OC=null;cg.rewards.scheme();cg.rewards.scheme();
+  assert.equal(count(),2,'one independent copy plus the returning loan');
+  assert.ok(!u.callSheet.ai[dest.id].off.wrinkles.includes('counter_trey'));
+
+});

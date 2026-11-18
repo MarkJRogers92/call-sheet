@@ -45,8 +45,9 @@ function normalizeList(list){
     .map(x=>({player:playerRef(x.player||x.p||x),weight:Math.max(.001,Number(x.weight)||1)}))
     .filter(x=>x.player&&x.player.id!=null);
 }
-function normalizeContext(ctx={}){
+function normalizeContext(ctx={},cardGame=false){
   return {
+    cardRoster:cardGame?new Map((ctx.cardRoster||[]).filter(Boolean).map(p=>[String(p.id),playerRef(p)])):null,
     qb:playerRef(ctx.qb),
     rushers:normalizeList(ctx.rushers),
     receivers:normalizeList(ctx.receivers),
@@ -95,6 +96,7 @@ function weightedPick(list,rng,kind='base'){
 function cardActor(result,side,e,key){
   const id=e?.card?.actors?.[key];if(id==null)return null;
   const c=result.contexts[side];
+  const named=c.cardRoster?.get(String(id));if(named)return named;
   for(const p of [c.qb,...c.rushers.map(x=>x.player),...c.receivers.map(x=>x.player),...c.defenders.map(x=>x.player),...c.offensiveLine.map(x=>x.player)])if(p&&String(p.id)===String(id))return p;
   return null;
 }
@@ -120,7 +122,7 @@ function addProtectionBlame(result,offSide,e,rng){
   // sack allowed rather than inventing an individual loss elsewhere on the line.
   // Trust the on-field assignment, not nominal position (a WR may be playing TE).
   const candidates=[...ctx.offensiveLine,...ctx.receivers,...ctx.rushers].map(x=>x.player);
-  const blockers=Array.isArray(ids)?[...new Set(ids.map(String))].map(id=>candidates.find(p=>String(p.id)===id)).filter(Boolean):[];
+  const blockers=Array.isArray(ids)?[...new Set(ids.map(String))].map(id=>ctx.cardRoster?.get(id)||candidates.find(p=>String(p.id)===id)).filter(Boolean):[];
   if(!blockers.length){const p=weightedPick(ctx.offensiveLine,rng,'protect');if(p)blockers.push(p)}
   for(const p of blockers){
     const line=ensureLine(result.lines[offSide],p);
@@ -323,10 +325,11 @@ function attributeGame(state,contexts={}){
   if(!state||state.engine!=='v2'||!Array.isArray(state.events)){
     throw new Error('Attribution requires a Game Engine 2 state.');
   }
+  const cardGame=state.events.some(e=>e.card?.actors);
   const result={
     version:VERSION,
     stateSeed:String(state.seed||state.gameId||'v2'),
-    contexts:{home:normalizeContext(contexts.home),away:normalizeContext(contexts.away)},
+    contexts:{home:normalizeContext(contexts.home,cardGame),away:normalizeContext(contexts.away,cardGame)},
     teamStats:{home:blankTeam(state.score?.home||0),away:blankTeam(state.score?.away||0)},
     lines:{home:new Map(),away:new Map()},
     lastPlay:{home:null,away:null},
@@ -400,6 +403,7 @@ function attributeGame(state,contexts={}){
   if(!result.reconciliation.ok){
     throw new Error(`V2 player attribution reconciliation failed: ${result.reconciliation.errors.join('; ')}`);
   }
+  for(const c of Object.values(result.contexts))delete c.cardRoster;
   delete result.lines;
   delete result.lastPlay;
   return result;

@@ -16,8 +16,8 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 // Shift every trait of a team by d rating points (clamped to the 25–99 scale).
 function shifted(preset,d){
   const t=Ro.preset(preset);
-  for(const side of ['off','def'])for(const p of Object.values(t.lineup[side]))for(const k of Object.keys(p.traits))p.traits[k]=Math.max(25,Math.min(99,p.traits[k]+d));
-  for(const p of t.backfield||[])for(const k of Object.keys(p.traits))p.traits[k]=Math.max(25,Math.min(99,p.traits[k]+d));
+  const players=new Set([...Object.values(t.lineup.off),...Object.values(t.lineup.def),...(t.packageDepth||[]),...(t.backfield||[])]);
+  for(const p of players)for(const k of Object.keys(p.traits))p.traits[k]=Math.max(25,Math.min(99,p.traits[k]+d));
   return t;
 }
 function play(home,away,seed){const b=B.simulate({home,away,seed});return{b,winner:b.game.score.home>b.game.score.away?'home':b.game.score.home<b.game.score.away?'away':null}}

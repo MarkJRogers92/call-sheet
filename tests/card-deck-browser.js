@@ -55,8 +55,23 @@ async function showOptions(page){
   assert.ok(!await page.locator('#side').isVisible(),'full detail does not crowd the default decision');
   const preChoice=await page.evaluate(()=>window.CallSheet.battle.save(window.__slice.b));
   await quick.first().focus();await page.keyboard.press('Enter');assert.equal(await quick.first().getAttribute('aria-pressed'),'true');assert.ok(await quick.first().evaluate(el=>el===document.activeElement));
-  const pair=await page.locator('.quick-board .call-tactic-note').innerText();assert.match(pair,/Pair with|Keep your Command/,'a selected call explains a pairing or why to save Command');
+  const pair=await page.locator('.quick-board .call-tactic-note').innerText();assert.match(pair,/Add tactic|Play now|Hold Command/,'a selected call explains a pairing or why to save Command');
   await page.click('#sheetToggle');assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true');assert.ok(await page.locator('#coachingRead .call-tactic-note').isVisible(),'same guidance in the full sheet');assert.match(await page.textContent('#look'),/Opening script: Screen/i);
+  await page.click('#battleSettings');await page.selectOption('#motionMode','reduced');
+  assert.ok(await page.evaluate(()=>window.SliceFX.reduce&&document.documentElement.classList.contains('motion-reduced')));
+  await page.keyboard.press('Escape');assert.ok(await page.locator('#battleSettings').evaluate(el=>el===document.activeElement));
+  await page.setViewportSize({width:390,height:844});
+  assert.ok(await page.locator('#hand .fan').first().evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+  assert.ok(await page.locator('#root').evaluate(el=>el.scrollWidth<=el.clientWidth+1));
+  const tactic=page.locator('#hand .fan button[data-tactic-slot]:not(.info):not(.blocked)').first();
+  if(await tactic.count()){
+    const slot=await tactic.getAttribute('data-tactic-slot');
+    await tactic.focus();await page.keyboard.press('Enter');
+    const same=page.locator('#hand [data-tactic-slot="'+slot+'"]');
+    assert.equal(await same.getAttribute('aria-pressed'),'true');assert.ok(await same.evaluate(el=>el===document.activeElement));
+    await page.keyboard.press('Enter');assert.equal(await same.getAttribute('aria-pressed'),'false');
+  }
+  await page.setViewportSize({width:1400,height:900});
   assert.equal(await page.evaluate(()=>window.CallSheet.battle.save(window.__slice.b)),preChoice,'picking and inspecting cannot advance a snap');
   await page.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true;window.__slice.go({type:'call',play:'outside_zone',tactics:[]})});
   await page.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);

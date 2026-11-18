@@ -125,7 +125,7 @@ test('a selected tactic can be removed after switching to an incompatible play w
  const fn=src.slice(src.indexOf('function tacticClick('),src.indexOf('function wirePlayCard('));
  const sel={play:'inside_zone',tac:[2]},t={id:'max_protect',slot:2,card:D.TACTICS.max_protect};
  require('node:vm').runInNewContext(fn+";tacticClick(t,'Only on plays with a protection duel')",{
-  busy:false,sel,t,err:'',S:{init(){},error(){},tick(){}},renderHand(){},refresh(){}
+  busy:false,sel,t,document:{activeElement:null},err:'',S:{init(){},error(){},tick(){}},renderHand(){},refresh(){}
  });
  assert.deepEqual(sel.tac,[]);
 });

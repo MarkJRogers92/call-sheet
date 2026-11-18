@@ -124,6 +124,19 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .fighter.burn{box-shadow:0 0 0 3px #ff9a3c,0 0 30px #ff7a2a}
 .vs{position:absolute;left:50%;top:84px;transform:translateX(-50%);font-family:var(--cond);font-weight:800;font-size:44px;color:#fff;text-shadow:0 0 18px #ff5a2a}
 .mods{position:absolute;top:186px;left:0;right:0;display:flex;justify-content:center;gap:6px;flex-wrap:wrap}
+.dsum{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:10px;align-items:start;text-align:left;margin-top:2px}
+.dcol{min-width:0;display:grid;grid-template-columns:max-content minmax(0,1fr);column-gap:8px;row-gap:1px;align-items:baseline;font-family:var(--cond);font-weight:800;padding:4px 8px;border-radius:8px;background:#0e1626}
+.dcol.o{border-left:3px solid var(--gold)}.dcol.d{border-right:3px solid #9fb0c8}
+.dwho{grid-column:1/-1;font-size:13px;letter-spacing:.04em;color:#c9d3e3;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dcol .add,.dcol .dtotal{display:contents}
+.dcol b{text-align:right;font-size:18px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.dcol span{font:12px/1.3 system-ui,sans-serif;color:#c9d3e3;overflow-wrap:anywhere}
+.dcol .dtotal b,.dcol .dtotal span{border-top:2px solid #f4edda;margin-top:3px;padding-top:2px}
+.dcol .dtotal b{font-size:24px;color:var(--gold)}
+.dvs{align-self:end;font-family:var(--cond);font-weight:800;font-size:18px;color:#f4edda;padding-bottom:4px}
+.dverdict{margin-top:6px;font:13px/1.4 system-ui,sans-serif;color:#e6ecf7;text-align:center}
+@media(max-width:600px){.dsum{gap:4px}.dcol{padding:3px 5px;column-gap:5px}.dcol b{font-size:15px}.dcol .dtotal b{font-size:18px}.dcol span{font-size:11px}.dvs{font-size:14px}.dwho{font-size:11px}}
+#side .read-sum{margin:2px 0 8px}#side .read-sum .dsum{gap:4px}#side .read-sum .dcol{padding:3px 5px;column-gap:5px}#side .read-sum .dcol b{font-size:13px}#side .read-sum .dcol .dtotal b{font-size:15px}#side .read-sum .dcol span{font-size:10px}#side .read-sum .dwho{font-size:10px}#side .read-sum .dvs{font-size:11px}#side .read-sum .dverdict{font-size:11px;margin-top:3px}
 .mods span{font-family:var(--cond);font-weight:800;font-size:16px;padding:3px 10px;border-radius:10px;background:#ff9a3c;color:#1a0c00;opacity:0}
 .mods span.neg{background:#ff5a4f;color:#fff}.mods span.design{background:rgba(255,255,255,.18);color:#fff}
 .stamp{position:absolute;left:50%;top:64px;transform:translateX(-50%) rotate(-8deg) scale(3);font-family:var(--cond);font-weight:800;font-size:72px;letter-spacing:.06em;padding:0 18px;border:6px solid;border-radius:12px;opacity:0;background:rgba(0,0,0,.5)}
@@ -193,6 +206,11 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 /* ---------- modals */
 #modal{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(10,14,24,.88),rgba(0,0,0,.96));overflow:auto;padding:20px}
 #modal.on{display:flex}
+.pinned-call{margin:0 0 4px;font:13px/1.35 system-ui,sans-serif;color:#c9d3e3}.pinned-call span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#9fb0c8}.pinned-call b{color:#f4edda}.pinned-call em{font-style:normal}.pinned-call .lost{color:#ffb4a8}.pinned-call .won{color:#b9f0c2}
+.fourth-last{max-width:460px;margin:0 auto 14px;padding:9px 13px;border:1px solid #dfc36566;border-radius:9px;background:#101722;display:grid;gap:3px;text-align:left;font:14px/1.35 system-ui,sans-serif;color:#f4edda}
+.fourth-last .eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#dfc365}
+.fourth-last b{font-size:15px}
+.fourth-last .lost{color:#ffb4a8}.fourth-last .won{color:#b9f0c2}
 .mwrap{width:min(1000px,100%);text-align:center}
 .big{font-family:var(--cond);font-weight:800;font-size:clamp(56px,12vw,140px);line-height:.9;letter-spacing:.03em;margin:0}
 .gold{background:linear-gradient(180deg,#fff6c8,#ffd84d 50%,#c98a0a);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 24px rgba(255,216,77,.5))}
@@ -378,15 +396,80 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
  .quick-choice{padding:7px 9px}.quick-choice b{font-size:17px}.quick-choice .trade{margin-top:2px}.quick-actions{margin-top:6px}#quickClue{margin:5px 0 8px}
 }
 @media(max-height:520px){#root.quick-snap{grid-template-rows:auto minmax(0,1fr) auto}.quick-snap #hand{max-height:65vh}}
+#sidelineBtn[hidden]{display:none}
+.coaching-dialog{color:#f2f4f7;background:#141c29;border:1px solid #8a7955;border-radius:12px;padding:20px;width:min(440px,calc(100% - 32px));max-height:86dvh;overflow:auto;font:16px/1.4 var(--cond);box-sizing:border-box}
+.coaching-dialog::backdrop{background:#060a12c9}
+.coaching-dialog h2{margin:0 0 12px;color:#ebcd8c}
+.coaching-dialog p{margin:8px 0 16px}.coaching-dialog label{display:block;font-weight:700;margin:12px 0}
+.coaching-dialog select{display:block;width:100%;margin-top:6px;padding:8px;font:inherit;color:inherit;background:#1c2939;border:1px solid #758399;border-radius:6px}
+.coaching-dialog .btn{min-height:44px}.coaching-dialog .timeout-choice{margin:14px 0}
+
+.quick-matchup{border-left:3px solid var(--brass);padding:3px 10px;margin:8px 0;color:#f3ebd4}
+.quick-matchup b,.quick-matchup span,.quick-matchup small{display:block}.quick-matchup small{color:#b5c8d6}
+.quick-board #guidedDrive{margin-top:10px;padding:7px 10px;box-shadow:none}.quick-board #guidedDrive h3{font-size:14px}
+.quick-board #guidedDrive p,.quick-board #guidedDrive details{margin:4px 0}
+.quick-board .call-tactic-note span{display:block;margin-top:4px}
+#battlePreferences{color:var(--ink);background:#151d28;border:1px solid var(--brass);border-radius:12px;width:min(92vw,410px);padding:20px}
+#battlePreferences::backdrop{background:#03070cbb}
+#battlePreferences h2{font:800 28px var(--cond);margin:0 0 16px}
+#battlePreferences label,.settings-actions{display:flex;align-items:center;gap:8px;margin:10px 0}
+#battlePreferences select,.assignment select{border:1px solid #667484;border-radius:6px;color:#edf0f4;background:#202a39;padding:7px;font:inherit;max-width:100%}
+#battlePreferences select{margin-left:auto}.settings-actions{justify-content:space-between}.settings-actions button{min-height:44px}
+.assignment{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:13px;margin:7px 0}
+.call-receipt{font:700 15px/1.25 var(--cond);max-width:180px;text-align:center}
+#field .pl.dim:not(:focus){opacity:.48}#field .pl:focus-visible .cbody{stroke:#fff;stroke-width:4}
+button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px solid #8edaff;outline-offset:2px}
+html.motion-reduced *,html.motion-reduced *::before,html.motion-reduced *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}
+html.motion-reduced #wx{display:none!important}
+html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0px!important}
+@media(max-width:860px){
+  #root:not(.quick-snap){display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
+  #root:not(.quick-snap) #scorebar{position:sticky;top:0;z-index:12;background:#0d1420;flex-shrink:0;order:0;flex-wrap:wrap}
+  #root:not(.quick-snap) #stage{flex:0 0 clamp(150px,26dvh,265px);order:1}
+  #root:not(.quick-snap) #hand{display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;overflow:visible;padding:8px;min-height:0;order:2}
+  #root:not(.quick-snap) #side{flex-direction:column;overflow:visible;max-height:none;order:3}
+  #root:not(.quick-snap) #side .box{min-width:0}
+  #hand .fan{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(145px,46%),1fr));gap:6px;align-items:stretch;padding:23px 0 0}
+  #hand .fanlab{left:2px;top:2px}
+  #hand .fan .card{width:100%;height:auto;min-height:76px;display:block;overflow:hidden;margin:0;padding:9px 10px;transform:none;touch-action:pan-y}
+  #hand .fan .card .cname{display:block;padding-right:26px;margin:0 0 2px;font-size:17px}
+  #hand .fan .card .cost{top:4px;right:4px;width:22px;height:22px;font-size:14px}
+  #hand .fan .card .art,#hand .fan .card .shine,#hand .fan .card .origin,#hand .fan .card .rar,#hand .fan .card .finish,#hand .fan .card .notch,#hand .fan .card .setup-ready{display:none}
+  #hand .fan .card .ctype{font-size:11px}
+  #hand .fan .card .ctext{display:block;font-size:13px;line-height:1.35;color:#d4dbe5;margin-top:3px}
+  #hand .fan .card .cwhy{position:static;display:block;font-size:12px}
+  #hand .fan .card.sel{box-shadow:inset 3px 0 #ffd84d;border-color:#ffd84d}
+  #hand .cmd{position:sticky;bottom:0;order:3;z-index:11;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:4px 8px;background:#151c28;border:1px solid #736742;border-radius:8px;padding:7px}
+  #hand .cmd .coins{display:none}#hand .cmd .call-receipt{text-align:left;max-width:none}#hand .cmd .cmdl{grid-column:1;grid-row:2;font-size:12px}
+  #hand .cmd .snap{grid-column:2;grid-row:1/3;min-height:44px;font-size:18px;padding:4px 12px}
+  #hand .cmd .assignment{grid-column:1/-1;grid-row:3;margin:0}#hand .cmd .auto{grid-column:1/-1}
+  #hand.away{display:none!important}
+}
+
+@media(min-width:861px){
+  #root:not(.quick-snap) #hand{display:grid;grid-template-columns:minmax(0,1fr) minmax(125px,165px) minmax(0,1fr);gap:10px;align-items:stretch;min-height:220px;padding:4px 12px 10px;overflow:visible}
+  #hand .fan{display:flex;gap:7px;align-items:stretch;justify-content:flex-start;overflow-x:auto;overscroll-behavior-inline:contain;padding:26px 4px 7px;scrollbar-width:thin;scroll-snap-type:x proximity}
+  #hand .fanlab{left:5px;top:3px;letter-spacing:.12em}
+  #hand .fan .card{flex:0 0 145px;width:145px;height:190px;margin:0;transform:none;scroll-snap-align:start}
+  #hand .fan .card .cost{right:3px;top:3px;width:24px;height:24px;font-size:16px}
+  #hand .fan .card .cname{padding-right:22px}#hand .fan .card .ctext{font-size:12px}
+  #hand .fan .card.sel{box-shadow:inset 3px 0 var(--gold)}
+  #hand .cmd{justify-content:center}
+}
+#field{max-height:100%}
+#fieldLocator{position:absolute;right:12px;top:8px;width:92px;height:10px;border:1px solid #a3b2ab;border-radius:2px;background:repeating-linear-gradient(90deg,#173b29 0 9%,#52765c 9% 10%);pointer-events:none}
+#fieldLocator i,#fieldLocator b{position:absolute;top:-2px;height:12px;width:2px;background:#ffe066}
+#fieldLocator b{width:6px;transform:translateX(-50%);background:#78ceff;border-radius:2px}
 </style>
 </head>
 <body>
 <div id="root">
-  <header id="scorebar"><div id="bug"></div><button id="sheetToggle" type="button" aria-expanded="false" aria-controls="side hand" hidden>Full call sheet</button></header>
+  <header id="scorebar"><div id="bug"></div><button type="button" class="tbtn" id="sidelineBtn" aria-haspopup="dialog" hidden>Sideline</button><button id="sheetToggle" type="button" aria-expanded="false" aria-controls="side hand" hidden>Full call sheet</button><button type="button" id="battleSettings" class="tbtn" aria-haspopup="dialog" hidden>Game settings</button></header>
   <aside id="side"></aside>
   <main id="stage">
     <div class="rays" id="rays"></div>
-    <div id="fieldWrap"><svg id="field" viewBox="0 0 1200 533" role="img" aria-label="Field"></svg></div>
+    <div id="fieldWrap"><svg id="field" viewBox="0 0 1200 533" role="group" aria-label="Field players. Use arrow keys to inspect the lineup."></svg></div>
+    <div id="fieldLocator" aria-hidden="true" hidden><i></i><b></b></div>
     <div id="look"></div>
     <div id="ticker" aria-live="polite"></div>
     <div id="drop">DROP TO CALL IT</div>
@@ -396,9 +479,21 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
     <div class="flash" id="flash"></div>
     <button class="tbtn" id="skip">Skip ▸▸</button>
   </main>
-  <footer id="hand" class="away"></footer>
+  <footer id="hand" class="away" inert></footer>
 </div>
-<div id="modal" role="dialog" aria-modal="true"></div>
+<div id="modal" role="dialog" aria-label="Game decision" aria-modal="true" tabindex="-1"></div>
+<dialog id="battlePreferences" aria-labelledby="settingsTitle">
+  <form method="dialog">
+    <h2 id="settingsTitle">Game settings</h2>
+    <label>Motion <select id="motionMode"><option value="system">Use system preference</option><option value="reduced">Reduced motion</option><option value="instant">Instant results</option></select></label>
+    <label>Replay <select id="replayMode"><option value="moments">Key moments</option><option value="all">All coached snaps</option></select></label>
+    <label>Quarterback reads <select id="readPolicy"><option value="auto">Allow checkdowns</option><option value="primary">Primary only</option></select></label>
+    <label><input type="checkbox" id="fastMode"> Fast playback</label>
+    <label><input type="checkbox" id="soundMode"> Game sound</label>
+    <small data-battle-build hidden></small>
+    <div class="settings-actions"><button type="button" id="settingsHelp" class="tbtn">How to play</button><button class="tbtn" autofocus>Done</button></div>
+  </form>
+</dialog>
 <img id="trophySrc" src="../../../assets/turntables/rivalry-lantern.webp" alt="" hidden>
 <canvas id="fx"></canvas>
 <div class="sr" id="sr" aria-live="assertive"></div>

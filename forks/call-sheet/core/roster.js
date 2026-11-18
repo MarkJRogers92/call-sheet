@@ -40,7 +40,7 @@ function refreshUniforms(lineup,pb){
 // play, score or log. Never renumber against just a partial on-field lineup.
 function syncBattleUniforms(b,side,roster,key){
   const t=b.teams[side],numbers=new Map(roster.map(p=>[String(p.id),p[key]]));
-  for(const p of [...lineupPlayers(t.lineup),...(t.backfield||[]),...Object.values(t.specialists||{})]){
+  for(const p of [...lineupPlayers(t.lineup),...(t.backfield||[]),...(t.packageDepth||[]),...Object.values(t.packageStarters||{}),...Object.values(t.specialists||{})]){
     if(!p||!numbers.has(String(p.id)))continue;
     p.number=numbers.get(String(p.id));
     if(b.personnel?.[p.id])b.personnel[p.id].number=p.number;
@@ -59,7 +59,10 @@ function makeTeam(spec,seed){
     lineup.def[role]=makePlayer(rng,role,pos,arch,spec.roleQuality?.[role]??spec.quality,spec.bias?.[role]);
   }
   assignLineup(lineup);
-  return{name:spec.name,short:spec.short||spec.name.slice(0,3).toUpperCase(),colors:spec.colors||['#c9a227','#1b2433'],lineup,
+  const packageDepth=[['WR4','WR'],['TE2','TE'],['RB2','RB']].map(([role,pos])=>
+    makePlayer(rng,role,pos,rng.pick(D.STYLES[pos]),spec.quality-4));
+  J.assign([...lineupPlayers(lineup),...packageDepth],'number');
+  return{packageDepth,name:spec.name,short:spec.short||spec.name.slice(0,3).toUpperCase(),colors:spec.colors||['#c9a227','#1b2433'],lineup,
     coach:{name:spec.coach||'Coordinator',discipline:spec.discipline??4,film:spec.film!==false,passRate:spec.passRate??.5}};
 }
 

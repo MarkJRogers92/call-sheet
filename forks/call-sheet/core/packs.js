@@ -41,6 +41,47 @@ function setOpeningScript(pb,id){
   pb.off.openingScript=id;
 }
 function clearStaleOpener(pb){if(pb.off.openingScript&&!D.canScriptOpener(pb.off,pb.off.openingScript))delete pb.off.openingScript}
+// A school chooses a branch for the whole playbook. Frozen packs keep the catalog
+// identity they rolled, then present the school's current version at claim time.
+function awardedId(pb,id){
+  const card=cardDef(id),root=card?.evolvedFrom||card?.upgradeOf||id,branch=pb.evolved?.[root];
+  return branch&&cardDef(branch)?.evolvedFrom===root?branch:id;
+}
+// Repair saves made while packs could still award originals after an evolution.
+function reconcileAwards(pb){
+  if(!pb?.evolved||!Object.keys(pb.evolved).length)return;
+  for(const side of ['off','def']){
+    const d=pb[side],reserve=pb.reserve?.[side]?.wrinkles||[];
+    const owned=[...d.base,...d.wrinkles,...reserve];
+    if(!owned.some(id=>awardedId(pb,id)!==id))continue;
+    const base=d.base.map(id=>awardedId(pb,id)),piles=[d.wrinkles,reserve].map(xs=>xs.map(id=>awardedId(pb,id)));
+    const free=id=>cardDef(id)?.cost===0&&!cardDef(id)?.needs;
+    for(const [i,id] of base.entries()){
+      if(base.indexOf(id)===i&&!(i===base.length-1&&!base.some(free)))continue;
+      const needFree=!base.some((x,j)=>j!==i&&free(x));
+      const legal=x=>!base.includes(x)&&!cardDef(x)?.trick&&!cardDef(x)?.signature&&(!needFree||free(x));
+      const from=piles.find(xs=>xs.some(legal));
+      if(!from)continue;
+      const slot=from.findIndex(legal);base[i]=from[slot];from[slot]=id;
+    }
+    if(new Set(base).size!==4||!base.some(free))continue;
+    d.base=base;d.wrinkles=piles[0];
+    if(pb.reserve?.[side])pb.reserve[side].wrinkles=piles[1];
+    if(side==='off'&&d.openingScript){d.openingScript=awardedId(pb,d.openingScript);clearStaleOpener(pb)}
+  }
+}
+function awardView(pb,c){
+  const id=awardedId(pb,c.id);
+  if(id===c.id)return c;
+  const award={...c,id,rolledId:c.id,rarity:D.rarityOf(id)};
+  if(invalidFilmNote(award)){award.why='';award.offFocus=true}
+  return award;
+}
+function isNewOrdinary(pb,c){
+  if(c.rarity==='legendary'||c.kind==='upgrade')return false;
+  const id=awardedId(pb,c.id),d=pb[c.side],r=pb.reserve?.[c.side];
+  return ![...d.base,...d.wrinkles,...d.tactics,...(r?.wrinkles||[]),...(r?.tactics||[])].includes(id);
+}
 function owns(pb,c){
   if(c.kind==='upgrade'){const d=pb[c.side];return d.base.includes(c.id)||d.wrinkles.includes(c.id)||(pb.reserve?.[c.side]?.wrinkles||[]).includes(c.id)}
   return false;
@@ -64,6 +105,40 @@ const STAGE_PACKS={
   playoff:{type:'playoff',title:'Playoff Pack',subtitle:'Pick 1 of 5 · still alive',wrap:'PLAYOFF',legendary:.3},
   title:{type:'title',title:'National Title Pack',subtitle:'Pick 1 of 5 · national champions',wrap:'NATIONAL<br>TITLE',legendary:.6}
 };
+// What a game's pack will be, before kickoff: the same rules openPack uses (stage and rivalry upgrade a win; a loss is
+// always a Film Study pack built from counters to what beat you). Names match the final screen's pack buttons.
+function packStakes({rivalry=false,stage=null}={}){
+  const post=STAGE_PACKS[stage]||null,legendary=post?Math.max(post.legendary,rivalry?.35:0):rivalry?.35:0;
+  const win=post?{title:post.title,picks:5}:rivalry?{title:'Rivalry Pack',picks:5}:{title:'Victory Pack',picks:4};
+  return{elevated:!!(post||rivalry),win,loss:{title:'Film Study Pack',picks:3},legendary,
+    text:`At stake: ${win.title} if you win (pick 1 of ${win.picks}${legendary?`, last slot ${Math.round(legendary*100)}% legendary`:''}) · Film Study Pack if not (pick 1 of 3, counters to what beat you).`};
+}
+// One sentence on who the opponent is: their offense's lean (the dynasty staff's pass estimate, labeled as one) and how
+// often their defensive call sheet brings pressure, plus one card in YOUR deck that answers it, if you own one.
+// Film from earlier card battles against you (up to three meetings) takes precedence over the call sheet and the staff
+// estimate once it covers at least 8 snaps on that side of the ball; the text says which source it is.
+function opponentIdentity(opp,{passEstimate=null,mine=null,name='They',film=null}={}){
+  if(!opp?.def)return null;
+  const meetings=Array.isArray(film)?film.filter(Boolean):[],sum=(side,k)=>meetings.reduce((n,m)=>n+(Number(m?.[side]?.[k])||0),0);
+  const when=meetings.length===1?'when you last met':`over your last ${meetings.length} meetings`;
+  const filmDef=sum('def','total')>=8,filmOff=sum('off','total')>=8;
+  const calls=[...(opp.def.base||[]),...(opp.def.wrinkles||[])].map(id=>D.CALLS[id]).filter(Boolean);if(!calls.length&&!filmDef)return null;
+  const total=filmDef?sum('def','total'):calls.length,press=filmDef?sum('def','pressure'):calls.filter(c=>c.family==='pressure').length;
+  const man=filmDef?sum('def','man'):calls.filter(c=>c.family==='man').length,zone=filmDef?sum('def','zone'):calls.filter(c=>c.family==='zone').length;
+  const share=press/total,lean=share>=.6?'blitz':share>=.35?'mix':'coverage'; // the default sheet is 50% pressure: a "mix"
+  const unit=filmDef?'snaps':'calls',src=filmDef?` ${when}`:'';
+  const v=filmDef?{bring:'brought',mix:'mixed in',sit:'sat in'}:{bring:'brings',mix:'mixes in',sit:'sits in'}; // film is past, a call sheet is now
+  const def=lean==='blitz'?`their defense ${v.bring} pressure on ${press} of ${total} ${unit}${src}`:lean==='mix'?`their defense ${v.mix} pressure (${press} of ${total} ${unit}${src})`:`their defense ${v.sit} ${man>zone?'man':zone>man?'zone':'coverage'} (${press} of ${total} ${unit} ${filmDef?'brought':'bring'} pressure${src})`;
+  const pe=filmOff?Math.round(sum('off','pass')*100/sum('off','total')):Number.isFinite(Number(passEstimate))&&passEstimate!==null?Math.round(Number(passEstimate)):null,offLean=pe===null?null:pe>=56?'pass':pe<=44?'run':'balanced';
+  const off=filmOff?`they ran on ${sum('off','run')} of ${sum('off','total')} snaps ${when}`:offLean==='pass'?`staff expects about ${pe}% passing`:offLean==='run'?`staff expects about ${100-pe}% running`:offLean?'staff expects a balanced offense':null;
+  // An answer from the coach's own deck: a play that punishes pressure, or a defensive call that counters their lean.
+  const owned=side=>[...new Set([...(mine?.[side]?.base||[]),...(mine?.[side]?.wrinkles||[])])];
+  let answer=null;
+  if(lean==='blitz'){const id=owned('off').find(x=>D.PLAYS[x]&&D.PLAYS[x].punishes==='pressure'&&!D.PLAYS[x].fourthOnly);if(id)answer=`${D.PLAYS[id].name} in your deck punishes pressure.`}
+  if(!answer&&(offLean==='run'||offLean==='pass')){const want=offLean==='run'?'run':'deep',id=owned('def').find(x=>D.CALLS[x]&&[].concat(D.CALLS[x].counters||[]).includes(want));if(id)answer=`${D.CALLS[id].name} in your deck counters ${offLean==='run'?'the run':'deep passes'}.`}
+  const lead=`${name}: ${[off,def].filter(Boolean).join('; ')}.`;
+  return{lean,offLean,pressure:press,calls:total,passEstimate:pe,fromFilm:filmDef||filmOff,meetings:meetings.length,answer,text:answer?`${lead} ${answer}`:lead};
+}
 function openPack(pb,opts){
   const rng=DynastyRng.create(`pack:${opts.seed}:${pb.packsOpened}`);
   const rivalWin=opts.rivalry&&opts.won,post=opts.won&&STAGE_PACKS[opts.stage]||null,n=rivalWin||post?5:opts.won?4:3,cards=[],used=new Set();
@@ -73,7 +148,7 @@ function openPack(pb,opts){
   for(let i=0;i<n;i++){
     let pick=null;
     // A themed pack (a classic bowl's era cards, a modern bowl's spread cards): the first slot comes from the theme.
-    if(!pick&&i===0&&Array.isArray(opts.favor)&&opts.favor.length){const ids=opts.favor.filter(id=>!used.has(id)),c=ids.length?POOL.find(p=>p.id===ids[rng.int(0,ids.length-1)]):null;if(c&&eligible(pb,c,opts.worldTaken))pick={...c,why:opts.favorWhy||'Part of this pack\'s theme'}}
+    if(!pick&&i===0&&Array.isArray(opts.favor)&&opts.favor.length){const ids=opts.favor.filter(id=>!used.has(id)),c=ids.length?gameCardById.get(ids[rng.int(0,ids.length-1)]):null;if(c&&eligible(pb,c,opts.worldTaken))pick={...c,why:opts.favorWhy||'Part of this pack\'s theme'}}
     // Film Study: the first two slots come from the counters to what beat you.
     if(focus&&i<2){
       const ids=COUNTERS[focus].filter(id=>!used.has(id)),want=ids.length?ids[rng.int(0,ids.length-1)]:null,c=want?POOL.find(p=>p.id===want):null;
@@ -86,8 +161,18 @@ function openPack(pb,opts){
     if(!pick)break;
     used.add(pick.id);cards.push({...pick,uid:`${pb.packsOpened}-${i}`});
   }
+  // Preserve special slots (film counters, bowl theme and the rivalry bonus) where possible.
+  if(cards.length&&!cards.some(c=>isNewOrdinary(pb,c))){
+    const unseen=POOL.filter(c=>isNewOrdinary(pb,c)&&eligible(pb,c,opts.worldTaken));
+    const replace=cards.findIndex((c,i)=>!c.why&&!(lastLegendary&&i===cards.length-1));
+    if(unseen.length){
+      const i=replace>=0?replace:cards.length-1;
+      cards[i]={...unseen[rng.int(0,unseen.length-1)],uid:cards[i].uid};
+    }
+  }
   // Show the best card last: reveal order escalates.
   const order={common:0,rare:1,legendary:2};cards.sort((a,b)=>order[a.rarity]-order[b.rarity]);
+  for(const [i,c] of cards.entries())cards[i]=awardView(pb,c);
   if(post)return{type:post.type,title:post.title,subtitle:post.subtitle,cards};
   if(rivalWin)return{type:'rivalry',title:'Rivalry Pack',subtitle:'Pick 1 of 5 · the trophy stays home',cards};
   return{type:opts.won?'victory':'film',title:opts.won?'Victory Pack':'Film Study Pack',subtitle:opts.won?'Pick 1 of 4':`Pick 1 of 3 · built around stopping their ${focus||'offense'}`,cards};
@@ -100,8 +185,9 @@ function rollFinish(pb,id,seed,serial=pb.packsOpened){
   if(f&&(FINISH_RANK[f]>(FINISH_RANK[pb.finishes?.[id]]||0)))(pb.finishes??={})[id]=f;
   return f;
 }
-function applyPick(pb,card,{serial=pb.packsOpened,stored=false}={}){
-  card.finish=rollFinish(pb,card.id,card.uid||'pick',serial);
+function applyPick(pb,selection,{serial=pb.packsOpened,stored=false,from=null}={}){
+  const card=awardView(pb,selection);
+  selection.finish=rollFinish(pb,card.id,card.uid||'pick',serial);
   pb.packsOpened++;
   const d=pb[card.side];
   if(card.kind==='upgrade'){
@@ -114,7 +200,9 @@ function applyPick(pb,card,{serial=pb.packsOpened,stored=false}={}){
     if(D.canScriptOpener(pb.off,card.id))pb.off.openingScript=card.id;else delete pb.off.openingScript;
   }
   if(card.rarity==='legendary')pb.legendaries.push(card.id);
-  pb.history.push({id:card.id,kind:card.kind,side:card.side,rarity:card.rarity});
+  // A game pack also notes which game it came from, so the dynasty can say where last game's card went.
+  const origin=from&&typeof from.pack==='string'?{pack:from.pack.slice(0,240),source:String(from.source||'Game day').slice(0,140),game:Math.max(0,Number(pb.gamesPlayed)|0),...(card.kind==='upgrade'?{replaces:card.replaces}:{})}:{};
+  pb.history.push({id:card.id,kind:card.kind,side:card.side,rarity:card.rarity,...origin});
   return{over:overCapacity(pb)};
 }
 // A coached game's unopened pack is a saved offer, not a signing-day pack of bare card IDs.
@@ -139,9 +227,9 @@ function cleanGamePack(x){
   }
   return {key:x.key,year:Math.max(0,Number(x.year)|0),source:String(x.source||'Game day').slice(0,140),type:String(x.type||'game').slice(0,20),title:String(x.title||'Game Pack').slice(0,60),subtitle:String(x.subtitle||'').slice(0,160),serial:Math.max(0,Number(x.serial)|0),cards};
 }
-function freezeGamePack(pb,pack,context){return cleanGamePack({...pack,...context,serial:pb.packsOpened})}
+function freezeGamePack(pb,pack,context){return cleanGamePack({...pack,...context,cards:pack.cards.map(c=>({...c,id:c.rolledId||c.id})),serial:pb.packsOpened})}
 function gamePackChoices(pb,pack,taken=[]){
-  return pack.cards.map(c=>eligible(pb,c,taken)?(invalidFilmNote(c)?{...c,why:'',offFocus:true}:{...c}):{...gameCardById.get(c.exchange),uid:c.uid,exchangeFor:c.id,why:c.rarity==='legendary'?'The one-of-one was claimed before you opened this pack.':'The original upgrade no longer fits your collection.'});
+  return pack.cards.map(c=>awardView(pb,eligible(pb,c,taken)?(invalidFilmNote(c)?{...c,why:'',offFocus:true}:{...c}):{...gameCardById.get(c.exchange),uid:c.uid,exchangeFor:c.id,why:c.rarity==='legendary'?'The one-of-one was claimed before you opened this pack.':'The original upgrade no longer fits your collection.'}));
 }
 // Auto retains the legacy game-pack default: use a deck slot first, otherwise keep the card unselected.
 function rewardDestination(pb,c,game,reserveLimit,want='auto'){
@@ -180,10 +268,34 @@ function claimGamePack(pb,key,id,taken=[],reserveLimit=Infinity,want='auto'){
   const destination=rewardDestination(pb,c,true,reserveLimit,want),stored=destination==='stored';
   if(destination==='invalid')return{ok:false,error:'That option is not available for this card.'};
   if(destination==='full')return{ok:false,error:'No room in that group. Choose another option or keep the pack for later.'};
-  applyPick(pb,c,{serial:pack.serial,stored});pb.gamePacks.splice(i,1);
+  applyPick(pb,c,{serial:pack.serial,stored,from:{pack:pack.key,source:pack.source}});pb.gamePacks.splice(i,1);
   return{ok:true,stored,upgrade:c.kind==='upgrade',finish:c.finish};
 }
 
+// Where last game's claimed card is NOW (cuts and deck edits can move it). Null once a newer game is played,
+// or when the last claim did not come from a game pack. Reads only; never changes the playbook.
+function lastGameCard(pb){
+  const e=[...(pb?.history||[])].reverse().find(x=>x&&typeof x.pack==='string');
+  if(!e||e.game!==(Number(pb.gamesPlayed)|0)||!cardDef(e.id))return null;
+  const base={id:e.id,name:cardDef(e.id).name,source:e.source||'Game day'};
+  if(e.kind==='upgrade')return{...base,status:'upgrade',replaced:cardDef(e.replaces)?.name||null,inDeck:[...(pb[e.side]?.base||[]),...(pb[e.side]?.wrinkles||[])].includes(e.id)};
+  const pile=D.TACTICS[e.id]?'tactics':'wrinkles',side=cardDef(e.id).side;
+  // Copies are interchangeable, so report counts rather than guess which copy is "the new one".
+  const inDeck=(pb[side]?.[pile]||[]).filter(x=>x===e.id).length,inCollection=(pb.reserve?.[side]?.[pile]||[]).filter(x=>x===e.id).length;
+  if(!inDeck&&!inCollection)return null;
+  return{...base,status:inDeck&&inCollection?'split':inDeck?'deck':'collection',inDeck,inCollection};
+}
+// After a loss: one concrete swap backed by the game's takeaway. Remove one copy of the play that struggled (only an
+// optional play, never a base call) and add one owned collection play from a different family. Returns null when no
+// such swap exists. Advice only: the deck editor stages it as a draft that Cancel discards.
+function lossSwap(pb,note){
+  const weak=note?.weakId,D_=D.PLAYS;if(!weak||!D_[weak]||!pb?.off)return null;
+  if(!(pb.off.wrinkles||[]).includes(weak))return null;
+  const fam=D_[weak].family,pool=[...new Set(pb.reserve?.off?.wrinkles||[])].filter(id=>D_[id]&&!D_[id].trick&&!D_[id].fourthOnly&&!D_[id].signature&&D_[id].family!==fam);
+  const add=pool.find(id=>id===note.playId)||pool[0];if(!add)return null;
+  return{remove:weak,add,removeName:D_[weak].name,addName:D_[add].name,
+    why:`${D_[weak].name} averaged ${Number(note.avg??0).toFixed(1)} yards on ${note.samples} call${note.samples===1?'':'s'}. ${D_[add].name} (${D_[add].family}) is already in your collection.`};
+}
 function overCapacity(pb){
   for(const side of ['off','def']){
     if(pb[side].wrinkles.length>pb.capacity.wrinkles)return{side,pile:'wrinkles'};
@@ -238,7 +350,7 @@ function awardAchievements(pb,b,side){
   const gained=[];
   for(const a of ACHIEVEMENTS){if(!met[a.id]||pb.achievements.includes(a.id))continue;
     const c=POOL.find(c=>c.id===a.reward),pile=c.kind==='tactic'?'tactics':'wrinkles';
-    reserve[c.side][pile].push(c.id);pb.achievements.push(a.id);pb.history.push({id:c.id,kind:'achievement',side:c.side,achievement:a.id});gained.push(a);
+    const id=awardedId(pb,c.id);reserve[c.side][pile].push(id);pb.achievements.push(a.id);pb.history.push({id,kind:'achievement',side:c.side,achievement:a.id});gained.push({...a,reward:id});
   }
   return gained;
 }
@@ -257,11 +369,15 @@ function rewardPack(pb,{seed,weights={},n=4,bonusRare=0,worldTaken=[],title='Rew
     for(let j=0;j<list.length;j++){r-=w[j];if(r<=0){pick=list[j];break}}
     used.add(pick.id);cards.push(pick.id);
   }
-  return{type,title,subtitle,cards};
+  if(cards.length&&!cards.some(id=>isNewOrdinary(pb,gameCardById.get(id)))){
+    const unseen=POOL.filter(c=>isNewOrdinary(pb,c)&&eligible(pb,c,worldTaken));
+    if(unseen.length)cards[cards.length-1]=unseen[rng.int(0,unseen.length-1)].id;
+  }
+  return{type,title,subtitle,cards:cards.map(id=>awardedId(pb,id))};
 }
 // Put an earned card straight into the collection (stored, ready to equip).
 function grantCard(pb,id,how={}){
-  const c=cardDef(id);if(!c)throw new Error(`Unknown card ${id}`);
+  id=awardedId(pb,id);const c=cardDef(id);if(!c)throw new Error(`Unknown card ${id}`);
   const side=c.side,pile=D.TACTICS[id]?'tactics':'wrinkles';
   ensureCollection(pb)[side][pile].push(id);if(how.finish!==false)rollFinish(pb,id,how.kind||'grant');
   if(D.rarityOf(id)==='legendary'&&!pb.legendaries.includes(id))pb.legendaries.push(id);
@@ -270,5 +386,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

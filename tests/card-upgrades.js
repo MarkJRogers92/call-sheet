@@ -65,3 +65,30 @@ test('program card ids never collide with evolution branches',async()=>{
   assert.deepEqual(CS.data.PROGRAM_CARDS.filter(id=>ids.has(id)),[]);
   for(const id of CS.data.PROGRAM_CARDS)assert.ok(!CS.packs.cardDef(id).evolvedFrom,id);
 });
+
+test('one offseason branch retraining uses the current starter, requires a coordinator and survives reload',async()=>{
+  const {cg,u,me,CS,e}=await setup(951),pb=u.callSheet.playbook,ev=CS.evolution;
+  ev.evolve(pb,'power','counter');pb.reserve.off.wrinkles.push('counter');
+  const qb=CS.adapter.lineupFromTeam(me).lineup.off.QB,starter=me.roster.find(p=>String(p.id)===qb.id);
+  assert.equal(cg.retrainBranch('power','power_read'),false);
+  u.phase='complete';u.offseason=e.makeOffseasonState(u.year,'spring');
+  starter.speed=55;assert.equal(cg.retrainBranch('power','power_read'),false);
+  starter.speed=90;const oc=me.staff.OC;me.staff.OC=null;
+  assert.equal(cg.retrainBranch('power','power_read'),false);
+  me.staff.OC=oc;const offer=cg.offseasonRetools().find(x=>x.root==='power');
+  assert.equal(offer.coach,oc.name);assert.equal(offer.player,starter.name);
+  const n=pb.off.wrinkles.filter(id=>id==='counter').length;
+  assert.ok(cg.retrainBranch('power','power_read'));assert.equal(pb.evolved.power,'power_read');
+  assert.equal(pb.off.wrinkles.filter(id=>id==='power_read').length,n);assert.ok(pb.reserve.off.wrinkles.includes('power_read'));
+  e.normalizeCallSheet(u);assert.equal(cg.retrainBranch('power','counter'),false);
+  assert.equal(u.callSheet.playbook.retoolYear,u.year);
+});
+
+test('a worn evolved endpoint can rehearse without gaining meaningless mastery',async()=>{
+  const {cg,u,CS}=await setup(949),pb=u.callSheet.playbook;
+  CS.evolution.evolve(pb,'power','counter');
+  cg.noteUsage({events:Array.from({length:32},()=>({team:'home',card:{play:'counter'}}))},'home');
+  assert.ok(cg.wornPlays().some(x=>x.id==='counter'));
+  assert.equal(cg.setInstallFocus('counter'),'counter');
+  const before={...pb.mastery};cg.installWeek();assert.deepEqual(pb.mastery,before);assert.deepEqual(cg.wornPlays(),[]);
+});

@@ -46,6 +46,7 @@ function card(id,opts={}){
   const weather=(c.matchups||[]).some(m=>['rain','snow','wind'].includes(m.when)),origin=c.legacy?'legacy':c.program?'coaching tree':c.era?({single_wing:'single wing',option:'option era',west_coast:'west coast',blitz:'blitz era'}[c.era]||c.era.replace(/_/g,' ')):c.drill?'two-minute drill':c.special?'special teams':c.trick?'trick':weather?'weather':id==='giant_killer'?'milestone':'';
   const fin=opts.finish!==undefined?opts.finish:(root.SliceCards?.finishOf?.(id)||null);
   el.className=`card k-${kind} r-${rarity}${fin?' f-'+fin:''}${c.legacy?' r-legacy':''}${origin?' o-'+origin.replace(/[^a-z]+/g,'-'):''}${opts.selected?' sel':''}${opts.blocked?' blocked':''}${c.info?' info':''}${opts.small?' small':''}`;
+  if(opts.selected!==undefined&&!c.info)el.setAttribute('aria-pressed',String(!!opts.selected));
   el.dataset.id=id;el.style.setProperty('--fam',FAM[fam]||'#e5c766');
   let type;
   if(kind==='play')type=`${fam}${c.trick?' · trick':''}${opts.base?' · base':''}`;
@@ -60,9 +61,9 @@ function card(id,opts={}){
   el.setAttribute('aria-label',`${c.name}, costs ${opts.cost??c.cost}. ${c.text}${opts.why?' '+opts.why:''}`);
   if(sg){const cv=el.querySelector('.sigface');paintPortrait(cv,sg,sg.colors,58)}
   // 3D tilt and moving shine.
-  el.addEventListener('pointermove',e=>{const r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;el.style.setProperty('--rx',`${(.5-y)*14}deg`);el.style.setProperty('--ry',`${(x-.5)*16}deg`);el.style.setProperty('--sx',`${x*100}%`);el.style.setProperty('--sy',`${y*100}%`)});
+  el.addEventListener('pointermove',e=>{if(root.SliceFX?.reduce||e.pointerType==='touch')return;const r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;el.style.setProperty('--rx',`${(.5-y)*14}deg`);el.style.setProperty('--ry',`${(x-.5)*16}deg`);el.style.setProperty('--sx',`${x*100}%`);el.style.setProperty('--sy',`${y*100}%`)});
   el.addEventListener('pointerleave',()=>{el.style.setProperty('--rx','0deg');el.style.setProperty('--ry','0deg')});
   return el;
 }
-root.SliceCards={card,diagram,def,kindOf,FAM,esc,paintPortrait};
+root.SliceCards={card,diagram,routeFor:card=>ROUTES[card.evolvedFrom||card.upgradeOf||card.id],def,kindOf,FAM,esc,paintPortrait};
 })(window);

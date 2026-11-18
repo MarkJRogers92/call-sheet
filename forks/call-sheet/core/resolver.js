@@ -23,10 +23,13 @@ function winChance(m){
   const x=clamp(m,-3,3),lo=Math.floor(x),hi=Math.ceil(x);
   return D.WIN_CHANCE[lo]+(D.WIN_CHANCE[hi]-D.WIN_CHANCE[lo])*(x-lo);
 }
-// Keep the full trait average for resolution; ten-point display bands must not erase development.
-function ability(lineup,roles,traits){
+// A persistent talent advantage is tested three times a snap, on both sides of the ball.
+// Center weighted matchup grades on 7 without rounding away development. Cards still grant their full printed edge.
+function ability(lineup,roles,traits,key){
   const ps=roles.map(r=>lineup[r]).filter(Boolean);
-  return ps.length?ps.reduce((s,p)=>s+playerAvg(p,traits),0)/ps.length/10:5;
+  const rating=ps.length?ps.reduce((s,p)=>s+playerAvg(p,traits),0)/ps.length:50;
+  // The Gate decides whether either later duel is reached. Do not pay the full roster edge twice.
+  return 7+(key==='G'?.03:.055)*(rating-70);
 }
 const rootPlay=p=>p.evolvedFrom||p.upgradeOf||p.id;
 
@@ -35,6 +38,9 @@ function playBlocked(play,lineup,sit=null){
   const sig=signatureBlocked(play,lineup);if(sig)return sig;
   if(play.fourthOnly&&sit&&sit.down!==4)return'4th down only';
   if(play.thirdOnly&&sit&&sit.down!==3)return'3rd down only';
+  // The inline player sells the edge block on these wrinkles. Four-wide
+  // personnel can still call the base runs or throw to the fourth receiver.
+  if(['power','pa_boot'].includes(rootPlay(play))&&lineup.TE?.pos==='WR')return 'Needs an inline tight end. Change personnel to run this play.';
   const n=play.needs;
   if(n&&traitGrade(lineup[n.role],n.trait)<n.grade)return`Needs a ${n.role} with ${n.trait} ${n.grade}+`;
   return null;
@@ -64,10 +70,44 @@ function tacticBlocked(tac,play,offLineup){
   return null;
 }
 
+// A limited second primary read, using the same play identity and result table.
+const TARGETS={deep_cross:['Z','TE'],quick_slant:['SLOT','X']};
+function targetOptions(play,off){
+  if(!play||play.signature)return [];
+  const roles=TARGETS[rootPlay(play)];
+  if(!roles||play.target!==roles[0]||!roles.every(r=>off[r]))return [];
+  return roles.map(role=>{
+    const p=off[role];
+    const defRole=role==='X'?'BCB':role==='Z'?'FCB':role==='TE'&&p.pos==='TE'?'WILL':'NICKEL';
+    return{role,name:p.name,defRole};
+  });
+}
+function targetedPlay(play,target,off){
+  if(target==null||target==='')return play;
+  const option=targetOptions(play,off).find(x=>x.role===target);
+  if(!option)throw new Error('That player cannot be the primary on this play.');
+  if(target===play.target)return play;
+  const duels={...play.duels};
+  for(const [key,d] of Object.entries(duels)){
+    if(!d.off.includes(play.target))continue;
+    duels[key]={...d,off:d.off.map(role=>role===play.target?target:role),
+      def:d.release||d.separation?[option.defRole]:d.def};
+  }
+  return{...play,target,duels};
+}
+function bracketOptions(off){
+  return ['X','Z','SLOT','TE'].filter(r=>['WR','TE'].includes(off[r]?.pos))
+    .map(role=>({role,name:off[role].name}));
+}
+function validateBracketRole(role,off){
+  if(!bracketOptions(off).some(option=>option.role===role))throw new Error('Bracket an eligible receiver on the field.');
+  return role;
+}
+
 // The best receiver a Bracket would take away: highest grade among the eligible targets.
 function bracketRole(offLineup){
   let best='X',bg=-1;
-  for(const r of ['X','Z','SLOT','TE']){const p=offLineup[r];if(!p)continue;const g=playerAvg(p,['speed','technique','power']);if(g>bg){bg=g;best=r}}
+  for(const {role:r} of bracketOptions(offLineup)){const p=offLineup[r];const g=playerAvg(p,['speed','technique','power']);if(g>bg){bg=g;best=r}}
   return best;
 }
 
@@ -81,7 +121,12 @@ function buildSnap(ctx){
   const brRole=dt.has('bracket')?(ctx.bracketRole||bracketRole(off)):null;
   const flags={},origin=rootPlay(play),abilityContext={play:{...play,id:origin},call,offTactics:[...ot],defTactics:[...dt],situation:sit};
   const duels=['G','K','F'].map(key=>{
-    const d=play.duels[key],mods=[];
+    let d=play.duels[key];
+    // In heavy personnel the second TE/back takes part in the blocking duel.
+    // His grades, active abilities and fatigue enter through the normal path.
+    const extraBlocker=ctx.grouping==='12'&&off.SLOT?.pos==='TE'||ctx.grouping==='21'&&off.SLOT?.pos==='RB';
+    if(extraBlocker&&play.family==='run'&&key==='G'&&!d.off.includes('SLOT'))d={...d,off:[...d.off,'SLOT']};
+    const mods=[];
     const add=(v,src)=>{if(v)mods.push({v,src})};
     add(d.bias,'Play design');
     // Call vs call: the Football Strategy matrix, as duel modifiers.
@@ -167,7 +212,7 @@ function buildSnap(ctx){
     if(ctx.combo&&ctx.combo.duel===key)add(ctx.combo.v,`COMBO: ${ctx.combo.name}`);
     if(ctx.fire){
       const hotO=d.off.map(r=>off[r]).find(p=>p&&ctx.fire[p.id]),hotD=d.def.map(r=>def[r]).find(p=>p&&ctx.fire[p.id]);
-      if(hotO)add(1,`${hotO.name} ON FIRE`);if(hotD)add(-1,`${hotD.name} ON FIRE`);
+      if(hotO)add(.5,`${hotO.name} ON FIRE`);if(hotD)add(-.5,`${hotD.name} ON FIRE`);
     }
     // Signatures (offense positive, defense negative).
     for(const [roles,lineup] of [[d.off,off],[d.def,def]]){
@@ -187,7 +232,7 @@ function buildSnap(ctx){
     }
     const throwing=play.pass&&key==='F'&&!d.off.includes('QB')&&off.QB;
     const qbTraits=play.family==='deep'?['power','technique','composure']:['technique','iq','composure'];
-    const receiverGrade=ability(off,d.off,d.ot),offGrade=throwing?.7*receiverGrade+.3*ability(off,['QB'],qbTraits):receiverGrade,defGrade=ability(def,d.def,d.dt);
+    const receiverGrade=ability(off,d.off,d.ot,key),offGrade=throwing?.7*receiverGrade+.3*ability(off,['QB'],qbTraits,key):receiverGrade,defGrade=ability(def,d.def,d.dt,key);
     const offRoles=throwing?[...d.off,'QB']:d.off;
     const raw=offGrade-defGrade+mods.reduce((s,m)=>s+m.v,0),margin=clamp(raw,-3,3);
     return{key,label:d.label,offRoles,defRoles:d.def,offTraits:d.ot,defTraits:d.dt,qbTraits:throwing?qbTraits:null,offNames:offRoles.map(r=>off[r]?.name),defNames:d.def.map(r=>def[r]?.name),offGrade,defGrade,mods,raw,margin,p:winChance(margin),chip:D.chip(margin)};
@@ -230,6 +275,20 @@ function resultList(snap,cat){
   if(cat==='short'&&(snap.flags.outlet||snap.flags.checkRelease))list=[{w:1,kind:'catch',yards:[snap.flags.outlet||snap.flags.checkRelease,1]}];
   return list;
 }
+const TAIL_FLOOR=8,TAIL_MEAN=16;
+function branchChances(snap,r,cat){
+  return {pick:r.kind==='inc'?(r.int||0)*(snap.flags.ballHawk?1.5:1):0,
+    check:r.kind==='inc'&&cat!=='fail'?(snap.checkdown?.p||0):0,
+    escape:r.kind==='sack'&&snap.flags.scramble ? .5 : 0,
+    fumble:r.kind==='sack'?.07:r.kind==='run'&&['fail','short'].includes(cat)?.022:0};
+}
+function gainOdds(threshold,mean,sd,tail){
+  const normal=sd?1-phi((threshold-mean)/sd):Number(mean>=threshold);
+  if(!tail)return normal;
+  const x=threshold-mean-TAIL_FLOOR;
+  const long=sd?1-phi(x/sd)+Math.exp(-x/TAIL_MEAN+sd*sd/(2*TAIL_MEAN*TAIL_MEAN))*phi(x/sd-sd/TAIL_MEAN):Math.exp(-Math.max(0,x)/TAIL_MEAN);
+  return normal*(1-tail)+clamp(long,0,1)*tail;
+}
 // Expected value used by the AI and the "projection" line in the sandbox.
 function evaluate(snap,situation){
   const probs=categoryProbs(snap),need=situation?.distance??10;
@@ -237,15 +296,23 @@ function evaluate(snap,situation){
   for(const [cat,pc] of Object.entries(probs)){
     if(!pc)continue;const list=resultList(snap,cat),wsum=list.reduce((s,r)=>s+r.w,0);
     for(const r of list){
-      const pr=pc*r.w/wsum;let mean=r.yards[0]+(r.tail?r.tail*14:0);if(snap.flags.burner&&cat==='explosive')mean*=1.25;
-      const sd=Math.max(.8,r.yards[1]+(r.tail?6:0));
-      const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
-      const cd=r.kind==='inc'&&snap.checkdown&&cat!=='fail'?snap.checkdown.p:0;
-      if(cd){yards+=pr*cd*snap.checkdown.yards;first+=pr*cd*(1-phi((need-.5-snap.checkdown.yards)/1.5))}
-      to+=pr*((1-cd)*intP+(r.kind==='sack'?.07:0)+(r.kind==='run'&&(cat==='fail'||cat==='short')?.022:0));
-      if(r.kind==='sack')sack+=pr;
-      yards+=pr*(r.kind==='inc'?0:mean);
-      if(r.kind!=='inc')first+=pr*(1-phi((need-.5-mean)/sd));
+      const pr=pc*r.w/wsum,chance=branchChances(snap,r,cat);
+      const scale=snap.flags.burner&&cat==='explosive'?1.25:1;
+      const mean=(r.yards[0]+(r.tail||0)*(TAIL_FLOOR+TAIL_MEAN))*scale;
+      const escape=chance.escape,cd=(1-chance.pick)*chance.check;
+      const fumble=(1-escape)*chance.fumble;
+      to+=pr*(chance.pick+fumble);
+      if(r.kind==='inc'){
+        if(cd){yards+=pr*cd*snap.checkdown.yards;first+=pr*cd*gainOdds(need-.5,snap.checkdown.yards,1.5,0)}
+      }else if(r.kind==='sack'){
+        sack+=pr*(1-escape);yards+=pr*((1-escape)*Math.min(-1,mean)+escape*4.5);
+        first+=pr*escape*clamp((7-(need-.5))/5,0,1);
+      }else{
+        // Scrambles have a 2–7 yard minimum. Most printed scramble results
+        // already cluster around that range, so their expectation is approximate.
+        yards+=pr*(r.kind==='scramble'?Math.max(mean,4.5):mean);
+        first+=pr*(1-fumble)*gainOdds((need-.5)/scale,r.yards[0],r.yards[1],r.tail||0);
+      }
     }
   }
   return{yards,first,turnover:to,sack,probs};
@@ -259,30 +326,29 @@ function resolve(snap,rng,situation){
   if(snap.flags.press&&wins[0]&&cat!=='explosive')cat=cat==='short'?'success':'explosive';
   const list=resultList(snap,cat),wsum=list.reduce((s,r)=>s+r.w,0);
   let pick=rng.next()*wsum,r=list[0];for(const x of list){pick-=x.w;if(pick<=0){r=x;break}}
-  let kind=r.kind;
-  if(kind==='sack'&&snap.flags.scramble&&rng.next()<.5)kind='scramble';
+  let kind=r.kind;const chance=branchChances(snap,r,cat);
+  if(chance.escape&&rng.next()<chance.escape)kind='scramble';
   let yards=r.yards[0]+r.yards[1]*rng.gauss();
-  if(r.tail&&rng.next()<r.tail)yards+=8+(-Math.log(1-rng.next()))*16;
+  if(r.tail&&rng.next()<r.tail)yards+=TAIL_FLOOR+(-Math.log(1-rng.next()))*TAIL_MEAN;
   if(snap.flags.burner&&cat==='explosive')yards*=1.25;
   if(kind==='scramble')yards=Math.max(yards,2+rng.next()*5);
   const intRoll=rng.next(),fumRoll=rng.next(),clockRoll=rng.next();
   yards=Math.round(yards);
   // An interception on the first read ends it; only a pass that simply fell incomplete can become a checkdown.
-  let checkdown=null;const firstReadPicked=kind==='inc'&&intRoll<(r.int||0)*(snap.flags.ballHawk?1.5:1);
+  let checkdown=null;const firstReadPicked=kind==='inc'&&intRoll<chance.pick;
   // Only when the protection held (the first duel won): a pressured QB has no time to come back to the back.
-  if(kind==='inc'&&wins[0]&&!firstReadPicked&&snap.checkdown&&rng.next()<snap.checkdown.p){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
+  if(chance.check&&!firstReadPicked&&rng.next()<chance.check){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
   const play=snap.play,out={category:cat,kind,wins,duels:snap.duels.map((d,i)=>({key:d.key,label:d.label,won:wins[i],margin:d.margin,offNames:d.offNames,defNames:d.defNames}))};
   if(kind==='inc'){
-    const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
-    if(intRoll<intP){out.turnover='interception';out.yards=clamp(Math.round(6+rng.gauss()*6),-2,30);out.clock=6}
+    if(firstReadPicked){out.turnover='interception';out.yards=clamp(Math.round(6+rng.gauss()*6),-2,30);out.clock=6}
     else{out.yards=0;out.clock=6}
     out.completed=false;
   }else if(kind==='sack'){
-    out.yards=Math.min(-1,yards);out.clock=28;if(fumRoll<.07)out.turnover='fumble';
+    out.yards=Math.min(-1,yards);out.clock=28;if(fumRoll<chance.fumble)out.turnover='fumble';
   }else{
     out.yards=yards;out.completed=kind==='catch';
     out.clock=Math.round(23+clockRoll*11);
-    if(kind==='run'&&(cat==='fail'||cat==='short')&&fumRoll<.022)out.turnover='fumble';
+    if(kind==='run'&&fumRoll<chance.fumble)out.turnover='fumble';
   }
   if(play.clockStop&&!out.turnover)out.clock=Math.min(out.clock,play.clockStop);
   if(checkdown)out.checkdown={role:checkdown.role,name:checkdown.name};
@@ -299,5 +365,5 @@ function resolve(snap,rng,situation){
   return out;
 }
 
-return{grade,traitGrade,signatureBlocked,playBlocked,tacticBlocked,bracketRole,buildSnap,categoryProbs,evaluate,resolve,winChance};
+return{grade,traitGrade,signatureBlocked,playBlocked,tacticBlocked,bracketRole,bracketOptions,validateBracketRole,targetOptions,targetedPlay,buildSnap,categoryProbs,evaluate,resolve,winChance};
 });

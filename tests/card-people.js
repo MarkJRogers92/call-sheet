@@ -178,3 +178,29 @@ test('a cold dynasty archive is not mistaken for a signature player leaving foot
   assert.equal(book.signatures.length,0);assert.equal(book.ringOfHonor[0].playerId,p.id);
   assert.match(cg.playerCard(p.id),/12–2/);
 });
+
+test('a recruit branch forecast uses the public domain, even if hidden traits are edited',async()=>{
+  const {cg,u,me,CS}=await setup(951),r=u.recruits.find(p=>p.pos==='QB');
+  const qb=CS.adapter.lineupFromTeam(me).lineup.off.QB,starter=me.roster.find(p=>String(p.id)===qb.id);
+  starter.speed=50;starter.iq=95;starter.composure=90;
+  cg.recruitCard(r.id);r.scoutingDomains.mobility.estimate=80;
+  const forecast=()=>cg.recruitCard(r.id).match(/<p [^>]*data-branch-forecast[^>]*>[^]*?<\/p>/)?.[0];
+  const shown=forecast();assert.match(shown,/Power Read/);assert.match(shown,/Mobility scouting range/);assert.match(shown,/below the 70/);
+  r.speed=20;r.trueNow=25;r.iq=99;assert.equal(forecast(),shown);
+  assert.equal(CS.packs.cardDef('sig_'+r.id),null);
+});
+
+test('a breakout signature keeps the real final score and game recap through a transfer and retirement',async()=>{
+  const {cg,u,me,CS,e}=await setup(952),pb=u.callSheet.playbook;
+  const cfg=cg.launch(),side=cfg.userSide,other=side==='home'?'away':'home';
+  const home=CS.adapter.battleTeam(cfg.home,null,cfg.program.home),away=CS.adapter.battleTeam(cfg.away,null,cfg.program.away);
+  const b=CS.battle.simulate({home,away,seed:'signature-recap-11'});
+  const candidates=CS.signatures.breakouts(b,side);assert.ok(candidates.length);
+  const c=candidates[0],spec=CS.signatures.breakoutCard(b,side,c,{season:u.year});
+  assert.ok(spec.provenance[0].includes(b.teams[other].name));assert.ok(spec.provenance[0].includes(b.game.score[side]+'–'+b.game.score[other]));
+  const recap=CS.battle.decidingMoments(b)[0];assert.ok(spec.provenance.includes('Game recap · '+recap));
+  pb.signatures=[spec];const dest=u.teams.find(t=>t.id!==me.id),p=me.roster.find(p=>String(p.id)===String(c.p.id));
+  me.roster=me.roster.filter(x=>x!==p);dest.roster.push(p);cg.syncSignatures();
+  e.addToArchive(p,dest,'Graduated');dest.roster=dest.roster.filter(x=>x!==p);cg.syncSignatures();
+  const html=cg.playerCard(p.id);assert.match(html,/Card history/);assert.match(html,/Game recap/);assert.match(html,/Transferred from/);assert.match(html,/Graduated/);
+});

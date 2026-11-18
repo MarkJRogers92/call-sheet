@@ -75,3 +75,30 @@ test('program cards work in a full simulated battle',async()=>{
   const used=new Set(b.log.filter(x=>x.type==='snap').flatMap(x=>[x.play,x.call]));
   assert.ok(['counter_trey','buck_sweep','choice_route','dagger','smash'].some(id=>used.has(id)));
 });
+
+test('an acquired branch is shown and delivered for new, banked and program rewards',async()=>{
+  const {e,cg,u,CS}=await setup(934),pb=u.callSheet.playbook,P=CS.packs;
+  const frozen=P.freezeGamePack(pb,{cards:[P.POOL.find(c=>c.id==='power')]},{key:'card:old-offer'});
+  CS.evolution.evolve(pb,'power','counter');pb.gamePacks=[frozen];
+  assert.deepEqual(P.gamePackChoices(pb,frozen).map(c=>c.id),['counter']);
+  assert.ok(P.claimGamePack(pb,'card:old-offer','counter',[],500,'collection').ok);
+  assert.equal(pb.reserve.off.wrinkles.at(-1),'counter');
+  u.callSheet.rewardPacks=[{key:'booster:old',cards:['power'],title:'Booster pack'}];
+  assert.ok(cg.takeRewardCard('booster:old','counter').ok);
+  const themed=P.openPack(pb,{seed:'after-branch',won:true,favor:['power']});
+  assert.ok(themed.cards.some(c=>c.id==='counter'));
+  const saved=P.freezeGamePack(pb,themed,{key:'card:post-branch'});
+  assert.ok(P.cleanGamePack(saved).cards.some(c=>c.id==='power'));
+  assert.ok(P.gamePackChoices(pb,saved).some(c=>c.id==='counter'));
+  pb.reserve.off.wrinkles.push('power');e.normalizeCallSheet(u);
+  assert.ok(!u.callSheet.playbook.reserve.off.wrinkles.includes('power'));
+});
+
+test('even a nearly complete collection receives an eligible discovery option',async()=>{
+  const {CS}=await setup(935),P=CS.packs,pb=P.newPlaybook(),missing='two_way_star';
+  for(const c of P.POOL)if(c.kind!=='upgrade'&&c.rarity!=='legendary'&&c.id!==missing)P.grantCard(pb,c.id,{finish:false});
+  for(let seed=0;seed<10;seed++){
+    assert.ok(P.openPack(pb,{won:false,seed,oppTendency:{run:2}}).cards.some(c=>c.id===missing));
+    assert.ok(P.rewardPack(pb,{seed}).cards.includes(missing));
+  }
+});

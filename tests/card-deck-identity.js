@@ -75,3 +75,29 @@ test('a near-full save can preview a build but must not apply it and truncate ow
  pb.reserve.off.wrinkles.length=494;const safe=U.previewPlan(pb,'off','ground',500);
  assert.equal(safe.storageBlock,null);assert.equal(safe.reserve.wrinkles.length,500);
 });
+
+test('a preset follows the current branch and leaves departed optional copies out of the draft',()=>{
+ const EV=require('../forks/call-sheet/core/evolution'),pb=P.newPlaybook();
+ P.grantCard(pb,'counter_trey');P.setBase(pb,'off',0,'counter_trey');U.savePreset(pb,'Old staff');
+ EV.evolve(pb,'power','counter');P.setBase(pb,'off',0,'inside_zone');pb.reserve.off.wrinkles.splice(pb.reserve.off.wrinkles.indexOf('counter_trey'),1);
+ const original=copy(pb),draft=copy(pb),notes=U.loadPreset(draft,0);
+ assert.ok(notes.some(x=>x.includes('Counter Trey')));assert.ok(notes.some(x=>x.includes('Counter')));
+ assert.equal(new Set(draft.off.base).size,4);assert.ok(draft.off.wrinkles.includes('counter'));
+ assert.deepEqual(owned(draft),owned(pb));assert.deepEqual(pb,original);
+ draft.deckPresets[0].off.wrinkles.push('counter_trey');assert.ok(U.loadPreset(draft,0).some(x=>x.includes('open for an owned replacement')));
+});
+test('first hand odds match every permutation of a scripted pile, including duplicate openers',()=>{
+ const pb=P.newPlaybook();pb.off.wrinkles=['power','screen','screen','pa_boot','deep_cross'];P.setOpeningScript(pb,'screen');
+ let n=0,hits=0;
+ function visit(acc,rest){
+   if(!rest.length){const draw=[...acc],i=draw.lastIndexOf('screen'),last=draw.length-1;
+     if(i<draw.length-D.RULES.wrinkleRow)[draw[i],draw[last]]=[draw[last],draw[i]];
+     if(draw.slice(-D.RULES.wrinkleRow).includes('power'))hits++;n++;return}
+   rest.forEach((x,i)=>visit([...acc,x],rest.filter((_,j)=>j!==i)));
+ }
+ visit([],pb.off.wrinkles);
+ assert.ok(Math.abs(U.firstHandChance(pb,'off','power')-hits/n)<1e-10);
+ assert.equal(U.firstHandChance(pb,'off','screen'),1);assert.equal(U.firstHandChance(pb,'off',pb.off.base[0]),1);
+ pb.off.tactics=['motion','seal_block','hard_count','max_protect','route_adjust','onside_kick'];
+ assert.equal(U.firstHandChance(pb,'off','onside_kick'),0);assert.equal(U.firstHandChance(pb,'off','motion'),.8);
+});

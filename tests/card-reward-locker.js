@@ -28,6 +28,7 @@ test('a banked pick can be kept outside the deck even when a deck slot is open',
   const active=structuredClone(pb.def),limit=2;pb.reserve.def.tactics=['spy'];
   const r=P.claimGamePack(pb,pack.key,'press',[],limit,'collection');
   assert.equal(r.ok,true);assert.equal(r.stored,true);assert.deepEqual(pb.def,active);assert.deepEqual(pb.reserve.def.tactics,['spy','press']);
+  const claimed=P.lastGameCard(pb);assert.equal(claimed.source,pack.source);assert.equal(claimed.inCollection,1);
   assert.equal(pb.packsOpened,1);assert.equal(P.claimGamePack(pb,pack.key,'press',[],limit,'deck').ok,false);
 });
 test('explicit pack destinations never fall back or spend a pick when the chosen type is full',()=>{

@@ -26,7 +26,7 @@ function v2WeightedRefs(items){return(items||[]).filter(x=>x?.p).map(x=>({player
 function v2AttributionContext(team){
   const qb=roleStarter(team,'QB1')||starter(team,'QB'),k=roleStarter(team,'K1')||starter(team,'K'),pu=roleStarter(team,'P1')||starter(team,'P');
   const ol=[...new Map(['LT','LG','C1','RG','RT'].map(id=>roleStarter(team,id)).filter(Boolean).map(p=>[p.id,p])).values()];
-  return{teamName:team.name,qb:v2PlayerRef(qb),rushers:v2WeightedRefs(rushingShares(team)),receivers:v2WeightedRefs(receivingShares(team)),defenders:v2WeightedRefs(defensiveShares(team)),offensiveLine:ol.map(p=>({player:v2PlayerRef(p),weight:1})),kicker:v2PlayerRef(k),punter:v2PlayerRef(pu),kickReturner:v2PlayerRef(roleStarter(team,'KR')),puntReturner:v2PlayerRef(roleStarter(team,'PR'))}
+  return{teamName:team.name,cardRoster:team.roster,qb:v2PlayerRef(qb),rushers:v2WeightedRefs(rushingShares(team)),receivers:v2WeightedRefs(receivingShares(team)),defenders:v2WeightedRefs(defensiveShares(team)),offensiveLine:ol.map(p=>({player:v2PlayerRef(p),weight:1})),kicker:v2PlayerRef(k),punter:v2PlayerRef(pu),kickReturner:v2PlayerRef(roleStarter(team,'KR')),puntReturner:v2PlayerRef(roleStarter(team,'PR'))}
 }
 function v2StarterIds(team){
   const roles=['QB1','RB1','X','Z','SLOT','TE1','LT','LG','C1','RG','RT','RUSH','SETEDGE','NT','3TECH','MIKE','WILL','NICKEL','BCB','FCB','FS','BOXS'];
