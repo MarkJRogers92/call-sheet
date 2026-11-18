@@ -542,6 +542,7 @@ function renderLook(){
     if(l.coverage.confirmed)tags.push(['coverage',`COVERAGE: ${l.coverage.value}`,true]);
     if(l.lean.value&&l.lean.confirmed)tags.push(['lean',B.leanRead(l.lean.value),true,'lean']);
     if(l.heat)tags.push(['heat','🔥 BLITZ-HAPPY',true,'lean']);
+    const lm=req.leanMeter;if(lm&&lm.count>0)tags.push(['meter',`${lm.family.toUpperCase()} ${Math.min(lm.count,lm.threshold)}/${lm.threshold} · ${lm.threshold-lm.count<=1?'one more and they lean':'until they lean'}`,true,'lean']);
   }else{
     const t=req.offTendency,f=req.offLook.family;
     tags.push(['family',`PLAY: ${f.confirmed?f.value:'?'}`,f.confirmed]);
@@ -582,7 +583,8 @@ function quickSheetHTML(view){
   const opt=req.options,selected=opt.plays.find(p=>p.id===sel.play),cost=selCost();
   const cards=view.choices.map(c=>{
     const p=opt.plays.find(p=>p.id===c.id);
-    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span><span class="trade">${esc(c.detail)}</span></button>`;
+    const m=c.matchup?`<span class="quick-matchup">${esc(c.matchup.label)}: ${esc(c.matchup.offense)} vs ${esc(c.matchup.defense)} <i class="chip ${esc(c.matchup.chip)}">${esc(c.matchup.chip)}</i></span>`:'';
+    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${m}<span class="trade">${esc(c.detail)}</span></button>`;
   }).join('');
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   return `<div class="quick-board">
@@ -788,6 +790,7 @@ async function present(){
   for(const e of entries){
     if(e.type==='halftime'){ticker('HALFTIME · tendencies cool off, decks reshuffle');await callout('HALFTIME','cool small',900);continue}
     if(e.type==='kick'){await quickKick(e);continue}
+    if(e.type==='rest'){ticker(e.text);continue}
     if(e.type!=='snap')continue;
     if(!FX.instant&&e.userCalled&&e.duelResults&&(save.settings.replays==='all'||e.sit.down>=3||e.sit.field>=80||e.turnover||e.yards>=20||scored(e)))await cinematic(e);else await quick(e);
   }
@@ -968,11 +971,11 @@ function halftimeDialog(){
   renderBug();setFormation(sitNow());refresh();
   const r=req,preferred=D.TACTICS[r.suggestion];
   const evidence=[r.lostProtection?`${r.lostProtection} lost protection Gate${r.lostProtection===1?'':'s'} on offense`:'',
-    r.allowedPasses?`${r.allowedPasses} completion${r.allowedPasses===1?'':'s'} of 10+ yards allowed`:''].filter(Boolean).join(' · ');
+    r.allowedPasses?`${r.allowedPasses} completion${r.allowedPasses===1?'':'s'} of 10+ yards allowed${r.threat?.name?`, ${r.threat.count} to ${r.threat.name}`:''}`:''].filter(Boolean).join(' · ');
   const dialog=coachingDialog('Halftime adjustment',`
     ${evidence?`<p class="statline">${esc(evidence)}</p>`:''}
     <p>Make one adjustment. Feature a personnel package on offense or script an equipped tactic for its unit’s first second-half hand. The tactic replaces one normal draw.</p>
-    ${preferred?`<p>Staff suggestion · <b>${esc(preferred.name)}</b> · ${esc(preferred.text)}</p>`:''}
+    ${preferred?`<p>Staff suggestion · <b>${esc(preferred.name)}</b>${r.suggestion==='bracket'&&r.threat?.name?` on ${esc(r.threat.name)}`:''} · ${esc(preferred.text)}</p>`:''}
     <label>Second-half adjustment <select id="halfTactic"><option value="">Keep the game plan</option>${(r.packages||[]).map(o=>`<option value="package:${esc(o.id)}">${esc(o.name)} personnel</option>`).join('')}${r.options.map(({id,role})=>`<option value="${esc(id)}">${esc(D.TACTICS[id].name)} · ${role==='off'?'offense':'defense'}</option>`).join('')}</select></label><p id="halfDetail" aria-live="polite"></p>
     <button type="button" class="btn go" id="halfContinue">Start the second half</button>`);
   const select=dialog.querySelector('select');
@@ -994,11 +997,15 @@ $('#sidelineBtn').onclick=()=>{
     ${o.retained?`<p>You carried ${esc(D.TACTICS[o.retained]?.name||o.retained)} into this series.</p>`:''}
     ${o.late&&o.offense?`<label>Two-minute tempo <select id="clockIntent">${[['normal','Normal snap timing'],['preserve','Hurry to the line · up to 13 seconds'],['drain','Use the play clock · up to 10 extra seconds']].map(([id,label])=>`<option value="${id}" ${id===o.intent?'selected':''}>${label}</option>`).join('')}</select></label><p>Applies to running-clock snaps for the rest of this half. Stoppages and opponent timeouts still apply.</p>`:''}
     ${o.late?`<label class="timeout-choice"><input type="checkbox" id="clockTimeout" ${o.timeoutNext?'checked':''} ${o.timeouts?'':'disabled'}> Call timeout after this snap if the clock would run · ${o.timeouts} left</label>`:''}
+    ${o.offense&&o.featurable?.length?(o.featured?`<p>Featured this half · <b>${esc(o.featured.name||'your player')}</b> · ${o.featured.left} boosted touch${o.featured.left===1?'':'es'} left.</p>`
+      :`<label>Feature a player this half <select id="featurePlayer"><option value="">No featured player</option>${o.featurable.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.role)}</option>`).join('')}</select></label>
+       <p>His first two touches get +1 on every duel he is in. The defense spots him on film sooner.</p>`):''}
     ${threat?`<p>Recent film · ${esc(b.personnel[threat.playerId]?.name||'The same player')} gained ${threat.yards} yards on ${threat.count} productive ${esc(D.PLAYS[threat.play].name)} calls.</p>`:''}
     <div><button type="button" class="btn go" id="sidelineApply">Apply</button> <button type="button" class="btn" id="sidelineCancel">Cancel</button></div>`);
   dialog.querySelector('#sidelineApply').onclick=()=>{
     B.setSideline(b,{keep:dialog.querySelector('#keepTactic')?.value||null,
-      intent:dialog.querySelector('#clockIntent')?.value||o.intent,timeoutNext:!!dialog.querySelector('#clockTimeout')?.checked});
+      intent:dialog.querySelector('#clockIntent')?.value||o.intent,timeoutNext:!!dialog.querySelector('#clockTimeout')?.checked,
+      feature:dialog.querySelector('#featurePlayer')?.value||null});
     writeSave();dialog.close();renderBug();
   };
   dialog.querySelector('#sidelineCancel').onclick=()=>dialog.close();

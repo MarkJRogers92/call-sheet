@@ -194,9 +194,14 @@ test('a breakout signature keeps the real final score and game recap through a t
   const {cg,u,me,CS,e}=await setup(952),pb=u.callSheet.playbook;
   const cfg=cg.launch(),side=cfg.userSide,other=side==='home'?'away':'home';
   const home=CS.adapter.battleTeam(cfg.home,null,cfg.program.home),away=CS.adapter.battleTeam(cfg.away,null,cfg.program.away);
-  // This replay produces an earned breakout and a deciding moment for the transfer-history fixture.
-  const b=CS.battle.simulate({home,away,seed:'signature-recap-7'});
-  const candidates=CS.signatures.breakouts(b,side);assert.ok(candidates.length);
+  // Use the first replay that produces an earned breakout and a deciding moment for the transfer-history fixture.
+  // (A fixed seed broke whenever a battle rule changed the game it plays; the assertions below are unchanged.)
+  let b=null,candidates=[];
+  for(let i=7;i<47&&!candidates.length;i++){
+    b=CS.battle.simulate({home:JSON.parse(JSON.stringify(home)),away:JSON.parse(JSON.stringify(away)),seed:'signature-recap-'+i});
+    candidates=CS.battle.decidingMoments(b).length?CS.signatures.breakouts(b,side):[];
+  }
+  assert.ok(candidates.length);
   const c=candidates[0],spec=CS.signatures.breakoutCard(b,side,c,{season:u.year});
   assert.ok(spec.provenance[0].includes(b.teams[other].name));assert.ok(spec.provenance[0].includes(b.game.score[side]+'–'+b.game.score[other]));
   const recap=CS.battle.decidingMoments(b)[0];assert.ok(spec.provenance.includes('Game recap · '+recap));

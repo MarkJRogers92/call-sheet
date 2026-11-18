@@ -235,6 +235,9 @@ function buildSnap(ctx){
       const hotO=d.off.map(r=>off[r]).find(p=>p&&ctx.fire[p.id]),hotD=d.def.map(r=>def[r]).find(p=>p&&ctx.fire[p.id]);
       if(hotO)add(.5,`${hotO.name} ON FIRE`);if(hotD)add(-.5,`${hotD.name} ON FIRE`);
     }
+    // The coach's featured player (battle.js featuredEdge): labeled, only on duels he is actually in.
+    const ft=ctx.featured;
+    if(ft&&d.off.includes(ft.role)&&off[ft.role]?.id===ft.id)add(ft.v,`Featured: ${off[ft.role].name}`);
     // Signatures (offense positive, defense negative).
     for(const [roles,lineup] of [[d.off,off],[d.def,def]]){
       for(const r of roles){const s=D.SIGNATURES[lineup[r]?.archetype];if(s?.duel&&s.scope!=='field')add(s.duel(abilityContext,key,d),`${lineup[r].name} (${lineup[r].archetype})`)}

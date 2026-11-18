@@ -1,5 +1,51 @@
 # Call Sheet: handoff
 
+## November 18, 2026 · V20 review changes (Claude)
+
+Built from the V19 review (`3ceb239d`). The review played a drive, swept 1,200 seeded games and traced the worst.
+
+**Quick Calls follow the confirmed Look** (`battle.js` `snapDecisions`, `publicRead`). A confirmed real rush now leads the
+clue ahead of a lean, and protection-dependent counters (PA Boot) stop being the counter while it is on; a screen takes
+that place. On a live battle each approach's representative and the order come from the same public evaluation the full
+sheet preview uses (presumed call from the Look, confirmed lean only, players on the field). The hidden defensive call
+never enters (tested). Forced picks stay first: a genuine counter, a combo set-up that still suits the down (no run set-up
+on 3rd/4th and 5+, nothing more than 1 utility below the best), the opener. Each choice carries `matchup`
+{label, offense, defense, chip} for its first duel, shown on the card. Generic text no longer claims two safeties or
+tight man coverage that the Look has not confirmed.
+
+**Tryouts show odds** (`tryRewardCard`, `tryoutOdds`). The same film snap is evaluated exactly with and without the
+card (tactics), or against the play/call it would replace. The single practice rep is still shown, labeled "one rep".
+
+**Close-out, rested starters and score-aware fourth downs.** `protectLead` starts in Q3 at a 28-point lead. A new
+headset rule `restStarters` (default on) rests RB, Z and TE for depth players once a second-half lead reaches 28,
+returning them at 20 or less; AI teams always do. A `rest` log entry is shown in the ticker. The trailing team goes for
+it on a makeable fourth down (5 or less, any distance inside two minutes) when three scores down in the second half, two
+inside six minutes or any deficit inside two, unless a field goal would make it a one-score game. All of this is inside
+the battle; Game Engine 2's `defaultFourthDown` is unchanged.
+
+**Featured player** (sideline). Once per half, name one skill player: +1 on every duel he is in for his first two touches
+(labeled "Featured: Name"). His productive touches count twice in `revealedThreat`, so the defense adjusts to him sooner.
+
+**Lean meter.** The offense's snap request carries `leanMeter` {family, count, threshold}; the Look shows it until the
+lean triggers. The threshold is the coordinator's discipline, already public as the aggressive/disciplined label.
+
+**Halftime** names the receiver with two or more 10+ yard catches (`threat`) and points the Bracket suggestion at him.
+
+**Bug fixed: yards past the goal line.** About 4% of snaps narrated gains beyond the goal line (seed `blow-4-51`:
+"for 33" from the 1). Log entries, drive memory and film now count to the goal line, like the box score already did.
+
+**Sweep, 200 games per row, matched seeds and sides swapped.** Favorite win rates and median margins are unchanged
+(gap 12: 91.5% → 91.0%, median 21 → 21). Tails shrink: gap 12 p99 72 → 55; gap 20 p99 93 → 76; worst game 93–0 → 76–0;
+margins of 70+ at gap 20 10 → 4. Talent mismatches beyond 20 rating points (real Dynasty extremes) were not sampled.
+
+**Tests.** New `tests/card-review-v20.js` (11 tests, registered in `test` and `test:slow`). Updated expectations:
+headset shape gains `restStarters:true` (`card-save.js`, `card-sideline.js`); `card-people.js` breakout fixture now
+takes the first of a short seed range instead of one fixed seed, because the new rules change that seed's game. The card
+chain passes except `a cold dynasty archive is not mistaken for a signature player leaving football`, which fails on
+untouched V19 too in an environment without `node_modules` (`fake-indexeddb` missing). Browser suites, the full
+Dynasty Lab suite and phone-width checks were not run; the repository build and its lint were not run (errors-only
+ESLint on the changed files is clean).
+
 ## November 18, 2026 · Coaching and classic games
 
 Quick Battle and Dynasty support two-down territory, Read Option assignments, paired Inside Zone and PA Boot calls, and persistent Key Moments settings. Reward cards offer an isolated tryout before selection. Dynasty stores opponent film for rivalry prep and the final possession of newly recorded one-score card games. Game Center → Summary opens that possession in a separate, read-only replay. Games ending in a third-overtime shootout are excluded.
