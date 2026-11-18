@@ -920,6 +920,20 @@ function lastCallRecap(b,side=b?.user){
   const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sacked, ${y} yd`:`${y>0?'+':''}${y} yd`;
   return{play:e.play,name:D.PLAYS[e.play].name,down:e.sit?.down??null,result,summary:story?.summary||null,offWon:story?story.offWon:null};
 }
+// The coach's most recent own call on either side of the ball, and how many snaps have run since. The call board
+// pins it once staff snaps have pushed it out of the ticker. Reads the log; never mutates.
+function lastUserCall(b,side=b?.user){
+  const log=b?.log||[];let since=0;
+  for(let i=log.length-1;i>=0;i--){
+    const e=log[i];if(e.type!=='snap')continue;
+    if(!e.userCalled||e.penalty){since++;continue}
+    const off=e.offSide===side,def=off?null:D.CALLS[e.call];if(off?!D.PLAYS[e.play]:!def)return null;
+    const y=Number(e.yards)||0,story=matchupStory(e);
+    const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sack, ${y} yd`:`${y>0?'+':''}${y} yd`;
+    return{role:off?'off':'def',id:off?e.play:e.call,name:off?D.PLAYS[e.play].name:def.name,result,summary:story?.summary||null,won:story?(off?story.offWon:!story.offWon):null,since};
+  }
+  return null;
+}
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
   const tally=onlyMine=>{
@@ -1082,5 +1096,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,lastCallRecap,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{VERSION,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

@@ -49,9 +49,10 @@ test('setup receipt names the actual players and result only for an adjustment t
 test('quick sheet shows only offered calls, escaped public read, costs and optional full-sheet access',()=>{
  const req={role:'off',options:{command:2,plays:[{id:'screen',cost:1,card:{name:'Screen'}},{id:'draw',cost:0,card:{name:'Draw'}}]}};
  const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.'}]};
- const html=run('quickSheetHTML',{req,b:{},sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,tacticNoteHTML:()=>'<p>Pair with a tactic</p>',esc,err:''},[view]);
+ const html=run('quickSheetHTML',{req,b:{},sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,tacticNoteHTML:()=>'<p>Pair with a tactic</p>',pinnedCallHTML:()=>'<p id="pinnedCall">Your last call</p>',esc,err:''},[view]);
  assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);assert.match(html,/Snap.*Screen/i);
  assert.doesNotMatch(html,/data-quick-call="draw"/);assert.match(html,/Pair with a tactic/);
+ assert.ok(html.indexOf('id="pinnedCall"')<html.indexOf('id="quickClue"'),'the pinned last call sits above the public read');
 });
 test('standalone signing day previews the named recruit’s possible signature and matchup without awarding a card',()=>{
  const SG=require('../forks/call-sheet/core/signatures'),D=require('../forks/call-sheet/core/data');

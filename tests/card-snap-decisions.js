@@ -115,3 +115,28 @@ test('the 4th-down recap names only the coach call that set it up, with the duel
  assert.ok(found>=3,`coach-called 4th-down setups exercised: ${found}`);assert.ok(staff>0);
  assert.equal(B.lastCallRecap({log:[],user:'home'}),null);assert.equal(B.lastCallRecap(null),null);
 });
+
+test('the pinned last call is the coach\'s own most recent call, counting staff snaps since, on either side',()=>{
+ let pinned=0,defense=0;
+ for(const seed of ['pin-1','pin-2','pin-3']){
+  const b=B.create({home:Ro.preset('ground'),away:Ro.preset('aerial'),user:'home',mode:'snap',control:'both',seed});
+  let req=B.advance(b);
+  for(let i=0;i<300&&req;i++){
+   const before=JSON.stringify(b.log),c=B.lastUserCall(b);assert.equal(JSON.stringify(b.log),before);
+   const snaps=b.log.map((e,j)=>({e,j})).filter(x=>x.e.type==='snap'),mine=[...snaps].reverse().find(x=>x.e.userCalled&&!x.e.penalty);
+   if(!mine)assert.equal(c,null);
+   else{
+    pinned++;const after=snaps.filter(x=>x.j>mine.j).length;assert.equal(c.since,after,'counts every snap after the coach call');
+    if(mine.e.offSide==='home'){assert.equal(c.role,'off');assert.equal(c.name,D.PLAYS[mine.e.play].name)}
+    else{defense++;assert.equal(c.role,'def');assert.equal(c.name,D.CALLS[mine.e.call].name)}
+    if(c.summary)assert.equal(c.summary,B.matchupStory(mine.e).summary);
+   }
+   // Coach every third snap; staff takes the rest so the count of snaps since grows.
+   const coach=req.kind==='snap'&&i%3===0,opts=req.options;
+   const pick=coach&&opts.plays.find(p=>!p.blocked&&p.cost<=opts.command);
+   req=B.submit(b,req.kind==='fourth'?{choice:req.recommended}:req.kind==='plan'?{type:'plan',calls:[]}:pick?{type:'call',play:pick.id,tactics:[]}:{type:'auto'});
+  }
+ }
+ assert.ok(pinned>20);assert.ok(defense>0,'defensive calls are pinned too');
+ assert.equal(B.lastUserCall(null),null);
+});

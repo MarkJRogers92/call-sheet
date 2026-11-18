@@ -418,6 +418,11 @@ function tacticBlock(t,play){
 function blockedSelection(play){
   return req.options.tactics.find(t=>sel.tac.includes(t.slot)&&tacticBlock(t,play));
 }
+// Once staff snaps have run since the coach's last call, the ticker no longer shows it: pin one line on the board.
+function pinnedCallHTML(){
+  const c=B.lastUserCall(b);if(!c||c.since<1)return'';
+  return`<p class="pinned-call" id="pinnedCall"><span>Your last call${c.since?` · ${c.since} snap${c.since===1?'':'s'} ago`:''}</span> <b>${esc(c.name)} · ${esc(c.result)}</b>${c.summary?` <em class="${c.won?'won':'lost'}">${esc(c.summary)}</em>`:''}</p>`;
+}
 function quickSheetHTML(view){
   const opt=req.options,selected=opt.plays.find(p=>p.id===sel.play),cost=selCost();
   const cards=view.choices.map(c=>{
@@ -427,7 +432,7 @@ function quickSheetHTML(view){
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   return `<div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
-    <p id="quickClue">${esc(view.clue)}</p>
+    ${pinnedCallHTML()}<p id="quickClue">${esc(view.clue)}</p>
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${tacticNoteHTML(true)}
     <div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
@@ -435,6 +440,7 @@ function quickSheetHTML(view){
 }
 function renderQuickHand(h){
   h.innerHTML=quickSheetHTML(B.snapDecisions(b,req));
+  {const story=$('#matchupStory');if(story&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
   for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
     if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
     S.init();sel.play=id;err='';S.tick(6);renderQuickHand(h);
