@@ -122,6 +122,9 @@ function evolve(pb,rootId,branchId,opts={}){
   const side=D.PLAYS[rootId]?'off':'def';
   for(const pile of ['base','wrinkles'])pb[side][pile]=pb[side][pile].map(id=>rootOf(id)===rootId?branchId:id);
   if(pb.reserve?.[side])pb.reserve[side].wrinkles=pb.reserve[side].wrinkles.map(id=>rootOf(id)===rootId?branchId:id);
+  if(side==='off'&&pb.off.openingScript&&rootOf(pb.off.openingScript)===rootId){
+    if(D.canScriptOpener(pb.off,branchId))pb.off.openingScript=branchId;else delete pb.off.openingScript;
+  }
   pb.evolved??={};pb.evolved[rootId]=branchId;
   (pb.history??=[]).push({id:branchId,kind:'evolution',side,from:rootId});
   return branchId;

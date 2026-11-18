@@ -1,0 +1,43 @@
+'use strict';
+const assert=require('node:assert/strict'),path=require('node:path');
+const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/chromium-path'),{startNewDynasty}=require('./helpers/start-new-dynasty'),{playCardBattle}=require('./helpers/play-card-battle');
+(async()=>{
+  const browser=await chromium.launch({executablePath:chromiumPath(),args:['--no-sandbox']});
+  try{
+    const page=await browser.newPage({viewport:{width:1280,height:900},reducedMotion:'reduce'}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+    await page.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(page,{cardGame:true});
+    while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
+    // A real coached game and result. Seed one mastered play so the optional evolution path is always exercised.
+    await page.evaluate(()=>{const launch=window.__callSheetDynasty.launch;window.__callSheetDynasty.launch=()=>{const c=launch();c.playbook.mastery.inside_zone=80;return {...c,seenHelp:true,settings:{...c.settings,mode:'snap',guidedDrivePending:false,fast:true}}}});
+    await page.locator('#broadcastFeature [data-coach-cards]').click();const frame=await playCardBattle(page,{stopAtFinal:true});
+    assert.equal(await frame.locator('#bankPack').count(),1,'the final can bank the unopened reward in one step');
+    const offer=await frame.evaluate(()=>window.__slice.b._gamePack);
+    assert.ok(offer.cards.length>=3);await page.setViewportSize({width:390,height:844});
+    await frame.click('#bankPack');await page.waitForFunction(()=>!document.querySelector('#cardGameDay'));
+    let meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
+    assert.equal(meta.activeBattle,null);assert.equal(meta.games,1);assert.equal(meta.playbook.packsOpened,0);assert.deepEqual(meta.playbook.gamePacks,[offer]);
+    assert.ok(!meta.playbook.evolved?.inside_zone);assert.ok(meta.playbook.mastery.inside_zone>=80);
+    await page.click('#hubAdvance');await page.waitForFunction(()=>window.__DL_TEST__.preseasonDebug().week>=1);
+    await page.waitForFunction(()=>window.DynastySessionStatus.read().state==='saved',null,{timeout:60000});
+    await page.reload();await page.click('#titleContinue');await page.waitForFunction(()=>!document.querySelector('#app').hidden);
+    await page.evaluate(()=>window.__DL_TEST__.goToTab('collection'));
+    await page.locator('[data-card-fold="albums"] > summary').click();await page.click('[data-track-album="trick"]');
+    assert.match(await page.locator('#cardBinder').innerText(),/Tracking: Trick Bag/);
+    await page.click('[data-game-pack]');
+    await page.click('#rewardPack [data-rip]');const take=page.locator('#rewardPack [data-take]');await take.first().waitFor();
+    const persisted=await page.evaluate(()=>window.DynastyCardGameDay.meta().playbook.gamePacks[0]);assert.deepEqual(persisted,offer,'unchanged offer after week advance and real cold reload');
+    const eligible=await page.evaluate(()=>{const pb=window.DynastyCardGameDay.meta().playbook;return window.CallSheet.packs.gamePackChoices(pb,pb.gamePacks[0],window.__callSheetDynasty.rewardContext().worldTaken).map(c=>c.id)});
+    assert.deepEqual(await take.evaluateAll(els=>[...new Set(els.map(el=>el.dataset.take))]),eligible);
+    await page.keyboard.press('Escape');await page.click('[data-game-pack]');await page.click('#rewardPack [data-rip]');
+    const before=await page.evaluate(()=>window.DynastyCardGameDay.meta().playbook);
+    const keep=page.locator('#rewardPack [data-take][data-destination="collection"]').first();await keep.waitFor();
+    const pick=await keep.getAttribute('data-take');await keep.click();
+    meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());assert.equal(meta.playbook.gamePacks.length,0);assert.equal(meta.playbook.packsOpened,1);assert.equal(meta.games,1);
+    assert.equal(await page.locator('[data-game-pack]').count(),0);
+    assert.deepEqual(meta.playbook.off,before.off);assert.deepEqual(meta.playbook.def,before.def);
+    const stored=p=>['off','def'].flatMap(s=>['wrinkles','tactics'].flatMap(k=>p.reserve[s][k])).filter(id=>id===pick).length;
+    assert.equal(stored(meta.playbook),stored(before)+1,'collecting adds exactly one owned copy without editing the active deck');
+    await page.evaluate(()=>window.__DL_TEST__.goToTab('deckroom'));await page.click('#deckroom [data-card-deck]');await page.click('#deckEditor [data-more-options] > summary');assert.match(await page.locator('#deckEditor').innerText(),/Ready to evolve · Inside Zone/);
+    assert.deepEqual(errors,[]);console.log('ok  bank at final, advance, reload, dismiss, reopen, claim once, revisit permanent evolution on phone');
+  }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -138,3 +138,14 @@ Rules every integration follows:
    and validated.
 3. **Duel-true attribution:** stats credited to the players who actually won and lost the duels.
 4. **Program wiring:** schemes, staff, weekly prep, real weather, scouting confidence, and the rest of the ▶ rows.
+
+### Protection losses in Dynasty statistics
+
+New card sacks carry the players in the protection duel into the standard Dynasty
+recorder, including tight ends and running backs when they are the blockers. A
+shared two-player duel splits one sack allowed and one pressure allowed equally;
+a solo protection assignment receives the whole loss. This avoids blaming an
+unrelated lineman and preserves the team total. It applies to strip sacks too.
+Existing games and older in-progress snapshots without this metadata retain the
+normal attribution fallback. Historical stats are not rewritten, and the patch
+changes neither battle odds nor outcomes.

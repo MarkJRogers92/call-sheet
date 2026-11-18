@@ -267,9 +267,11 @@ const startNewDynasty=page=>sharedStartNewDynasty(page);
       check(`[${label}] no horizontal page overflow`, overflow <= 1, `${overflow}px`);
     }
 
-    // Tab groups: five groups that match the sidebar sections and phone bar; only the active group's tabs are reachable.
+    // Tab groups: six route groups, including Cards & Deck; only the active group's tabs are reachable.
     const visibleTabs=()=>page.$$eval('.tabs button',els=>els.filter(e=>!e.hidden).map(e=>e.dataset.tab));
-    check(`[${label}] five tab groups`, (await page.$$('.tab-groups button')).length===5);
+    check(`[${label}] six tab groups`, (await page.$$('.tab-groups button')).length===6);
+    await page.$eval('.tab-groups button[data-group="cards"]',el=>el.click());
+    check(`[${label}] Cards & Deck groups its two workspaces`,JSON.stringify(await visibleTabs())===JSON.stringify(['deckroom','collection'])&&await page.$eval('.tab.active',el=>el.id)==='deckroom');
     await page.$eval('.tab-groups button[data-group="season"]', el => el.click());
     const gamesTabs=await visibleTabs();
     // Membership is the property under test; the order is body.html's business, not the group's.

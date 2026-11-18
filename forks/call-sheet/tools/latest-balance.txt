@@ -1,0 +1,12 @@
+Call Sheet balance report — 100 games per row
+
+Talent (every player shifted; sides alternated)
+  gap   win rate   avg margin
+    0     57.0%      8.4
+    4     65.0%     13.6
+    8     84.0%     38.2
+   12     94.0%     52.1
+   20     99.0%     75.4
+
+Cards (two copies added to one side, same teams otherwise)
+  card               win rate   uses/game

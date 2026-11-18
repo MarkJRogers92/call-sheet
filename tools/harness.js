@@ -55,6 +55,7 @@ function loadEngine({ seed, stubRender = true, indexedDB, fullRuntime = false } 
   global.DynastySchools = require('../schools-data.js');
   global.DynastyMascots = require('../mascots.js');
   global.DynastyStorage = require('../storage.js');
+  global.DynastyJerseys = require('../jersey-numbers.js');
   global.DynastyRng = require('../rng.js');
   global.esc = require('../escape.js');
   if (seed !== undefined) {

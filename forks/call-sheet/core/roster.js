@@ -3,10 +3,11 @@
 (function(root,factory){
   const data=(typeof module==='object'&&module.exports)?require('./data.js'):root.CallSheet.data;
   const rng=(typeof module==='object'&&module.exports)?require('../../../rng.js'):root.DynastyRng;
-  const api=factory(data,rng);
+  const jerseys=(typeof module==='object'&&module.exports)?require('../../../jersey-numbers.js'):root.DynastyJerseys;
+  const api=factory(data,rng,jerseys);
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.CallSheet.roster=api;
-})(typeof window==='object'?window:globalThis,function(D,DynastyRng){
+})(typeof window==='object'?window:globalThis,function(D,DynastyRng,J){
 'use strict';
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 const FIRST=['Dante','Marcus','Theo','Jalen','Nico','Ray','Mason','Eli','Tyrese','Caleb','Jordan','Malik','Owen','Darius','Isaiah','Cole','Andre','Luke','Xavier','Jamal','Grant','Devin','Micah','Trey','Bo','Kendrick','Silas','Amari','Reid','Tobias'];
@@ -20,9 +21,31 @@ function makePlayer(rng,role,pos,archetype,quality,bias={}){
     traits[t]=clamp(Math.round(v),35,99);
   }
   const ovr=Math.round(strong.reduce((s,t)=>s+traits[t],0)/Math.max(1,strong.length)*.6+Object.values(traits).reduce((s,v)=>s+v,0)/7*.4);
-  return{id:`${role}-${rng.int(1000,9999)}`,name:`${rng.pick(FIRST)} ${rng.pick(LAST)}`,role,pos,archetype,traits,ovr,number:rng.int(1,99)};
+  return{id:`${role}-${rng.int(1000,9999)}`,name:`${rng.pick(FIRST)} ${rng.pick(LAST)}`,role,pos,archetype,traits,ovr,number:J.first(pos,rng.int(1,99))};
 }
 
+const lineupPlayers=lineup=>[...Object.values(lineup?.off||{}),...Object.values(lineup?.def||{})].filter(Boolean);
+function assignLineup(lineup,newcomer){
+  if(!lineup)return;
+  const players=lineupPlayers(lineup);
+  players.sort((a,b)=>Number(a===newcomer)-Number(b===newcomer)||(b.year||0)-(a.year||0)||String(a.id).localeCompare(String(b.id)));
+  J.assign(players,'number');
+}
+function refreshUniforms(lineup,pb){
+  assignLineup(lineup);
+  const numbers=new Map(lineupPlayers(lineup).map(p=>[String(p.id),p.number]));
+  for(const sg of [...(pb?.signatures||[]),...(pb?.reserveSignatures||[])])if(numbers.has(String(sg.playerId)))sg.number=numbers.get(String(sg.playerId));
+}
+// A paused game has its own presentation copies. Sync those, not its RNG,
+// play, score or log. Never renumber against just a partial on-field lineup.
+function syncBattleUniforms(b,side,roster,key){
+  const t=b.teams[side],numbers=new Map(roster.map(p=>[String(p.id),p[key]]));
+  for(const p of [...lineupPlayers(t.lineup),...(t.backfield||[]),...Object.values(t.specialists||{})]){
+    if(!p||!numbers.has(String(p.id)))continue;
+    p.number=numbers.get(String(p.id));
+    if(b.personnel?.[p.id])b.personnel[p.id].number=p.number;
+  }
+}
 // spec: {name, quality, archetypes:{role:archetype}, quality by role overrides, bias by role}
 function makeTeam(spec,seed){
   const rng=DynastyRng.create(seed||spec.name);
@@ -35,6 +58,7 @@ function makeTeam(spec,seed){
     const arch=spec.archetypes?.[role]||rng.pick(D.STYLES[pos]);
     lineup.def[role]=makePlayer(rng,role,pos,arch,spec.roleQuality?.[role]??spec.quality,spec.bias?.[role]);
   }
+  assignLineup(lineup);
   return{name:spec.name,short:spec.short||spec.name.slice(0,3).toUpperCase(),colors:spec.colors||['#c9a227','#1b2433'],lineup,
     coach:{name:spec.coach||'Coordinator',discipline:spec.discipline??4,film:spec.film!==false,passRate:spec.passRate??.5}};
 }
@@ -66,9 +90,10 @@ function dealDraft(seed,quality=72){
 }
 function teamFromDraft(name,picks,opts={}){
   const lineup={off:{},def:{}};
-  for(const [role,p] of Object.entries(picks)){(D.OFF_ROLES[role]?lineup.off:lineup.def)[role]=p}
+  for(const [role,p] of Object.entries(picks)){(D.OFF_ROLES[role]?lineup.off:lineup.def)[role]={...p}}
+  assignLineup(lineup);
   return{name,short:opts.short||name.slice(0,3).toUpperCase(),colors:opts.colors||['#c9a227','#1b2433'],lineup,coach:{name:'You',discipline:opts.discipline??4,film:true}};
 }
 
-return{makePlayer,makeTeam,PRESETS,preset,dealDraft,teamFromDraft};
+return{assignLineup,lineupPlayers,refreshUniforms,syncBattleUniforms,makePlayer,makeTeam,PRESETS,preset,dealDraft,teamFromDraft};
 });

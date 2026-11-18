@@ -26,10 +26,14 @@ const go=async(page,tab)=>{await page.evaluate(t=>document.querySelector(`[data-
       await page.locator('#rosterCards .cs-mini').first().click();
       await page.locator('#playerBattleCard').waitFor({timeout:10000});
       await page.keyboard.press('Escape');await page.waitForTimeout(200);
+      // Card mode shows no classic roster view at all; turning card mode off brings the Classic toggle back.
+      assert.equal(await page.locator('#rosterViewToggle').isHidden(),true,'no classic roster option in card mode');
+      await page.evaluate(()=>{window.DynastyCardGameDay.setIntegration('cards-default',false);window.__DL_TEST__.goToTab('roster')});await page.waitForTimeout(300);
       await page.locator('#rosterViewToggle [data-roster-view="classic"]').click();
       assert.equal(await page.locator('#rosterPositionBoard').isVisible(),true,'Classic shows Dynasty Lab’s own roster board');assert.equal(await page.locator('#rosterCards').isHidden(),true);
       assert.equal(await page.evaluate(()=>window.DynastyCardGameDay.meta().rosterView),'classic','the view choice saves');
-      await page.locator('#rosterViewToggle [data-roster-view="cards"]').click();
+      await page.evaluate(()=>{window.DynastyCardGameDay.setIntegration('cards-default',true);window.__DL_TEST__.goToTab('roster')});await page.waitForTimeout(300);
+      assert.equal(await page.locator('#rosterCards').isVisible(),true,'card mode always shows the cards');
       // Roles & Depth: the 22-man card lineup.
       await go(page,'depth');await page.locator('#depthCards .cs-mini').first().waitFor();
       assert.equal(await page.locator('#depthCards .cs-mini').count(),22);

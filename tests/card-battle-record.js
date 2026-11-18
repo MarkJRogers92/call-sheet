@@ -26,6 +26,18 @@ const B=require('../forks/call-sheet/core/battle.js');
   assert.equal((u.gameArchive||[]).length,before.archive+1,'the game is in the permanent archive');
   // Duel-true stats: every receiver's catches and yards, and every back's rushing, match the card battle exactly.
   const lines=new Map([...out.candidate.playerStats.home,...out.candidate.playerStats.away].map(r=>[String(r.id),r.stats||{}]));
+  // Protection losses survive the real recorder into player game and season stats.
+  const allowed=new Map();
+  for(const ev of b.game.events.filter(ev=>ev.sack)){
+    const ids=ev.card?.actors?.blockers||[];
+    for(const id of ids)allowed.set(String(id),(allowed.get(String(id))||0)+1/ids.length);
+  }
+  assert.ok(allowed.size,'fixture exercises sack attribution');
+  for(const [id,total] of allowed){
+    assert.equal(lines.get(id)?.sacksAllowed,total,'game stats retain shared protection credit');
+    const player=[...home.roster,...away.roster].find(p=>String(p.id)===id);
+    assert.equal(player.stats.sacksAllowed,total,'season stats retain shared protection credit');
+  }
   let checked=0;const mismatches=[];
   for(const bp of Object.values(b.players)){
     const st=lines.get(String(bp.id))||{};

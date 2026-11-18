@@ -127,7 +127,7 @@ function paintProgram(team){
 function paintMatchup(team){
  const host=document.querySelector('#broadcastFeature .broadcast-matchup');if(!host)return;
  const actions=document.querySelector('#broadcastFeature .broadcast-actions');
- if(actions&&!actions.querySelector('[data-coach-cards]'))actions.insertAdjacentHTML('afterbegin','<button type="button" class="bi-primary" data-coach-cards>Coach with Cards</button><button type="button" data-card-deck>Build Deck</button><button type="button" data-coach-live>Classic Game Day</button>');
+ if(actions&&!actions.querySelector('[data-coach-cards]'))actions.insertAdjacentHTML('afterbegin','<button type="button" class="bi-primary" data-coach-cards>Coach with Cards</button><button type="button" data-coach-live>Classic Game Day</button>');
  const byName=new Map([[team.name,team.id],...team.schedule.map(g=>[g.opponent.name,g.opponent.id])]);
  for(const card of host.querySelectorAll('.broadcast-team')){
   const name=(card.querySelector('strong')?.textContent||'').trim(),id=byName.get(name);

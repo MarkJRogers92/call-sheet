@@ -43,3 +43,50 @@ test('depth-chart weights create meaningful primary-player usage without monopol
 test('leaders are sourced from the attributed real-player lines',()=>{
  const a=attributed('leaders'),l=attribution.leaders(a,'home');assert.ok(l.passer?.id);assert.ok(l.rusher?.id);assert.ok(l.receiver?.id);assert.ok(l.defender?.id);assert.ok(a.playerStats.home.some(x=>x.id===l.passer.id))
 });
+
+test('card sacks charge the actual protection unit, including tight ends and strip sacks',()=>{
+ const events=[
+  {seq:1,type:'scrimmage',team:'home',kind:'pass',sack:true,yards:-6,card:{actors:{qb:'H-qb',sacker:'A-d0',blockers:['H-ol0','H-ol4']}}},
+  {seq:2,type:'fumble',team:'home',kind:'pass',sack:true,yards:-4,card:{actors:{qb:'H-qb',sacker:'A-d1',blockers:['H-te']}}}
+ ];
+ const state={engine:'v2',seed:'shared-protection',events,score:{home:0,away:0}},before=JSON.stringify(state);
+ const a=attribution.attributeGame(state,{home:context('H'),away:context('A')});
+ const by=id=>a.playerStats.home.find(x=>x.id===id).stats;
+ assert.equal(by('H-ol0').sacksAllowed,.5);assert.equal(by('H-ol4').sacksAllowed,.5);
+ assert.equal(by('H-te').sacksAllowed,1);assert.equal(by('H-te').pressuresAllowed,1);
+ assert.equal(a.playerStats.home.reduce((n,p)=>n+p.stats.sacksAllowed,0),2);
+ assert.equal(JSON.stringify(state),before);
+});
+
+test('card protection metadata names only the participants of the blocking duel',()=>{
+ const B=require('../forks/call-sheet/core/battle.js'),Ro=require('../forks/call-sheet/core/roster.js'),D=require('../forks/call-sheet/core/data.js');
+ let sacks=0;
+ for(let i=0;i<4;i++){
+  const b=B.simulate({home:Ro.preset('aerial'),away:Ro.preset('control'),seed:`blockers-${i}`});
+  for(const ev of b.game.events.filter(e=>e.sack)){
+   sacks++;
+   const duel=D.PLAYS[ev.card.play].duels.G,lu=b.teams[ev.team].lineup.off;
+   assert.deepEqual(ev.card.actors.blockers,duel.protect?[...new Set(duel.off.map(role=>String(lu[role].id)))]:[]);
+  }
+ }
+ assert.ok(sacks>0,'fixture must exercise real sacks');
+});
+
+test('legacy sacks retain attribution and invalid or duplicate blockers cannot inflate credit',()=>{
+ const event={seq:1,type:'scrimmage',team:'home',kind:'pass',sack:true,yards:-5};
+ const run=e=>attribution.attributeGame({engine:'v2',seed:'legacy-protection',score:{home:0,away:0},events:[e]},{home:context('H'),away:context('A')});
+ const legacy=run(event),invalid=run({...event,card:{actors:{blockers:['A-ol0','missing','A-qb']}}});
+ assert.deepEqual(invalid,legacy);
+ const a=run({...event,card:{actors:{blockers:['H-ol0','H-ol0','missing','A-ol0','H-te']}}});
+ assert.equal(a.playerStats.home.find(x=>x.id==='H-ol0').stats.sacksAllowed,.5);
+ assert.equal(a.playerStats.home.find(x=>x.id==='H-te').stats.sacksAllowed,.5);
+ assert.equal(a.playerStats.home.reduce((n,p)=>n+p.stats.sacksAllowed,0),1);
+});
+
+test('a real out-of-position blocker keeps the loss rather than blaming an unrelated lineman',()=>{
+ const home=context('H');home.receivers.find(x=>x.player.id==='H-te').player.pos='WR';
+ const state={engine:'v2',seed:'converted-blocker',score:{home:0,away:0},events:[{seq:1,type:'scrimmage',team:'home',kind:'pass',sack:true,yards:-5,card:{actors:{blockers:['H-te']}}}]};
+ const a=attribution.attributeGame(state,{home,away:context('A')});
+ assert.equal(a.playerStats.home.find(x=>x.id==='H-te')?.stats.sacksAllowed||0,1);
+ assert.equal(a.playerStats.home.filter(x=>x.pos==='OT'||x.pos==='OG'||x.pos==='C').reduce((n,x)=>n+x.stats.sacksAllowed,0),0);
+});

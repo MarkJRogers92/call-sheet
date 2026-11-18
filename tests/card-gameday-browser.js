@@ -4,6 +4,7 @@
 // transactional path, saves the program's card playbook, and returns to the dynasty.
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/chromium-path'),{startNewDynasty}=require('./helpers/start-new-dynasty');
+const {finishPackChoice}=require('./helpers/play-card-battle');
 const shots=process.env.CARD_SHOTS||'';
 (async()=>{
   const browser=await chromium.launch({executablePath:chromiumPath(),args:['--no-sandbox']});
@@ -43,6 +44,12 @@ const shots=process.env.CARD_SHOTS||'';
       el.dispatchEvent(new PointerEvent('pointerleave'));return rows;
     });
     assert.ok(fog.length&&fog.every(r=>r.range.includes('–')&&r.bar===Number(r.range.split('–')[0])),'opponent bars use the displayed range, never the exact hidden trait');
+    assert.ok(await frame.locator('#quickClue').isVisible(),'the visible look precedes the quick calls');
+    await page.setViewportSize({width:390,height:844});
+    const fit=await frame.evaluate(()=>{const r=document.querySelector('#hand').getBoundingClientRect(),s=document.querySelector('#snapBtn').getBoundingClientRect();return r.right<=innerWidth+1 && s.bottom<=innerHeight && [...document.querySelectorAll('[data-quick-call]')].every(x=>x.getBoundingClientRect().width>=44&&x.getBoundingClientRect().height>=44)});
+    assert.ok(fit,'all quick choices and snap control fit the phone');
+    if(shots)await page.screenshot({path:`${shots}/c2-quick-phone.png`});
+    await page.setViewportSize({width:1400,height:900});await frame.click('#sheetToggle');
     assert.ok(await frame.locator('#coachingRead').isVisible(),'public coaching cues appear before selecting a play');
     assert.ok(await frame.locator('#backfield').isVisible(),'the real roster provides a backfield choice');
     const command=await frame.evaluate(()=>window.__slice.req.options.command);
@@ -71,9 +78,11 @@ const shots=process.env.CARD_SHOTS||'';
     await frame.selectOption('#backfield','auto');
     // Call one snap by hand, then let the coordinators finish the game.
     // (When the game opens on a 4th-down choice the hand is hidden, so the call goes through the game's own submit path.)
-    const called=await frame.evaluate(()=>{const r=window.__slice.req;if(!r||r.kind!=='snap')return false;const p=r.options.plays.find(x=>!x.blocked&&x.cost<=r.options.command);if(!p)return false;window.__slice.go({type:'call',play:p.id,tactics:[]});return true});
+    const called=await frame.evaluate(()=>window.__slice.req?.kind==='snap');
+    if(called){await frame.click('#sheetToggle');await frame.locator('[data-quick-call]').first().click();await frame.click('#snapBtn')}
     if(called){await page.waitForTimeout(1200);if(shots)await page.screenshot({path:`${shots}/c3-clash.png`})}
     await frame.waitForFunction(()=>!window.__slice.busy,null,{timeout:60000});
+    if(await frame.locator('#quickClue').isVisible())await frame.click('#sheetToggle');
     assert.ok(await frame.locator('#lastSnap').isVisible(),'the next decision keeps a short explanation of the last snap');
     await frame.locator('#hand').evaluate(el=>Promise.all(el.getAnimations().map(a=>a.finished)));
     if(shots)await page.screenshot({path:`${shots}/c3-coaching.png`});
@@ -96,20 +105,22 @@ const shots=process.env.CARD_SHOTS||'';
     assert.ok(after.played>before.played,'the scheduled game is now played');
     // Pack, then home.
     await frame.click('#openPack',{force:true});
-    for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
+    for(let i=0;i<60;i++){if(await frame.$('#pk'))break;const skip=await frame.$('#boSkip');if(skip){await skip.click({force:true}).catch(()=>{});continue}const tp=await frame.$('#toPack');if(tp){await tp.click({force:true});await page.waitForTimeout(300);continue}await page.waitForTimeout(150)}
     await frame.click('#pk',{force:true});
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}
     if(shots)await page.screenshot({path:`${shots}/c5-pack.png`});
-    await (await frame.$$('.slot.pickable'))[0].click({force:true});
-    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
+    await (await frame.$$('.slot.pickable'))[0].click({force:true});await finishPackChoice(frame);
+    for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true}).catch(()=>{});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true}).catch(()=>{});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});
     const meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
     assert.ok(meta&&meta.playbook&&meta.playbook.packsOpened===1,'the pack pick is saved in the dynasty');
     assert.equal(meta.games,1);assert.equal(meta.playbook.record.w+meta.playbook.record.l,1,'retry grants game progression exactly once');
     if(shots)await page.screenshot({path:`${shots}/c6-back.png`});
-    // The Card Program panel appears on This Week, under the next-matchup card.
+    // The compact weekly link opens the dedicated management page.
+    await page.click('#cardDeskLink [data-card-dynasty-tab="deckroom"]');
     await page.waitForSelector('#cardProgram',{timeout:5000});
+    await page.click('#cardProgram [data-card-fold="record"] > summary');
     assert.match(await page.locator('#cardProgram .cpn-stats').innerText(),/Packs\s*1/,'the panel shows the opened pack');
     // Card Settings: switch scouting fog off and the mode to key downs; the dynasty keeps the choice.
     await page.locator('#cardProgram [data-card-settings]').click();
@@ -128,9 +139,11 @@ const shots=process.env.CARD_SHOTS||'';
     assert.equal(saved.integrations['scouting-fog'],false,'scouting fog is switched off');assert.equal(saved.mode,'key');
     assert.match(await page.locator('#cardProgram .cpn-foot.muted').innerText(),/Key downs/);
     // Advance the week: opponents open packs and the news shows Around the League.
+    await page.click('#clientRail [data-client-tab="dashboard"]');
     while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
     await page.locator('#hubAdvance').click();
-    await page.waitForFunction(()=>document.querySelectorAll('#cardProgram .cpn-news').length>0,null,{timeout:10000});
+    await page.click('#clientRail [data-client-tab="collection"]');
+    await page.waitForFunction(()=>document.querySelectorAll('#cardBinder .cpn-news').length>0,null,{timeout:10000});
     const news=await page.evaluate(()=>window.DynastyCardGameDay.news());
     assert.ok(news.length>0&&news.every(n=>n.year&&n.week),'news is saved with the week it happened');
     // Every player has a card: his player page shows the battle card with his card career.
@@ -145,7 +158,7 @@ const shots=process.env.CARD_SHOTS||'';
     assert.match(await page.locator('#playerBattleCard').innerText(),/Duels[\s\S]*Card games/,'the player page shows his card career from the coached game');
     if(shots)await page.locator('#playerBattleCard').screenshot({path:`${shots}/c9-playercard.png`});
     await page.keyboard.press('Escape');await page.locator('[data-client-tab="dashboard"]:visible, [data-tab="dashboard"]:visible').first().click();
-    if(shots){await page.locator('#cardProgram').scrollIntoViewIfNeeded();await page.locator('#cardProgram').screenshot({path:`${shots}/c8-news.png`})}
+    if(shots){await page.click('#clientRail [data-client-tab="collection"]');await page.locator('#cardBinder').screenshot({path:`${shots}/c8-news.png`})}
     // The weekly newsletter carries the card battle notes for the week.
     await page.evaluate(()=>document.querySelector('[data-tab="newsletter"]').click());
     await page.waitForSelector('#newsCallSheet',{timeout:8000});

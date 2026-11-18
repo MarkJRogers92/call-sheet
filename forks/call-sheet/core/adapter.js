@@ -39,13 +39,14 @@ function conditionsOf(p,role,traits){
   return out;
 }
 // team: a Dynasty Lab team object. Returns {lineup:{off,def}, missing:[roles filled from fallback]}.
-function lineupFromTeam(team){
+function lineupFromTeam(team,info={}){
+  const excluded=new Set((info.unavailableIds||[]).map(String)),eligible=p=>available(p)&&!excluded.has(String(p.id));
   const byId=new Map((team.roster||[]).map(p=>[p.id,p])),used=new Set(),lineup={off:{},def:{}},missing=[];
   const pick=role=>{
     const ids=team.roleDepth?.[ROLE_MAP[role]]||[];
-    for(const id of ids){const p=byId.get(id);if(available(p)&&!used.has(p.id))return p}
+    for(const id of ids){const p=byId.get(id);if(eligible(p)&&!used.has(p.id))return p}
     missing.push(role);
-    return(team.roster||[]).filter(p=>POS_FALLBACK[role].includes(p.pos)&&available(p)&&!used.has(p.id)).sort((a,b)=>(b.trueNow||0)-(a.trueNow||0))[0]||null;
+    return(team.roster||[]).filter(p=>POS_FALLBACK[role].includes(p.pos)&&eligible(p)&&!used.has(p.id)).sort((a,b)=>(b.trueNow||0)-(a.trueNow||0))[0]||null;
   };
   for(const role of Object.keys(D.OFF_ROLES)){const p=pick(role);if(p){used.add(p.id);lineup.off[role]=toBattlePlayer(p,role)}}
   for(const role of Object.keys(D.DEF_ROLES)){const p=pick(role);if(p){used.add(p.id);lineup.def[role]=toBattlePlayer(p,role)}}
@@ -90,19 +91,24 @@ function staffCommand(team){
   return{off:Number(team.staff?.OC?.playCall)>=80?1:0,def:Number(team.staff?.DC?.playCall)>=80?1:0};
 }
 function battleTeam(team,decks,info){
-  const {lineup,missing}=lineupFromTeam(team),coach=coachFromTeam(team);
+  const {lineup,missing}=lineupFromTeam(team,info),coach=coachFromTeam(team);
+  const excluded=new Set((info?.unavailableIds||[]).map(String)),eligible=p=>available(p)&&!excluded.has(String(p.id));
   // Keep the depth-chart starter first; never borrow a player already filling another role.
   const occupied=new Set([...Object.entries(lineup.off).filter(([r])=>r!=='RB').map(([,p])=>p.id),...Object.values(lineup.def).map(p=>p.id)]);
   const depth=(team.roleDepth?.RB1||[]).map(String);
-  const backs=(team.roster||[]).filter(p=>p.pos==='RB'&&available(p)&&!occupied.has(String(p.id))&&String(p.id)!==lineup.off.RB?.id)
+  const backs=(team.roster||[]).filter(p=>p.pos==='RB'&&eligible(p)&&!occupied.has(String(p.id))&&String(p.id)!==lineup.off.RB?.id)
     .sort((a,b)=>{const rank=p=>{const i=depth.indexOf(String(p.id));return i<0?Infinity:i};return rank(a)-rank(b)||(b.trueNow||0)-(a.trueNow||0)});
   const backfield=[...(lineup.off.RB?[lineup.off.RB]:[]),...backs.map(p=>toBattlePlayer(p,'RB'))];
   // Per-player edges from dynasty storylines (info.conds = {playerId: [{v, when, src}]}), labeled like any condition.
   for(const p of [...Object.values(lineup.off),...Object.values(lineup.def),...backfield])for(const c of info?.conds?.[p.id]||[])if(!p.cond.some(x=>x.src===c.src))p.cond.push({v:Math.max(-1,Math.min(1,Number(c.v)||0)),when:['any','late','money'].includes(c.when)?c.when:'any',src:String(c.src).slice(0,60)});
+  // Kicker and punter for special teams: depth chart first, then the best available at the position.
+  const specialist=pos=>{const depth=(team.roleDepth?.[pos]||team.roleDepth?.[`${pos}1`]||[]).map(String),list=(team.roster||[]).filter(p=>p.pos===pos&&eligible(p));
+    const p=list.slice().sort((a,b)=>{const r=x=>{const i=depth.indexOf(String(x.id));return i<0?Infinity:i};return r(a)-r(b)})[0];return p?toBattlePlayer(p,null):null};
+  const specialists={K:specialist('K'),P:specialist('P')};
   const programOn=info?.enabled!==false;
   coach.commandBonus=programOn?staffCommand(team):{off:0,def:0};
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
-    lineup,backfield,coach,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
+    lineup,backfield,coach,specialists,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
 }
 return{ROLE_MAP,POS_FALLBACK,toBattlePlayer,conditionsOf,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });

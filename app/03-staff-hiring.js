@@ -131,31 +131,12 @@ function ensureSchoolColors(t){if(!t)return t;const c=schoolColors(t);t.primary?
 // when Math.random is seeded (the old Date.now() prefix made seeded dynasties differ run to run).
 let portraitSeedCount=0;
 function portraitSeedFor(){return `p${(++portraitSeedCount).toString(36)}-${Math.floor(Math.random()*1e9).toString(36)}`}
-function jerseyFor(pos,seed){
- const bands={QB:[1,19],RB:[20,49],WR:[1,19],TE:[80,89],OT:[70,79],OG:[60,69],C:[50,59],EDGE:[40,59],DT:[90,99],LB:[40,59],CB:[20,39],S:[20,39],K:[1,19],P:[1,19]};
- const [lo,hi]=bands[pos]||[1,99];let h=0,str=String(seed);
- for(let i=0;i<str.length;i++){h=(h*31+str.charCodeAt(i))>>>0}
- return lo+(h%(hi-lo+1));
-}
-// Real numbers by position: preferred band first, then the fallbacks a coach would reach for.
-const JERSEY_BANDS={QB:[[1,19]],RB:[[20,49],[1,19]],WR:[[1,19],[80,89],[20,39]],TE:[[80,89],[40,49]],OT:[[70,79],[50,79]],OG:[[60,69],[50,79]],C:[[50,59],[50,79]],EDGE:[[40,59],[90,99],[1,39]],DT:[[90,99],[50,59]],LB:[[40,59],[1,39]],CB:[[20,39],[1,19]],S:[[20,39],[1,49]],K:[[1,49],[90,99]],P:[[1,49],[90,99]]};
-// Teammates may share a number only when they never take the field together: offense, defense and specialists.
-function jerseySide(pos){return ['K','P'].includes(pos)?'special':OFF_POS.has(pos)?'offense':'defense'}
-// Give every player a number no teammate on the same side wears. Veterans keep theirs; a newcomer or a player whose
-// number clashes moves to the next free number in his position's band (starting from his seeded number, so it is stable).
+function jerseyFor(pos,seed){return DynastyJerseys.first(pos,seed)}
 function assignTeamJerseys(t){
- if(!t?.roster?.length)return t;const used={offense:new Set(),defense:new Set(),special:new Set()};
- // v0.36: a retired number is never handed to a newcomer; a player already wearing it keeps it until he leaves.
- const retired=new Set((t.retiredNumbers||[]).map(x=>Number(x.number)));
+ if(!t?.roster?.length)return t;
  const order=t.roster.slice().sort((a,b)=>eligibilityBase(b)-eligibilityBase(a)||String(a.id).localeCompare(String(b.id)));
- for(const p of order){
-  ensurePortrait(p);const side=used[jerseySide(p.pos)],n=Number(p.jerseyNumber);
-  if(Number.isInteger(n)&&n>=0&&n<=99&&!side.has(n)){side.add(n);continue}
-  let h=0;const str=String(p.portraitSeed||p.id);for(let i=0;i<str.length;i++)h=(h*31+str.charCodeAt(i))>>>0;
-  const bands=[...(JERSEY_BANDS[p.pos]||[]),[1,99],[0,0]];let got=null;
-  for(const [lo,hi] of bands){const span=hi-lo+1;for(let k=0;k<span&&got==null;k++){const c=lo+((h+k)%span);if(!side.has(c)&&!retired.has(c))got=c}if(got!=null)break}
-  if(got!=null){p.jerseyNumber=got;side.add(got)}
- }
+ for(const p of order){p.portraitSeed??=`legacy-${p.id}`;p.portraitVersion??=PORTRAIT_VERSION}
+ DynastyJerseys.assign(order,'jerseyNumber',new Set((t.retiredNumbers||[]).map(x=>Number(x.number))));
  return t;
 }
 function portraitTag(p,size,frame,kind='player'){if(!p)return '';return `<canvas class="portrait portrait-${frame}" width="${size}" height="${size}" data-portrait="${p.id}" data-portrait-size="${size}" data-portrait-frame="${frame}" data-portrait-kind="${kind}" aria-label="Portrait of ${String(p.name||'player').replace(/"/g,'&quot;')}"></canvas>`}

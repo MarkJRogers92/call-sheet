@@ -27,7 +27,44 @@ portal transfer/reserve/save continuity, postseason stat/reward recording, and f
 Manual postseason card coaching is still separate work: the regular-season iframe launch gate remains in place.
 (Superseded Nov 17 — see the next section.)
 
-## The card game is the game — November 17, 2026 (latest)
+## Round 2 from IDEAS-2.md — November 17, 2026 (latest)
+
+Built (tests in `npm test`): `card-special-teams.js`, `card-eras.js`, `card-dynasty-moments.js`, `card-collecting.js`.
+- **Special teams** (battle.js "special teams and situations"): kicker/punter ratings move kicks (adapter supplies
+  `team.specialists`), Fake Punt / Fake Field Goal (`fourthOnly`), Onside Kick and Swinging Gate (`special` tactics that
+  never enter a hand), personnel groupings (`GROUPINGS`, `setGrouping`), Kill Kill (`countered` effect flag), Fade, real
+  timeouts for timeout cards, red-zone rule, halftime weather turn. Game Engine 2 gained opt-in hooks
+  (`attemptFieldGoal(state,{adjust})`, `punt(state,{netAdjust})`, `state.onside`, `state.twoPointCall`); unused, nothing
+  changes. The v0.10.0 calibration was re-run (identical numbers) and restamped.
+- **Eras**: Spinner, Buck Lateral, Triple Option, Split Veer, Shallow Cross, Curl-Flat, 46, Zone Blitz, Two-Way Star
+  (`versatile` flag); Single Wing and Two-Way eras; Single Wing, West Coast albums; era ribbons on cards.
+- **Dynasty moments** (card-gameday section 12, `dynasty-moments`): bowl-themed packs (`packs.openPack` `favor`),
+  signature honor tiers (`signatures.withTier`, tier 3 = +1), held rivalry trophy edge, coaching-tree cards leave with
+  their coach (`callSheet.schemeGrants`), Program History album (`callSheet.milestones`), Walk-On badge, spring game.
+- **Collecting**: cosmetic foil/gold finishes (`packs.rollFinish`, `playbook.finishes`), team-colored card backs, Ring of
+  Honor binder in the Card Program.
+- Gaps closed after: Quick Kick (`quickKick`, `thirdOnly`, punts inside resolveSnap), drill timeouts stop the clock
+  (trailing offense or trailing defense, logged), walk-on breakouts (10%/week once a walk-on starts, once ever), spring
+  game standout -> `callSheet.springStandout` -> added to DL's spring camp battles via the `buildCampBattles` wrapper,
+  trophy case in the Card Program. Tests: `tests/card-gaps.js`. Two-way players remain a tactic/era (one position each in DL).
+
+## Balance, combos, card mode, visuals — November 17, 2026
+
+- **Balance** (`tools/balance-report.js`, `tools/sim-report.js`, guards in `tests/card-balance.js`): game-day form
+  (`battle.js` `FORM_SIGMA`, seeded per game, labeled "X sharp/flat today") so a 12-point talent gap wins ~92%, not
+  100%. Checkdowns roll the interception first, need the protection to hold, `CHECKDOWN_RATE` .3 (~1.5% of passes).
+  Trick plays are truly once per game (the halftime reshuffle used to bring them back). Dagger toned down.
+  Latest numbers: `tools/latest-report.txt`, `tools/latest-balance.txt`.
+- **Combos** (`data.COMBOS`, `battle.comboFor(b,play,call)`, `tests/card-combos.js`): Establish the Run fixed (it fired
+  after any two plays); six new recipes, two defensive; each once per half per team.
+- **Card mode** (default): classic versions are hidden (Classic Game Day, Watch, the duplicate Open Game Day, classic
+  roster view); Game Day leads with Coach with Cards. `applyCardMode()` runs on render, roster paint and setting changes.
+- **Visuals**: battle cards carry origin ribbons (Legacy, coaching tree, two-minute drill, trick, weather, milestone) and
+  a Legacy frame; the deck editor and reward packs use shared card faces (`playbookUI.faceHTML`); reward packs open from a
+  wrapper. The breakout screen now names the right postseason pack.
+- Round-2 ideas from football history: `IDEAS-2.md`.
+
+## The card game is the game — November 17, 2026
 
 Mark: in this fork the card battle IS the game, and cards belong everywhere in Dynasty Lab.
 
@@ -360,3 +397,39 @@ Postseason remains the next substantial feature; this review does not enable it.
 - **Recruits matter in the card game.** Recruiting and development should drive the battles.
 - **Everything connected:** the battler should use as much Dynasty Lab data as possible, and results should flow back.
 - He likes ideas and pushback, but stay impartial.
+
+## Dynasty Lab decision bridge — November 17, 2026
+
+The Card Program now includes a read-only Dynasty Lab → Game Day panel. It shows the current
+opponent's valid preparation reps by card, per-side staff teaching rates, and direct links to
+Roles & Depth, Development, Staff and Recruiting. Scout & Prepare uses the existing Game Day
+router directly, bypassing the card-first launch shortcut so the original preparation board remains
+reachable. An active battle is labeled as a locked launch snapshot and does not offer that prep link.
+This adds no new economy, reward, save field or simulation modifier. Integration switches and stale/
+postseason preparation are respected. `tests/card-dynasty-bridge.js` checks read-only behavior against
+the whole universe, current-week prep, toggles, active saves, legacy staff and escaped names.
+
+## Dynasty availability governs card games — November 17, 2026
+
+Scheduled card games now use Dynasty Lab's canonical `gameAvailable()` rules, not only injuries.
+Redshirts, academic holds and current-week sit decisions cannot enter the starting lineup, RB
+rotation or kicker/punter slots. The launch serializes excluded IDs into each side's program info;
+this rule remains active with program bonuses disabled. Both the coached launch and separate
+postseason simulation path apply it. Existing saved battles retain their original lineup snapshot.
+Depth cards, deck eligibility, teaching support, opponent matchup cards and nemesis participation
+use the same eligible lineup. Spring practice remains separate: redshirts may practice.
+No rewards, save schema, or independent eligibility rules were added. `tests/card-availability.js`
+covers real coached/sim launch, both teams, specialists, expired rest, missing specialist depth,
+postseason rewards, resumed snapshots and unavailable nemesis moments.
+
+## Signature careers in Dynasty
+
+Prospect and roster profiles now preview the named signature their current role and public
+archetype could produce; this is not an unlock or an extra scouting rating. Earned profiles use the
+same final card definition as game day, including legacy effects and award tiers, and distinguish
+the game deck from stored collection cards. Archived profiles show recorded card duels without
+inventing active ratings. The Ring of Honor opens the existing player archive, and new retirements
+retain the four recorded duel-career counters even if the rolling ledger expires. Loading an older
+save preserves counters still available there; counters already discarded cannot be reconstructed.
+No pack odds, card power or unlock conditions changed. See the new cases in `tests/card-people.js`
+and `npm run test:card-journey-browser` for the profile-to-binder flow.

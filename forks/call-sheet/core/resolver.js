@@ -31,8 +31,10 @@ function ability(lineup,roles,traits){
 const rootPlay=p=>p.evolvedFrom||p.upgradeOf||p.id;
 
 // Is a play legal for this lineup? Returns null or a reason.
-function playBlocked(play,lineup){
+function playBlocked(play,lineup,sit=null){
   const sig=signatureBlocked(play,lineup);if(sig)return sig;
+  if(play.fourthOnly&&sit&&sit.down!==4)return'4th down only';
+  if(play.thirdOnly&&sit&&sit.down!==3)return'3rd down only';
   const n=play.needs;
   if(n&&traitGrade(lineup[n.role],n.trait)<n.grade)return`Needs a ${n.role} with ${n.trait} ${n.grade}+`;
   return null;
@@ -75,7 +77,7 @@ function buildSnap(ctx){
   const {off,def,play,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
   const sit=ctx.situation||{down:1,distance:10,field:25};
   // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). Used by effects, edges and matchups.
-  const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
+  const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:w==='redzone'?(sit.field||0)>=80:w==='fourth'?sit.down===4:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
   const brRole=dt.has('bracket')?(ctx.bracketRole||bracketRole(off)):null;
   const flags={},origin=rootPlay(play),abilityContext={play:{...play,id:origin},call,offTactics:[...ot],defTactics:[...dt],situation:sit};
   const duels=['G','K','F'].map(key=>{
@@ -121,9 +123,19 @@ function buildSnap(ctx){
     if(dt.has('press')&&d.release){add(-1,'Press');flags.press=true}
     if(dt.has('identify_protection')&&d.protect&&call.pressure>0)add(-1,'Aimed pressure');
     // Generic card effects (new tactics, signature cards, calls with duel mods). Each names which duels it touches.
-    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
-    for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
-    for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
+    const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:e.flag==='countered'?(call.counters||[]).includes(play.family):e.flag==='versatile'?d.off.some(r=>(off[r]?.traits?.versatility??0)>=80):!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
+    // Card-specific matchup is separate from a player's passive ability. Counters win ties.
+    let facts;
+    const matchup=(card,sign)=>{
+      const m=card?.signatureMatchup;if(!m||m.duel!==key)return;
+      facts??={origin,family:play.family,shell:call.shell,box:call.box,coverage:call.coverage,pressure:call.pressure>0,spy:dt.has('spy'),qbRead:!!d.qbRead};
+      const matches=when=>Object.entries(when).every(([k,v])=>facts[k]===v);
+      if(!matches(m.scope))return;
+      const counter=matches(m.counter.when);
+      if(counter||matches(m.edge.when))add(sign*(counter?-1:m.gain),`${card.name} matchup: ${(counter?m.counter:m.edge).label}`);
+    };
+    for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name);matchup(T,1)}
+    for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name);matchup(T,-1)}
     // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.
     // play: one card (or anything evolved/upgraded from it).
     const edgeHits=e=>hits(e)&&(!e.play||[play.id,play.evolvedFrom,play.upgradeOf].includes(e.play))&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
@@ -131,6 +143,7 @@ function buildSnap(ctx){
     for(const e of ctx.defEdges||[])if(edgeHits(e))add(-e.v,e.src);
     for(const e of play.effects||[])if(hits(e))add(e.v,e.src||play.name);
     for(const e of call.effects||[])if(hits(e))add(-e.v,e.src||call.name);
+    matchup(play,1);matchup(call,-1);
     // Weather.
     const wx=ctx.weather;
     if(wx==='rain'){if(play.pass&&key==='F')add(-1,'Wet ball');}
@@ -142,6 +155,12 @@ function buildSnap(ctx){
       const hit={pressure:call.pressure>0,shell1:call.shell===1,shell2:call.shell===2,man:call.coverage==='man',zone:call.coverage==='zone',loaded:call.box==='loaded',light:call.box==='light'}[m.when]??whenOn(m.when);
       if(hit)add(m.v,m.src);
     }
+    // Red zone: the field shrinks, so deep routes have nowhere to go.
+    if((sit.field||0)>=80&&play.family==='deep'&&key==='K')add(-1,'Red zone: no room deep');
+    // Personnel grouping (the offense's choice each series), answered by the defense's box and shell.
+    const grp=ctx.grouping;
+    if(grp==='12'||grp==='21'){if(play.family==='run'&&key===(grp==='12'?'G':'K')&&call.box!=='loaded')add(.5,`Personnel ${grp}: extra blocker`);if(play.pass&&(d.separation||d.release))add(-.5,`Personnel ${grp}: fewer receivers`)}
+    if(grp==='10'){if(play.pass&&(d.separation||d.release)&&call.shell!==2)add(.5,'Personnel 10: four receivers');if(play.family==='run'&&key==='G')add(-.5,'Personnel 10: light up front')}
     // Momentum: the offense that just took the ball away gets one snap's push at the point of attack.
     if(ctx.momentum&&key==='G')add(1,'Momentum: takeaway');
     // Combos and hot players.
@@ -186,13 +205,15 @@ function buildSnap(ctx){
     for(const [r,dr] of [['RB','WILL'],['TE','MIKE']]){
       const o=off[r],dd=def[dr];if(r===play.target||!o||!dd)continue;
       const og=((o.traits?.speed??50)+(o.traits?.technique??50))/20,dg=((dd.traits?.speed??50)+(dd.traits?.iq??50))/20;
-      const m=clamp(Math.round(og-dg)+(call.coverage==='zone'?1:0)+(call.pressure>=2?1:0)-(ot.has('max_protect')?1:0),-3,3),p=D.WIN_CHANCE[String(m)]*.6;
+      const m=clamp(Math.round(og-dg)+(call.coverage==='zone'?1:0)+(call.pressure>=2?1:0)-(ot.has('max_protect')?1:0),-3,3),p=D.WIN_CHANCE[String(m)]*CHECKDOWN_RATE;
       if(!checkdown||p>checkdown.p)checkdown={role:r,name:o.name,defRole:dr,p,margin:m,yards:4+Math.max(0,m)};
     }
   }
   return{play,call,duels,flags,checkdown,offTactics:[...ot],defTactics:[...dt],bracketRole:brRole};
 }
 
+// Share of matchup win chance a checkdown converts (the QB still has to find him). Tuned with tools/sim-report.js.
+const CHECKDOWN_RATE=Number(globalThis.__CS_CHECKDOWN_RATE)||.3;
 function categoryProbs(snap){
   const [g,k,f]=snap.duels.map(d=>d.p);
   let fail=1-g,expl=g*k*f,succ=g*(k*(1-f)+(1-k)*f),short=g*(1-k)*(1-f);
@@ -219,7 +240,7 @@ function evaluate(snap,situation){
       const pr=pc*r.w/wsum;let mean=r.yards[0]+(r.tail?r.tail*14:0);if(snap.flags.burner&&cat==='explosive')mean*=1.25;
       const sd=Math.max(.8,r.yards[1]+(r.tail?6:0));
       const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
-      const cd=r.kind==='inc'&&snap.checkdown?snap.checkdown.p:0;
+      const cd=r.kind==='inc'&&snap.checkdown&&cat!=='fail'?snap.checkdown.p:0;
       if(cd){yards+=pr*cd*snap.checkdown.yards;first+=pr*cd*(1-phi((need-.5-snap.checkdown.yards)/1.5))}
       to+=pr*((1-cd)*intP+(r.kind==='sack'?.07:0)+(r.kind==='run'&&(cat==='fail'||cat==='short')?.022:0));
       if(r.kind==='sack')sack+=pr;
@@ -246,8 +267,10 @@ function resolve(snap,rng,situation){
   if(kind==='scramble')yards=Math.max(yards,2+rng.next()*5);
   const intRoll=rng.next(),fumRoll=rng.next(),clockRoll=rng.next();
   yards=Math.round(yards);
-  let checkdown=null;
-  if(kind==='inc'&&snap.checkdown&&rng.next()<snap.checkdown.p){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
+  // An interception on the first read ends it; only a pass that simply fell incomplete can become a checkdown.
+  let checkdown=null;const firstReadPicked=kind==='inc'&&intRoll<(r.int||0)*(snap.flags.ballHawk?1.5:1);
+  // Only when the protection held (the first duel won): a pressured QB has no time to come back to the back.
+  if(kind==='inc'&&wins[0]&&!firstReadPicked&&snap.checkdown&&rng.next()<snap.checkdown.p){kind='catch';yards=Math.max(0,Math.round(snap.checkdown.yards+1.5*rng.gauss()));checkdown=snap.checkdown}
   const play=snap.play,out={category:cat,kind,wins,duels:snap.duels.map((d,i)=>({key:d.key,label:d.label,won:wins[i],margin:d.margin,offNames:d.offNames,defNames:d.defNames}))};
   if(kind==='inc'){
     const intP=(r.int||0)*(snap.flags.ballHawk?1.5:1);
