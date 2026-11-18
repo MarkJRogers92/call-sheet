@@ -23,7 +23,7 @@ module.exports=async function exerciseCoachingChoices(){
   const start=(down,distance)=>{
     const home=R.preset('ground');home.decks=P.decksOf(P.newPlaybook());
     home.decks.off.openingScript='out_and_up';home.decks.off.base[0]='read_option';
-    const b=B.create({home,away:R.preset('tempo'),user:'home',mode:'snap',control:'both',seed:'v21:1'});
+    const b=B.create({home,away:R.preset('tempo'),user:'home',mode:'snap',control:'both',seed:'v21:1',headset:{readOption:true}});
     window.DynastyGameEngineV2.startGame(b.game);
     Object.assign(b.game,{down,distance,fieldPosition:25,possession:'home'});B.advance(b);
     slice.save().activeBattle={seed:b.seed,battle:B.save(b)};

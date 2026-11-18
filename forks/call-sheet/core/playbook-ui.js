@@ -148,7 +148,7 @@ function pairedDrawSlots(saved,draft){
   for(const slot of slots)if(!slot.draft&&remaining.length)slot.draft=remaining.shift();
   return slots.concat(remaining.map(id=>({saved:null,draft:id})));
 }
-function thirdDownHands(saved,draft,lineup){
+function thirdDownHands(saved,draft,lineup,team=null){
   if(!lineup?.off||!lineup?.def)return [];
   const {battle:B,data:D,packs:P,resolver:R}=root.CallSheet;
   const decks={saved:P.decksOf(saved),draft:P.decksOf(draft)},slots={};
@@ -158,15 +158,23 @@ function thirdDownHands(saved,draft,lineup){
   }
   const situation={down:3,distance:7,field:45,period:2,clock:480};
   const call=D.CALLS.cover3,command=2,projections=new Map();
+  // Dress the personnel Auto uses on this down in a real game (four wide on 3rd & 7 when depth allows), so plays the
+  // game would block there are not counted and the package's own edges apply. Without depth, the game stays in 11 too.
+  let grouping='11',dressed=lineup;
+  if(team&&(team.packageDepth?.length||team.backfield?.length)&&B.groupingFor&&B.packageLineup){
+    const t={...team,lineup:{off:lineup.off,def:lineup.def}},mini={grouping:{home:'auto'},game:{down:3,distance:7,fieldPosition:45},teams:{home:t}};
+    const mode=B.groupingFor(mini,'home'),pk=mode!=='11'&&B.packageLineup(mini,'home',mode);
+    if(pk){const off={...lineup.off};for(const r of ['X','Z','TE','SLOT']){if(pk[r])off[r]=pk[r];else delete off[r]}dressed={off,def:lineup.def};grouping=mode}
+  }
   function project(play,tactic){
     const key=JSON.stringify([play.id,tactic?.id]);
     if(!projections.has(key)){
-      const snap=R.buildSnap({...lineup,play,call,offTactics:tactic?[tactic.id]:[],read:'auto',weather:'clear',situation});
+      const snap=R.buildSnap({...dressed,play,call,grouping,offTactics:tactic?[tactic.id]:[],read:'auto',weather:'clear',situation});
       projections.set(key,R.evaluate(snap,situation).first);
     }
     return projections.get(key);
   }
-  return Array.from({length:10},(_,index)=>{
+  const out=Array.from({length:10},(_,index)=>{
     const hands={saved:{},draft:{}};
     for(const [pile,limit] of [['wrinkles',D.RULES.wrinkleRow],['tactics',D.RULES.tacticHand]]){
       const rng=root.DynastyRng.create('third-and-seven:'+index+':'+pile);
@@ -176,14 +184,14 @@ function thirdDownHands(saved,draft,lineup){
     for(const side of ['saved','draft']){
       const hand=hands[side];
       const options=B.offOptions({game:{down:3,distance:7,fieldPosition:45,period:2,clock:480},
-        decks:{home:decks[side]},teams:{home:{lineup}},hands:{home:{...hand,role:'off',command,onceUsed:[]}}},'home');
+        decks:{home:decks[side]},teams:{home:{lineup:dressed}},hands:{home:{...hand,role:'off',command,onceUsed:[]}}},'home');
       const calls=new Map();
       for(const p of options.plays){
         if(calls.has(p.id)||p.blocked||p.cost>command)continue;
         let best={id:p.id,cost:p.cost,chance:project(p.card),tactic:null};
         for(const t of options.tactics){
           const cost=p.cost+t.cost;
-          if(t.card.info||cost>command||R.tacticBlocked(t.card,p.card,lineup.off))continue;
+          if(t.card.info||cost>command||R.tacticBlocked(t.card,p.card,dressed.off))continue;
           const chance=project(p.card,t.card);
           if(chance>best.chance||chance===best.chance&&cost<best.cost)best={id:p.id,cost,chance,tactic:t.id};
         }
@@ -193,6 +201,8 @@ function thirdDownHands(saved,draft,lineup){
     }
     return hands;
   });
+  out.grouping=grouping;
+  return out;
 }
 function thirdDownHTML(hands){
   const name=id=>escF(root.CallSheet.packs.cardDef(id)?.name||id);
@@ -203,7 +213,9 @@ function thirdDownHTML(hands){
     return (best?`<b>${name(best.id)}${best.tactic?' + '+name(best.tactic):''}</b> · ${pct(best.chance)} to convert · ${best.cost} Command`:'No affordable call')+
       `<small>Play draws · ${h.wrinkles.map(name).join(', ')||'None'}<br>Tactic draws · ${h.tactics.map(name).join(', ')||'None'}<br>Calls at 30% or better · ${h.calls.filter(c=>c.chance>=.3).map(c=>name(c.id)).join(', ')||'None'}</small>`;
   }
+  const groups={'10':'10 · four wide','12':'12 · two tight ends','21':'21 · two backs'};
   return `<p>Your offense faces your defense in Cover 3 at your 45. Each sample gives you a fresh hand, two Command left, and up to one tactic per call. Base calls and available player discounts apply.</p>
+    ${groups[hands.grouping]?`<p>Auto personnel on this down: <b>${groups[hands.grouping]}</b>. Plays that need an inline tight end are left out, as in a game.</p>`:''}
     <p><b>Hands with two or more calls at 30% or better to convert</b><br>Saved ${count('saved')}/10 · Draft ${count('draft')}/10</p>
     <p>Change a card to replay these draws before saving.</p>
     ${hands.map((h,i)=>`<details><summary>Hand ${i+1} · best conversion ${pct(h.saved.calls[0]?.chance||0)} → ${pct(h.draft.calls[0]?.chance||0)}</summary><p>Saved · ${report(h.saved)}</p><p>Draft · ${report(h.draft)}</p></details>`).join('')}`;
@@ -313,7 +325,7 @@ const EDITOR_CSS=`
 @media(max-width:720px){#deckEditor button,#deckEditor input,#deckEditor select,#deckEditor [data-side],#deckEditor [data-category]{min-height:44px}#deckEditor summary{display:list-item;min-height:44px;align-content:center}}
 @media(max-width:360px){#deckEditor h2{font-size:20px}#deckEditor .de-top{gap:5px}#deckEditor .de-side-nav{padding:1px}#deckEditor .de-side-nav button{padding:5px}#deckEditor .de-body{scrollbar-gutter:auto}}
 `;
-function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,team=null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
@@ -401,7 +413,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
-    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(side==='off'&&lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup)):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
+    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(side==='off'&&lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup,team)):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
     <p>Each series, draw up to ${D.RULES.wrinkleRow} extra plays and ${D.RULES.tacticHand} tactics. Base calls are always available. Special-teams tactics trigger in their own situations instead of being drawn.</p>
     ${side==='off'?openingScriptHTML(deck,lineup):''}
 <details data-plans ${plansOpen?'open':''}><summary>Try a different ${adjective} build</summary>

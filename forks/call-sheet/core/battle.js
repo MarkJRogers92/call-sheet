@@ -114,7 +114,8 @@ const HEADSET_RULES=[
   {id:'fourth',label:'Call fourth downs on the sides I coach',initial:true},
   {id:'inside25',label:'On offense, call the first snap at or inside their 25',initial:false},
   {id:'defendLead',label:'Call defense when I lead by 1–8 points',initial:false},
-  {id:'restStarters',label:'Rest offensive starters when up 28+ in the second half',initial:true}
+  {id:'restStarters',label:'Rest offensive starters when up 28+ in the second half',initial:true},
+  {id:'readOption',label:'Read the unblocked end myself on Read Option',initial:false}
 ];
 function headsetSettings(raw){
   return Object.fromEntries(HEADSET_RULES.map(({id,initial})=>[id,typeof raw?.[id]==='boolean'?raw[id]:initial]));
@@ -883,7 +884,8 @@ function submit(b,action){
       b.pending=null;b.telemetry.userSnaps++;b.snap.userCalled=true;
       if(role==='def'&&!b.snap.off)b.snap.off=decideAI(b,offSide(b),'off');
       const card=D.PLAYS[res.play];
-      if(role==='off'&&keyMoment(b)&&(card.evolvedFrom||card.upgradeOf||card.id)==='read_option'){
+      // Opt-in: the cue states the end's real first step, so the prompt is a choice only for coaches who want it.
+      if(role==='off'&&b.headset?.readOption&&keyMoment(b)&&(card.evolvedFrom||card.upgradeOf||card.id)==='read_option'){
         const snap=committedSnap(b,req.situation,res,b.snap.def);
         const off=b.teams[side].lineup.off,def=b.teams[other(side)].lineup.def;
         const firstStep=snap.edgeAssignment==='crash'?'steps inside toward the back':'stays wide with the quarterback';
@@ -941,10 +943,9 @@ function comboFor(b,play,call=null){
   return hit?{id:hit.id,name:hit.name,duel:hit.duel,v:hit.v,side:hit.side,reward:hit.reward}:null;
 }
 // Count positive primary completions against this corner, out of the last eight offensive snaps.
-function boundaryOuts(b,side){
+function boundaryOuts(b,side,grouping=b.snap?.grouping||groupingFor(b,side)){
   const corner=b.teams[other(side)].lineup.def.BCB?.id,wide=b.teams[side].lineup.off.X?.id;
   if(corner==null||wide==null)return 0;
-  const grouping=b.snap?.grouping||groupingFor(b,side);
   let count=0,snaps=0;
   for(let i=(b.log?.length||0)-1;i>=0&&snaps<8;i--){
     const e=b.log[i];
@@ -961,6 +962,17 @@ function boundaryOuts(b,side){
     }
   }
   return count;
+}
+// The corner's read of the quick out belongs to one personnel grouping. Report the count for this snap's grouping and,
+// when Auto personnel has moved off it, the grouping where the setup still stands.
+function setupLook(b,side){
+  const current=b.snap?.grouping||groupingFor(b,side),outs=boundaryOuts(b,side,current);
+  let elsewhere=null;
+  for(const g of Object.keys(GROUPINGS)){
+    if(g==='auto'||g===current)continue;
+    const n=boundaryOuts(b,side,g);if(n>outs&&(!elsewhere||n>elsewhere.outs))elsewhere={grouping:g,outs:n,name:GROUPINGS[g]};
+  }
+  return{current,name:GROUPINGS[current],outs,elsewhere};
 }
 function knownEffects(b,play,call=null){return{boundaryOuts:(play.evolvedFrom||play.upgradeOf||play.id)==='out_and_up'?boundaryOuts(b,offSide(b)):0,momentum:b.momentum?.side===offSide(b)&&b.momentum.left>0,fire:b.fire,workload:b.workload||{},combo:comboFor(b,play,call),grouping:b.snap?.grouping||groupingFor(b,offSide(b)),featured:featuredEdge(b,offSide(b))}}
 // Boost his duels on calls designed for him until he has two actual carries or receptions.
@@ -1085,12 +1097,15 @@ function resolveSnap(b){
     result.text=storyLine(b,off,def,play,out,before,snap.edgeAssignment)+(specialNotes.length?` ${specialNotes.join('. ')}.`:'')+clockNote;
     const step=snap.flags.cornerStep;
     if(step){
-      result.cornerStep=step;
+      // Every duel is rolled, but only reached duels happened. A lost pocket ends the play before the route.
+      const reached=!!out.wins[0];
+      result.cornerStep={...step,reached};
       const corner=b.teams[def].lineup.def.BCB.name,wide=b.teams[off].lineup.off.X.name;
-      const route=step.jumped?'drove on the out':'stayed over the top';
-      const finish=out.kind==='sack'?'The rush got home before the throw.':out.wins[1]?
-        (step.jumped?`${wide} got behind him.`:`${wide} still won separation.`):`${wide} had no clean separation.`;
-      result.text+=` ${corner} ${route}. ${finish}`;
+      if(reached){
+        const route=step.jumped?'drove on the out':'stayed over the top';
+        const finish=out.wins[1]?(step.jumped?`${wide} got behind him.`:`${wide} still won separation.`):`${wide} had no clean separation.`;
+        result.text+=` ${corner} ${route}. ${finish}`;
+      }else result.text+=out.kind==='sack'?' The rush got home before the route developed.':' The pocket broke down before the route developed.';
     }
     if(specialNotes.length)result.special=specialNotes;
     result.events=[];
@@ -1372,12 +1387,29 @@ function callReason(req,c){
   return '';
 }
 // Suggest at most one affordable, useful card. A selected card is explained even if a later play change made it a bad fit.
-function tacticRead(req,playId,lineup={},selected=[],primaryTarget){
+function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=false){
   const o=req?.options,p=o?.plays?.find(x=>x.id===playId);
   if(req?.kind!=='snap'||!p||p.blocked)return null;
   const off=req.role==='off',card=p.card||(off?D.PLAYS:D.CALLS)[p.id];
   if(!card)return null;
   const play=off?R.targetedPlay(card,primaryTarget,lineup):card;
+  // On a live battle without scouting fog, suggest the affordable tactic that moves the public projection most.
+  // Hand order is only the fallback, so an information card no longer outranks a tactic that changes the duel.
+  if(b?.game&&off&&!fog&&!selected.length){
+    try{
+      const base=publicRead(b,req,p.id,false,primaryTarget,[]);let best=null;
+      for(const t of o.tactics||[]){
+        const tc=t.card||D.TACTICS[t.id];if(!tc||tc.info||p.cost+t.cost>o.command)continue;
+        if(R.signatureBlocked(tc,lineup)||R.tacticBlocked(tc,play,lineup))continue;
+        const r=publicRead(b,req,p.id,false,primaryTarget,[t.id]);if(!r||!base)continue;
+        const gain=r.u-base.u;if(gain>.25&&(!best||gain>best.gain))best={t,tc,gain,r};
+      }
+      if(best){
+        const pct=x=>Math.round(x*100)+'%',why={seal_block:'An extra block helps win the Gate before the runner cuts.',max_protect:'Extra protection buys the passer time, but leaves one fewer route to finish.'}[best.t.id]||best.tc.text;
+        return{id:best.t.id,name:best.tc.name,cost:best.t.cost,reason:`${why} Projected first down ${pct(base.first)} → ${pct(best.r.first)}.`,selected:false};
+      }
+    }catch(e){}
+  }
   const l=req.look||{},family=req.offLook?.family,duels=Object.values(play.duels||{});
   const target=duels.find(d=>(d.release||d.separation)&&d.off.includes(play.target));
   function reason(t){
@@ -1439,10 +1471,13 @@ function sameLookPair(b,req,id){
   const name=option?D.PLAYS[option.id].name:D.PLAYS[mate].name;
   const reason=!option?'Outside this hand.':option.blocked||(option.cost>hand.command?'Insufficient Command.':'');
   if(base==='quick_out'||base==='out_and_up'){
-    const receiver=line.X?.name||'X',corner=def.BCB?.name||'the boundary corner',outs=boundaryOuts(b,side);
+    const receiver=line.X?.name||'X',corner=def.BCB?.name||'the boundary corner',look=setupLook(b,side),away=look.elsewhere;
+    const canHold=!!away&&b.pending===req&&!b.snap?.off&&!!packageLineup(b,side,away.grouping);
+    const setup=away?`${corner} saw ${away.outs}/2 quick outs from ${away.name}. This down you are in ${look.name}, so his read of the out starts over. Stay in ${away.name} to keep the setup.`
+      :`Quick outs completed against ${corner} from ${look.name} in your last eight snaps: ${look.outs}/2. ${look.outs===2?'He has seen it twice and may jump it.':'A personnel change resets his read; Quick Out keeps the double move in hand.'}`;
     return {title:'Quick Out / Out-and-Up',read:`${receiver} breaks toward the sideline on both calls. On the double move he plants and goes deep. Watch whether ${corner} drives on his break.`,
-      setup:`Quick outs completed against ${corner} from this look in your last eight snaps: ${outs}/2. ${outs===2?'He has seen it twice and may jump it.':'Quick Out keeps the double move in hand.'}`,
-      diagrams:['quick_out','out_and_up'],mate:{id:option?.id||mate,name,cost:option?.cost,reason}};
+      setup,diagrams:['quick_out','out_and_up'],mate:{id:option?.id||mate,name,cost:option?.cost,reason},
+      ...(canHold?{hold:{grouping:away.grouping,name:away.name,outs:away.outs}}:{})};
   }
   const rb=line.RB?.name||'your back',qb=line.QB?.name||'your quarterback';
   const ready=comboFor(b,D.PLAYS.pa_boot)?.id==='establish';
@@ -1514,13 +1549,26 @@ function matchupStory(e){
   let detail='A favorable matchup improves the odds; it never guarantees the duel.';
   if(ratingEdge!==null){
     if(sign*ratingEdge>0&&sign*setupEdge<0)detail='The winner’s player-rating advantage overcame an unfavorable setup and situational edges.';
-    else if(sign*(ratingEdge+setupEdge)<0)detail='The matchup favored the other side, but winning it was not guaranteed.';
+    else if(sign*(ratingEdge+setupEdge)<0){
+      // Name the favored side: "the other side" read as the opponent to the coach whose player lost.
+      const lp=Number.isFinite(d.p)?Math.round(100*(offWon?1-d.p:d.p)):null,who=losers.filter(Boolean)[0]||'The other side';
+      detail=`${who} was favored${lp!=null?` (${lp}%)`:''}, but winning it was not guaranteed.`;
+    }
     else if(sign*ratingEdge<0&&sign*setupEdge>0)detail='Setup and situational edges helped the lower-rated matchup win.';
     else if(sign*ratingEdge>0)detail='The winner had the player-rating edge in the traits this duel tested.';
   }
   // A duel is not the same as a catch: outcome tables can still produce an incompletion.
   if(e.kind==='inc'&&reached.every(r=>r.won))detail+=' All reached duels went the offense’s way, but the pass still fell incomplete.';
-  return{summary:`${d.label}: ${names.filter(Boolean).join(' & ')||'The winner'} beat ${losers.filter(Boolean).join(' & ')||'the matchup'}.`,detail,key:d.key,winnerSide,winnerRoles:offWon?d.offRoles:d.defRoles,loserRoles:offWon?d.defRoles:d.offRoles,offWon,ratingEdge,setupEdge};
+  return{summary:`${d.label}: ${names.filter(Boolean).join(' & ')||'The winner'} beat ${losers.filter(Boolean).join(' & ')||'the matchup'}.`,detail,defense:defenseNote(e,d,offWon),key:d.key,winnerSide,winnerRoles:offWon?d.offRoles:d.defRoles,loserRoles:offWon?d.defRoles:d.offRoles,offWon,ratingEdge,setupEdge};
+}
+// After the snap the defense's call is public. Name it with the scheme and situation edges that helped the winner of
+// the deciding duel (player abilities and conditions stay in the full duel view).
+function defenseNote(e,d,offWon){
+  const call=D.CALLS[e.call];if(!call)return null;
+  const tactics=(e.defTactics||[]).map(id=>D.TACTICS[id]?.name).filter(Boolean);
+  const swing=(d.mods||[]).filter(m=>(offWon?m.v>0:m.v<0)&&m.src!=='Play design'&&!/[(:]/.test(m.src))
+    .sort((a,c)=>Math.abs(c.v)-Math.abs(a.v)).slice(0,2).map(m=>`${m.src} ${m.v>0?'+':'−'}${Math.abs(m.v)}`);
+  return`Defense: ${call.name}${tactics.length?' + '+tactics.join(' + '):''}.${swing.length?` At ${String(d.label).toLowerCase()}: ${swing.join(', ')}.`:''}`;
 }
 // The call that set up this 4th down, if the coach made it. Only the immediately preceding snap counts: a staff
 // call, penalty or kick in between means the coach's own call is not what led here. Reads the log; never mutates.
@@ -1696,7 +1744,8 @@ function publicRead(b,req,id,fog,target,tactics=[]){
   const sit=req.situation,lean=req.look.lean?.confirmed?req.look.lean.value:null,call=presumedCall(req.look,true);
   const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off,def,play,...knownEffects(b,play,call),call,
     offTactics:activeTactics(b,'off',tactics),read:'auto',situation:sit,lean,heat:!!req.look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
-  return{u:utility(R.evaluate(snap,sit),sit),gate:snap.duels[0]};
+  const ev=R.evaluate(snap,sit);
+  return{u:utility(ev,sit),first:ev.first,gate:snap.duels[0]};
 }
 // A compact, public-information call sheet. Never evaluate hidden opponent ability or committed cards.
 // It contrasts one call per approach. On a live battle, the representative of each approach and the order follow
@@ -1758,6 +1807,14 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
     add(available.filter(o=>catalog[o.id].family==='deep'),c=>gains(c,'explosive'),'Take a shot');
   }
   if(chosen.length<3)pick(ranked.find(o=>counters(catalog[o.id]))||ranked.find(o=>setup(catalog[o.id])&&fits(o)));
+  // Quick Out / Out-and-Up: the setup and the payoff stay in reach, with the corner's count in the detail.
+  let outLook=null;
+  if(offense&&b?.game&&b.teams?.[other(req.side)]){
+    const qo=legal.find(o=>origin(catalog[o.id])==='quick_out'),ou=legal.find(o=>origin(catalog[o.id])==='out_and_up');
+    if(ou){try{outLook=setupLook(b,req.side)}catch(e){outLook=null}}
+    // The payoff stays in reach whenever the corner has seen two, here or in the personnel the coach can return to.
+    if(outLook&&chosen.length<3){if(outLook.outs>=2||outLook.elsewhere?.outs>=2)pick(ou);else if(qo)pick(qo)}
+  }
   if(chosen.length<3)pick(legal.find(o=>o.id===req.options?.openingScript));
   // Prefer one call per family; do not turn a hand full of one family into nonexistent alternatives.
   for(const o of ranked)if(chosen.length<3&&!families.has(catalog[o.id].family))pick(o);
@@ -1782,6 +1839,12 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
       else if(lean==='quick'&&c.id==='vertical_shot')detail=`With defenders sitting on short passes, take a shot to ${actor} if protection holds.`;
       else if(blitz&&!heat&&origin(c)==='screen')detail=`Screen to ${actor}: the confirmed rush helps the screen at the Gate.`;
       else if(heat&&origin(c)==='screen')detail=`Screen to ${actor}: repeated pressure helps at the Key${look.pressure?.confirmed?(look.pressure.value?' and this rush helps at the Gate.':', even with no extra rush now.'):'; the next rush is unknown.'}`;
+      else if(outLook&&['quick_out','out_and_up'].includes(origin(c))){
+        const corner=b.teams[other(req.side)].lineup.def.BCB?.name||'The corner',away=outLook.elsewhere;
+        detail=origin(c)==='quick_out'?`Setup: ${corner} has seen ${outLook.outs}/2 quick outs from ${outLook.name}.${away?` He saw ${away.outs} from ${away.name}.`:''}`
+          :outLook.outs>=2?`${corner} has seen two quick outs from ${outLook.name}; he may jump the break.`
+          :away?`${corner} saw ${away.outs}/2 from ${away.name}; in ${outLook.name} his read starts over.`:`${corner} has seen ${outLook.outs}/2 quick outs; the double move works best after two.`;
+      }
       else if(combo)detail=`${combo.name} ready: ${names(c.duels?.[combo.duel]?.off?.slice(0,1),actor)} gets help on ${String(c.duels?.[combo.duel]?.label||'the matchup').toLowerCase()}.`;
     }else if(c.pressure>0)detail=`Send ${names(['RUSH'],'your edge rusher')}; if they pass, rush the pocket. A screen can slip behind it.`;
     else if(c.shell===2)detail=`Keep ${names(['FS'],'your safety')} deep; limit deep throws, ${c.box==='light'?'but leave fewer bodies against the run':'but give the passer time'}.`;
@@ -1805,17 +1868,19 @@ function decidingMoments(b){
   const snaps=b.log.filter(e=>e.type==='snap'&&e.duels&&e.duelResults&&e.score),fs=b.game.score;if(!snaps.length||fs.home===fs.away)return[];
   const winner=fs.home>fs.away?'home':'away',lead=sc=>Math.sign((sc?.home||0)-(sc?.away||0))*(winner==='home'?1:-1);
   const q=p=>p>4?'OT':`Q${p}`,dd=s=>s.sit?.down?`${s.sit.down}${['th','st','nd','rd'][s.sit.down]||'th'} & ${s.sit.distance}`:'';
-  // A takeaway credits the defender who won his duel; anything else credits the offense's winning duel.
-  const line=(s,why)=>{
-    let best=null;
-    s.duels.forEach((d,i)=>{const r=s.duelResults[i];if(!r)return;if((s.turnover?!r.won:r.won)&&(!best||Math.abs(d.margin||0)>Math.abs(best.d.margin||0)))best={d,r}});
+  // Credit the side that won the snap: a takeaway, or any snap the defense won for the eventual winner (a safety,
+  // a stop), credits a defender's won duel; otherwise the offense's. Only reached duels count: every duel is rolled,
+  // but a lost Gate ends the play, so the later duels never happened.
+  const line=(s,why,defenseWon=!!s.turnover)=>{
+    let best=null;const reached=s.duelResults[0]?.won?s.duelResults.length:1;
+    s.duels.forEach((d,i)=>{const r=s.duelResults[i];if(!r||i>=reached)return;if((defenseWon?!r.won:r.won)&&(!best||Math.abs(d.margin||0)>Math.abs(best.d.margin||0)))best={d,r}});
     if(!best)return null;const w=best.r.won?best.d.offNames?.[0]:best.d.defNames?.[0],l=best.r.won?best.d.defNames?.[0]:best.d.offNames?.[0];
     if(!w||!l)return null;
     return`${why}: ${w} beat ${l} on ${best.d.label.toLowerCase()} (${q(s.sit.period)}${dd(s)?`, ${dd(s)}`:''}, ${D.PLAYS[s.play]?.name||s.play}).`;
   };
   let decider=null;for(let i=0;i<snaps.length;i++){const before=i?snaps[i-1].score:{home:0,away:0};if(lead(snaps[i].score)>0&&lead(before)<=0)decider=snaps[i]}
   const out=[],used=new Set();
-  if(decider){const t=line(decider,'Deciding duel');if(t){out.push(t);used.add(decider)}}
+  if(decider){const t=line(decider,'Deciding duel',!!decider.turnover||decider.offSide!==winner);if(t){out.push(t);used.add(decider)}}
   // The lead can change on a field goal or a return, which is not a snap: then the winner's biggest play turned it.
   if(!out.length){const big=snaps.filter(x=>x.offSide===winner&&!x.turnover).sort((a,c)=>(c.yards||0)-(a.yards||0))[0];const t=big&&line(big,'Turning point');if(t){out.push(t);used.add(big)}}
   const swings=snaps.filter(s=>!used.has(s)&&(s.turnover||Math.abs(s.yards||0)>=25)).sort((a,c)=>(c.turnover?100:0)+Math.abs(c.yards||0)-((a.turnover?100:0)+Math.abs(a.yards||0))).slice(0,2);
@@ -1872,5 +1937,5 @@ function duelTally(b){
   }
   return out;
 }
-return{archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{setupLook,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

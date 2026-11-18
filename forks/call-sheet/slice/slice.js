@@ -332,8 +332,20 @@ function sameLookHTML(){
     `<button type="button" class="auto" data-same-look="${esc(m.id)}">Switch to ${esc(m.name)} · ${m.cost} CMD</button>`;
   const diagrams=m?`<details><summary>Compare diagrams</summary><div class="pair-diagrams">${(pair.diagrams||['inside_zone','pa_boot']).map(id=>
     `<figure>${window.SliceCards.diagram(id,'off')}<figcaption>${esc(D.PLAYS[id].name)}</figcaption></figure>`).join('')}</div></details>`:'';
-  return `<section class="same-look"><b>${esc(pair.title)}</b><p>${esc(pair.read)}</p>${pair.setup?`<small>${esc(pair.setup)}</small>`:''}${diagrams}${action}</section>`;
+  const hold=pair.hold?`<button type="button" class="auto" data-hold-look="${esc(pair.hold.grouping)}">Stay in ${esc(pair.hold.name)}</button><small>Personnel stays there until you set it back to Auto.</small>`:'';
+  return `<section class="same-look"><b>${esc(pair.title)}</b><p>${esc(pair.read)}</p>${pair.setup?`<small>${esc(pair.setup)}</small>`:''}${hold}${diagrams}${action}</section>`;
 }
+// Hold the look: switch to the personnel where the corner has seen the quick out, keeping the selected call.
+function holdLook(e){
+  const el=e.target.closest?.('[data-hold-look]');
+  if(!el||busy||req?.kind!=='snap')return;
+  const pair=B.sameLookPair(b,req,sel.play);if(!pair?.hold||pair.hold.grouping!==el.dataset.holdLook)return;
+  const keep=sel.play;
+  try{req=B.setGrouping(b,req.side,pair.hold.grouping)||b.pending}catch(err2){err=err2.message;renderHand();return}
+  const still=req.options.plays.find(p=>p.id===keep&&!p.blocked);
+  sel={play:still?keep:null,tac:[]};err='';writeSave();setFormation(sitNow(),0);refresh();
+}
+document.addEventListener('click',holdLook);
 function switchSameLook(e){
   const el=e.target.closest?.('[data-same-look]');
   if(!el||busy||req?.kind!=='snap')return;
@@ -425,7 +437,7 @@ function bindAssignment(root){
 }
 function tacticNoteHTML(quick=false){
   if(!sel.play||req?.kind!=='snap')return '';
-  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac,sel.target);
+  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac,sel.target,b,!!fogSpread());
   if(!note)return '<p class="call-tactic-note">Hold Command for the next call.</p>';
   const hand=req.options.tactics,slot=note.selected?sel.tac[0]:hand.find(t=>t.id===note.id)?.slot;
   const rest=sel.tac.slice(1).map(i=>hand.find(t=>t.slot===i)?.card.name).filter(Boolean);
@@ -469,7 +481,7 @@ function setupReceipt(e){
 }
 function matchupStoryHTML(e){
   const note=B.matchupStory(e);if(!note)return'';
-  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Their grades are ranges at your film confidence.':note.detail))}</span>`;
+  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Their grades are ranges at your film confidence.':note.detail))}</span>${note.defense?`<small>${esc(note.defense)}</small>`:''}`;
 }
 function showMatchupStory(e){
   let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
@@ -1162,8 +1174,8 @@ function finalScreen(){
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
   const swapBtn=m.querySelector('[data-film-swap]');if(swapBtn)swapBtn.onclick=()=>{const swap=lossSwapFor(B.postgameTakeaway(b));if(!swap){swapBtn.remove();return}
-    window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
-  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
+    window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
+  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
   bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
 async function packScreen(won){

@@ -140,7 +140,7 @@ test('the coordinator takes away the stronger option matchup and leaves ordinary
 test('the key-down mesh saves the committed call and credits the chosen runner exactly once',()=>{
   const home=Ro.preset('ground');
   home.decks={...D.DEFAULT_DECKS,off:{base:['read_option'],wrinkles:[],tactics:[]}};
-  const b=B.create({home,away:Ro.preset('tempo'),user:'home',mode:'snap',control:'offense',seed:'personnel-final'});
+  const b=B.create({home,away:Ro.preset('tempo'),user:'home',mode:'snap',control:'offense',seed:'personnel-final',headset:{readOption:true}}); // the read prompt is opt-in from V22
   const engine=require('../game-engine-v2');
   engine.startGame(b.game);
   Object.assign(b.game,{possession:'home',down:3,distance:2,fieldPosition:45});
@@ -210,7 +210,7 @@ test('a repeatable Quick Out can set up the drawn double move on the actual call
   const resumed=B.load(B.save(b));
   const step=play(b,'out_and_up');
   assert.deepEqual(step,play(resumed,'out_and_up'));
-  assert.deepEqual(step.cornerStep,{jumped:true,outs:2});
+  assert.deepEqual(step.cornerStep,{jumped:true,outs:2,reached:true});
   assert.ok(step.text.includes(b.teams.away.lineup.def.BCB.name+' drove on the out'));
   assert.ok(step.duels[1].mods.some(m=>m.src==='Corner jumped the out'));
   assert.ok(!b.hands.home?.wrinkles.includes('out_and_up'));

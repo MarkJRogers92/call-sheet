@@ -1,5 +1,54 @@
 # Call Sheet: handoff
 
+## November 18, 2026 · V22 hold the look and film fixes (Claude)
+
+Built on V21 source `2659b41d`. Follows the V21 review: playtest in Chromium (Quick Battle and a Quick Start
+Dynasty), seeded checks in Node.
+
+**Hold the look (Quick Out / Out-and-Up).** The corner's read of the quick out counts only Quick Outs from the same
+personnel (`boundaryOuts`). Auto personnel moves to 10 on 3rd & 7+, so in 200 seeded games 1,528 Out-and-Up calls after
+two completed outs got no credit. New `setupLook(b,side)` reports the count in this snap's grouping and the grouping
+where a larger count still stands. The pair panel (`sameLookPair`) names the reset ("his read of the out starts over")
+and offers `hold` {grouping}; the slice renders **Stay in 11 · balanced**, which calls `setGrouping` and keeps the
+selected call. Personnel then stays manual until set back to Auto. Quick Calls keep Quick Out in reach until the corner
+has seen two, and keep Out-and-Up on the shortlist when two stand here or in the personnel the coach can return to,
+with the count in the detail. No rule of the double move changed.
+
+**Film only describes what happened.** Every duel is rolled (`resolver.js` resolve), but a lost Gate ends the play.
+Out-and-Up narration said "X got behind him" after "Hold the pocket ✗"; it now says "The pocket broke down before the
+route developed" and `cornerStep.reached` records it. `decidingMoments` credited unreached duels and always the offense:
+a game decided by a safety named the losing team's back as the deciding duel. It now uses reached duels and credits the
+defense when the defense won the snap for the eventual winner.
+
+**The film names the defensive call.** `matchupStory` returns `defense`: "Defense: Bear Front + Disguise. At edge block:
+Loaded box −2, Run blitz −1." (scheme and situation edges only; player abilities stay in the duel view). The favored
+loser is named: "Marcus Vance was favored (54%), but winning it was not guaranteed." ("the other side" read as the
+opponent.)
+
+**Tactic suggestion by value.** `tacticRead(..., b, fog)` on a live battle without scouting fog suggests the affordable
+tactic that moves the public projection most (more than 0.25 utility), with "Projected first down 30% → 54%". Hand
+order remains the fallback. Example: 3rd & 1, Outside Zone, Seal Block over Hard Count.
+
+**3rd-and-7 comparison uses live personnel.** `thirdDownHands(saved,draft,lineup,team)` dresses the grouping Auto uses
+on 3rd & 7 when the team has depth (four wide), so PA Boot and Power are no longer counted there and the package's edges
+apply; the report names the personnel. `open()` takes `team`; slice and `card-gameday.js` pass the battle team.
+Without depth the game stays in 11 too, so the old view is unchanged.
+
+**Read Option prompt is opt-in** (headset `readOption`, default off). The cue states the end's real first step and the
+textbook read wins in every measured matchup, so the prompt was a click, not a choice. The rework (a disguised first
+step, QB IQ, keep traits that favor runners) is deferred.
+
+**Tests.** New `tests/card-review-v22.js` (8 tests, registered in `test` and `test:slow`; all 8 fail on untouched V21).
+Updated expectations, each from a rule change above: headset shape gains `readOption:false` (`card-save.js`,
+`card-sideline.js`); `cornerStep` gains `reached` and the mesh tests opt in with `headset:{readOption:true}`
+(`card-personnel-targets.js`, `tests/helpers/exercise-coaching-choices.js`). The card chain matches V21: the only
+failure is `a cold dynasty archive is not mistaken for a signature player leaving football`, which needs
+`fake-indexeddb` (not in the review zip). A rebuilt Quick Battle bundle was checked in Chromium: the staged 3rd & 8
+showed the reset, the Stay in 11 button restored 2/2, the snap and film rendered, no horizontal scroll at 390 px.
+Not run: the repository build, `npm run lint`, browser suites, the full Dynasty Lab suite, Safari.
+
+**Not built:** recruit "deciding trait" lines (V22 proposal 2) and the Read Option rework (proposal 3).
+
 ## November 18, 2026 · Integrated V20
 
 Applied Claude’s patch to the exact V19 source and verified its ten files against the supplied ZIP. Integration fixes keep hidden scouting grades out of Quick Calls, carry the halftime bracket onto the named eligible receiver, and use the same resolver inputs for reward odds and the practice snap. The featured-player counter follows actual catches and carries. Rest settings apply to simulated Dynasty games and package changes. Fourth-down staff decisions account for field goals that tie, win or cut a 9–11 point deficit to one possession. Film, box scores and narration now agree on recovery spots, sacks and enforced penalty yards.
