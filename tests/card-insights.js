@@ -28,7 +28,7 @@ test('adaptation clue uses confirmed public lean and actual previous snaps, neve
   const b={log:[1,2,3].map(()=>snap({play:'inside_zone'})),tend:{home:{run:99}},snap:{def:{play:'secret'}}};
   const req={kind:'snap',role:'off',side:'home',look:{lean:{value:'run',confirmed:false}},options:{plays:[]}};
   const before=clone(b),uncertain=B.adaptationRead(b,req);assert.equal(uncertain.confirmed,false);assert.match(uncertain.summary,/3 straight run/);assert.match(uncertain.detail,/may|could/);assert.doesNotMatch(uncertain.summary,/leaning|safety/);
-  req.look.lean.confirmed=true;const known=B.adaptationRead(b,req);assert.equal(known.confirmed,true);assert.match(known.summary,/leaning on the run/);
+  req.look.lean.confirmed=true;const known=B.adaptationRead(b,req);assert.equal(known.confirmed,true);assert.match(known.summary,/their defense is playing the run/i);
   b.snap.def.play='another secret';assert.deepEqual(B.adaptationRead(b,req),known);b.snap.def.play='secret';assert.deepEqual(b,before);
 });
 test('insight helpers survive older saves and reveal no unconfirmed coverage',()=>{
@@ -41,4 +41,26 @@ test('adaptation recommendations never suggest an unaffordable or blocked counte
   assert.equal(B.adaptationRead({log:[]},req).counterPlay,null);
   req.options.command=2;req.options.plays[0].blocked='Owner resting';assert.equal(B.adaptationRead({log:[]},req).counterPlay,null);
   req.options.plays[0].blocked=null;assert.equal(B.adaptationRead({log:[]},req).counterPlay,'pa_boot');
+});
+
+test('rivalry film remembers actual converting receivers and two recorded catches',()=>{
+  const play=snap({offSide:'away',defSide:'home',sit:{down:4,distance:5,period:4,clock:82,field:60},completed:true,
+    participants:{target:'TE'},lineups:{off:{TE:'relief',X:'primary'}},primaryTarget:'X'});
+  const b={rivalry:true,user:'home',personnel:{relief:{name:'Sam End'}},log:[play,{...play,sit:{...play.sit,period:3,clock:195}},
+    {...play,yards:1},{...play,completed:false},{...play,penalty:{}},{...play,turnover:'fumble'},{...play,lineups:null}]};
+  const film=B.callFilm(b).rivalryPlay;
+  assert.equal(film.id,'relief');assert.equal(film.name,'Sam End');assert.equal(film.kind,'fourth');
+  assert.deepEqual(film.snaps.map(s=>s.clock),[82,195]);assert.equal(film.snaps[0].play,'Deep Cross');
+  b.log=b.log.slice(2);assert.equal(B.callFilm(b).rivalryPlay,undefined);
+});
+test('prepared rivalry assignment follows the on-field player and applies only when Bracket is played',()=>{
+  const home=Ro.preset('ground'),away=Ro.preset('tempo'),D=require('../forks/call-sheet/core/data');
+  home.rivalryBracketId=away.lineup.off.TE.id;home.decks=clone(D.DEFAULT_DECKS);home.decks.def.tactics=Array(6).fill('bracket');
+  const b=B.create({home,away,user:'home',mode:'snap',control:'defense',seed:'bracket-owner'}),req=B.advance(b);
+  assert.equal(req.options.bracketPlan.role,'TE');
+  const call={type:'call',play:req.options.plays.find(p=>!p.blocked&&!p.cost).id,tactics:['bracket']};
+  assert.ok(B.preview(b,'home',call).vs.every(x=>x.snap.bracketRole==='TE'));
+  assert.ok(B.preview(b,'home',{...call,tactics:[]}).vs.every(x=>x.snap.bracketRole===null));
+  assert.ok(B.preview(b,'home',{...call,bracketRole:'X'}).vs.every(x=>x.snap.bracketRole==='X'));
+  const n=b.log.length;B.submit(b,call);assert.equal(b.log[n].bracketRole,'TE');
 });

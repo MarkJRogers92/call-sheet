@@ -134,8 +134,10 @@ const shots=process.env.CARD_SHOTS||'';
     await page.locator('#cardProgram [data-card-settings]').click();
     await page.locator('#cardSettings input[name="int:scouting-fog"]').uncheck();
     await page.locator('#cardSettings input[name="mode"][value="key"]').check();
+    await page.locator('#cardSettings input[name="headset:inside25"]').check();
     await page.locator('#cardSettings button[type="submit"]').click();
     const saved=await page.evaluate(()=>window.DynastyCardGameDay.meta().settings);
+    assert.equal(saved.headset.inside25,true);
     assert.equal(saved.integrations['scouting-fog'],false,'scouting fog is switched off');assert.equal(saved.mode,'key');
     assert.match(await page.locator('#cardProgram .cpn-foot.muted').innerText(),/Key downs/);
     // Advance the week: opponents open packs and the news shows Around the League.

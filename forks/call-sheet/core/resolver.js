@@ -33,6 +33,25 @@ function ability(lineup,roles,traits,key){
 }
 const rootPlay=p=>p.evolvedFrom||p.upgradeOf||p.id;
 
+// The end commits to one runner. The weak-side linebacker must fit the other.
+const keepTraits=['speed','versatility'],giveTraits=['power','technique'];
+const scrapeTraits=['speed','iq'],fillTraits=['power','technique'];
+const spyPenalty=2;
+function defaultEdgeAssignment(off,def,hasSpy){
+  const keep=ability(off,['QB'],keepTraits,'K')-ability(def,['WILL'],scrapeTraits,'K')-(hasSpy?spyPenalty:0);
+  const give=ability(off,['RB'],giveTraits,'K')-ability(def,['WILL'],fillTraits,'K');
+  return keep>give?'contain':'crash';
+}
+function readOptionPlay(card,assignment){
+  const keep=assignment==='crash',carrier=keep?'QB':'RB';
+  const {G,K,F}=card.duels;
+  return {...card,carrier,duels:{
+    G:{...G,label:keep?'Read the crashing end':'Read the containing end',qbRun:keep,dt:keep?['power','technique']:['speed','iq']},
+    K:{...K,label:keep?'Keep outside vs scrape':'Give inside vs fill',off:[carrier],ot:keep?keepTraits:giveTraits,dt:keep?scrapeTraits:fillTraits,qbRun:keep},
+    F:{...F,off:[carrier]}
+  }};
+}
+
 // Is a play legal for this lineup? Returns null or a reason.
 function playBlocked(play,lineup,sit=null){
   const sig=signatureBlocked(play,lineup);if(sig)return sig;
@@ -114,7 +133,9 @@ function bracketRole(offLineup){
 // ctx: {off, def (lineups), play, call, offTactics[], defTactics[], situation{down,distance,field},
 //       lean (defense leaning family or null), heat (bool), motionConfirmed (bool)}
 function buildSnap(ctx){
-  const {off,def,play,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
+  const {off,def,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
+  const edgeAssignment=rootPlay(ctx.play)==='read_option'?(ctx.edgeAssignment||defaultEdgeAssignment(off,def,dt.has('spy'))):null;
+  const play=edgeAssignment?readOptionPlay(ctx.play,edgeAssignment):ctx.play;
   const sit=ctx.situation||{down:1,distance:10,field:25};
   // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). Used by effects, edges and matchups.
   const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:w==='redzone'?(sit.field||0)>=80:w==='fourth'?sit.down===4:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
@@ -164,7 +185,7 @@ function buildSnap(ctx){
     if(brRole&&d.off.some(r=>RECEIVER_ROLES.includes(r))&&(d.release||d.separation||key==='F'&&play.pass)){
       if(d.off.includes(brRole))add(-2,'Bracketed');else if(d.off.some(r=>['X','Z','SLOT','TE'].includes(r)))add(1,'Bracket left him alone');
     }
-    if(dt.has('spy')){if(d.qbRun)add(-2,'QB spy');if(d.protect)add(1,'One fewer rusher')}
+    if(dt.has('spy')){if(d.qbRun)add(-spyPenalty,'QB spy');if(d.protect)add(1,'One fewer rusher')}
     if(dt.has('press')&&d.release){add(-1,'Press');flags.press=true}
     if(dt.has('identify_protection')&&d.protect&&call.pressure>0)add(-1,'Aimed pressure');
     // Generic card effects (new tactics, signature cards, calls with duel mods). Each names which duels it touches.
@@ -254,7 +275,7 @@ function buildSnap(ctx){
       if(!checkdown||p>checkdown.p)checkdown={role:r,name:o.name,defRole:dr,p,margin:m,yards:4+Math.max(0,m)};
     }
   }
-  return{play,call,duels,flags,checkdown,offTactics:[...ot],defTactics:[...dt],bracketRole:brRole};
+  return{play,call,duels,flags,checkdown,...(edgeAssignment?{edgeAssignment}:{}),offTactics:[...ot],defTactics:[...dt],bracketRole:brRole};
 }
 
 // Share of matchup win chance a checkdown converts (the QB still has to find him). Tuned with tools/sim-report.js.

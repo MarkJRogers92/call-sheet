@@ -29,7 +29,11 @@ async function showOptions(page){
  const browser=await chromium.launch({executablePath:chromiumPath(),args:['--no-sandbox']});
  try{
   const page=await browser.newPage({viewport:{width:1400,height:900}}),errors=[];page.on('pageerror',e=>errors.push(String(e)));
-  await page.goto('file://'+file);await page.locator('[data-team]').first().click();await page.click('#pbv');
+  await page.goto('file://'+file);await page.locator('[data-team]').first().click();
+  await page.locator('.headset-options summary').click();await page.locator('[data-headset="inside25"]').check();
+  await page.reload();await page.locator('.headset-options summary').click();
+  assert.ok(await page.locator('[data-headset="inside25"]').isChecked(),'Quick Battle remembers headset preferences');
+  await page.click('#pbv');
   const editor=page.locator('#deckEditor');
   for(const [w,h] of [[1400,900],[390,844],[320,720]])await checkLayout(page,w,h,'sandbox');
   // Keyboard input must leave a reachable control on the same face, even as the next state changes.
@@ -58,6 +62,10 @@ async function showOptions(page){
   const pair=await page.locator('.quick-board .call-tactic-note').innerText();assert.match(pair,/Add tactic|Play now|Hold Command/,'a selected call explains a pairing or why to save Command');
   await page.click('#sheetToggle');assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true');assert.ok(await page.locator('#coachingRead .call-tactic-note').isVisible(),'same guidance in the full sheet');assert.match(await page.textContent('#look'),/Opening script: Screen/i);
   await page.click('#battleSettings');await page.selectOption('#motionMode','reduced');
+  assert.ok(await page.locator('#headsetControls [data-headset="inside25"]').isChecked());
+  await page.locator('#headsetControls [data-headset="defendLead"]').check();
+  assert.ok(await page.evaluate(()=>window.__slice.b.headset.defendLead&&window.__slice.save().settings.headset.defendLead));
+  await page.locator('#headsetControls [data-headset="defendLead"]').uncheck();
   assert.ok(await page.evaluate(()=>window.SliceFX.reduce&&document.documentElement.classList.contains('motion-reduced')));
   await page.keyboard.press('Escape');assert.ok(await page.locator('#battleSettings').evaluate(el=>el===document.activeElement));
   await page.setViewportSize({width:390,height:844});

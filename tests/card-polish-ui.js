@@ -31,7 +31,7 @@ test('field story withholds rating explanations under scouting fog',()=>{
 test('resume advances an unfinished checkpoint instead of awarding a premature final',()=>{
  let advanced=0,decided=0;
  const battle={pending:null,log:[],game:{status:'playing',score:{home:0,away:0}}};
- const context={B:{load:()=>battle},DYN:{},save:{activeBattle:{battle}},setWeather(){},drawField(){},renderBug(){},setMarkers(){},$:()=>({classList:{remove(){}},innerHTML:''}),go:()=>advanced++,decide:()=>decided++};
+ const context={B:{load:()=>battle,headsetSettings:require('../forks/call-sheet/core/battle').headsetSettings},DYN:{},save:{activeBattle:{battle},settings:{}},setWeather(){},drawField(){},renderBug(){},setMarkers(){},$:()=>({classList:{remove(){}},innerHTML:''}),go:()=>advanced++,decide:()=>decided++};
  run('resumeBattle',context);assert.equal(advanced,1);assert.equal(decided,0);
  battle.game.status='final';run('resumeBattle',context);assert.equal(decided,1);
 });
@@ -73,4 +73,36 @@ test('field player tooltip only explains an earned card in the coach’s active 
  pb.signatures=[spec];pb.reserveSignatures=[];
  const html=tell('home','X');assert.ok(html.includes(esc(def.name))&&html.includes(esc(def.matchupText)));assert.match(html,/When you play/);
  assert.equal(tell('away','X'),'');assert.equal(tell('home','Z'),'');
+});
+
+test('the defensive call sheet names both option assignments alongside an active bracket',()=>{
+ const teams={home:{lineup:{def:{SET:{name:'End <Hill>'},WILL:{name:'Luke West'}}}},away:{lineup:{off:{}}}};
+ const html=run('assignmentHTML',{req:{role:'def',side:'home',options:{}},sel:{play:'cover3',edgeAssignment:'contain'},teamOf:s=>teams[s],
+   selectedTactics:()=>['bracket'],B:{bracketOptions:()=>[{role:'X',name:'Lee'},{role:'Z',name:'Morgan'}]},esc});
+ assert.match(html,/data-assignment="edgeAssignment"/);assert.match(html,/value="contain" selected/);
+ assert.match(html,/End &lt;Hill&gt; takes RB, Luke West takes QB/);
+ assert.match(html,/End &lt;Hill&gt; takes QB, Luke West takes RB/);
+ assert.match(html,/data-assignment="bracketRole"/);
+});
+
+test('a coach can switch paired calls with legal tactics and cannot select an unavailable mate',()=>{
+ const sel={play:'inside_zone',tac:[3,1,2]},ctx={sel,b:{},busy:false,err:'',
+  req:{kind:'snap',options:{command:2,plays:[{id:'pa_boot',cost:1}],tactics:[
+   {slot:1,cost:1,card:{name:'Protection'}},{slot:2,cost:1,card:{name:'Extra'}},{slot:3,cost:0,card:{name:'Run tactic'}}]}},
+  B:{sameLookPair:()=>({mate:{id:'pa_boot'}})},choosePlay:id=>{sel.play=id},tacticBlock:t=>t.slot===3,
+  S:{tick(){}},refresh(){},document:{querySelector:()=>null}};
+ const event={target:{closest:()=>({dataset:{sameLook:'pa_boot'}})}};
+ run('switchSameLook',ctx,[event]);assert.equal(sel.play,'pa_boot');assert.deepEqual(sel.tac,[1]);
+ sel.play='inside_zone';ctx.B.sameLookPair=()=>({mate:{id:'pa_boot',reason:'Needs an inline tight end'}});
+ run('switchSameLook',ctx,[event]);assert.equal(sel.play,'inside_zone');
+});
+
+test('third-down play intent has a keyboard-accessible state and can be switched off without submitting the play',()=>{
+ const b={snap:{twoDown:true}},el={focus(){}},h={querySelector:()=>el},req={kind:'snap'};
+ const markup=run('twoDownButton',{b});
+ assert.match(markup,/type="button"/);assert.match(markup,/aria-pressed="true"/);assert.match(markup,/fourth-and-short/);
+ let submitted,saved=false,painted=false;
+ run('bindTwoDown',{b,req,busy:false,B:{submit:(_,action)=>{submitted=action;return req}},writeSave(){saved=true},refresh(){painted=true}},[h]);
+ el.onclick();
+ assert.equal(submitted.type,'two_down');assert.equal(submitted.active,false);assert.ok(saved&&painted);
 });

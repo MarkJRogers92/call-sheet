@@ -55,3 +55,40 @@ test('full games: combos are occasional, both sides earn them, and the duel show
   assert.ok(Object.keys(seen).length>=5,`recipes seen: ${JSON.stringify(seen)}`);
   assert.ok(defEarned>0,'the defense earns its combos');assert.ok(labeled>0,'combo edges are labeled on the duel');
 });
+
+test('zone and boot share the live backfield, price the actual mate and respect public reads',()=>{
+  const b=battleAt(runs),side=b.game.possession,opponent=side==='home'?'away':'home';
+  const req={kind:'snap',role:'off',side,look:{lean:{value:'run',confirmed:false}},options:{
+    command:1,plays:[{id:'inside_zone',cost:0},{id:'pa_boot_plus',cost:1}]
+  }};
+  const line=b.teams[side].lineup.off,def=b.teams[opponent].lineup.def;
+  const read=B.sameLookPair(b,req,'inside_zone');
+  for(const p of [line.QB,line.RB,line.TE,def.MIKE,def.SET])assert.ok(read.read.includes(p.name));
+  assert.equal(read.mate.id,'pa_boot_plus');assert.equal(read.mate.reason,'');assert.equal(read.mate.cost,1);
+  assert.match(read.setup,/next boot/);assert.doesNotMatch(read.setup,/leaning run/);
+  req.look.lean.confirmed=true;assert.match(B.sameLookPair(b,req,'inside_zone').setup,/leaning run/);
+  assert.equal(B.sameLookPair(b,req,'pa_boot_plus').mate.id,'inside_zone');
+  req.options.command=0;assert.match(B.sameLookPair(b,req,'inside_zone').mate.reason,/Command/);
+  const fourWide={...line,TE:{...line.TE,pos:'WR'}};
+  req.options.plays[1].blocked=core('resolver.js').playBlocked(P('pa_boot_plus'),fourWide);
+  assert.match(B.sameLookPair(b,req,'inside_zone').mate.reason,/inline tight end/);
+  req.options.plays.pop();assert.match(B.sameLookPair(b,req,'inside_zone').mate.reason,/Outside this hand/);
+  assert.equal(B.sameLookPair(b,req,'power'),null);
+  b.comboLog={[side]:{1:['establish']}};
+  assert.match(B.sameLookPair(b,req,'inside_zone').setup,/used this half/);
+  const defense={...req,role:'def',side:opponent};
+  const contain=B.sameLookPair(b,defense,'run_fit');
+  assert.ok(contain.read.includes(def.SET.name));assert.equal(contain.mate,undefined);
+  b.drive.fams=['quick','run'];assert.equal(B.sameLookPair(b,defense,'run_fit'),null);
+});
+
+test('the zone and boot chalk diagrams start at the same mesh and end on different paths',()=>{
+  const fs=require('node:fs'),vm=require('node:vm'),window={CallSheet:{data:D}};
+  vm.runInNewContext(fs.readFileSync(require.resolve('../forks/call-sheet/slice/cards.js'),'utf8'),{window});
+  const cards=window.SliceCards,run=cards.pairRoutes(P('inside_zone')),boot=cards.pairRoutes(P('pa_boot_plus'));
+  assert.equal(run[0].d,boot[0].d);assert.equal(run[0].mesh,true);assert.notEqual(run[1].d,boot[1].d);
+  assert.equal(boot[2].receiver,true);assert.equal(run.length,2);
+  for(const id of ['inside_zone','pa_boot_plus']){
+    assert.ok(cards.diagram(id,'off').includes(run[0].d));assert.ok(cards.routeFor(P(id)).includes(run[0].d));
+  }
+});

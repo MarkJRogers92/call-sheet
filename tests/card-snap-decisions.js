@@ -20,8 +20,8 @@ test('snap decisions give contrasting legal hand calls with current named player
 });
 test('confirmed lean prioritizes a genuine counter but an unconfirmed lean cannot leak through',()=>{
  const {b,req}=fixture();req.look.lean={value:'run',confirmed:true};
- let view=B.snapDecisions(b,req);assert.equal(view.choices[0].id,'pa_boot');assert.match(view.clue,/leaning on the run/i);assert.match(view.choices[0].detail,/punish the run lean/i);
- req.look.lean.confirmed=false;view=B.snapDecisions(b,req);assert.doesNotMatch(view.clue,/leaning/);assert.doesNotMatch(JSON.stringify(view),/punish the run lean/i);
+ let view=B.snapDecisions(b,req);assert.equal(view.choices[0].id,'pa_boot');assert.match(view.clue,/their defense is playing the run/i);assert.match(view.choices[0].detail,/playing the run.*counter/i);
+ req.look.lean.confirmed=false;view=B.snapDecisions(b,req);assert.doesNotMatch(view.clue,/playing the run/);assert.doesNotMatch(JSON.stringify(view),/playing the run.*counter/i);
  b.snap.def.play='changed secret';assert.deepEqual(B.snapDecisions(b,req),view);
 });
 test('repeated pressure and film streak are evidence, not knowledge of a hidden next call',()=>{
@@ -74,7 +74,7 @@ test('two coached runs draw a visible run lean; the suggested boot gets the real
  // Keep the tight end on the field so the coach can call the edge-blocking counter.
  B.setGrouping(b,'home','11');
  for(const play of ['inside_zone','inside_zone'])B.submit(b,{type:'call',play,tactics:[]});
- const view=B.snapDecisions(b);assert.match(view.clue,/leaning on the run/i);
+ const view=B.snapDecisions(b);assert.match(view.clue,/their defense is playing the run/i);
  assert.equal(view.choices[0].id,'pa_boot');assert.ok(view.choices.some(c=>D.PLAYS[c.id].family==='run'),'the coach can still stay on the ground');
  B.submit(b,{type:'call',play:view.choices[0].id,tactics:[]});
  const e=b.lastResult,k=e.duels.findIndex(d=>d.key==='K');
@@ -91,4 +91,45 @@ test('a chosen legal opener is in quick reach, even alongside a ready counter fr
 test('a clock spike names the real QB, not an imaginary target',()=>{
  const {b,req}=fixture();req.options.plays=[{id:'spike',cost:0}];
  const v=B.snapDecisions(b,req);assert.match(v.choices[0].detail,/clock/i);assert.ok(v.choices[0].detail.includes(b.teams.home.lineup.off.QB.name));
+});
+
+function thirdDown(seed,distance=6,overrides={}){
+ const E=require('../game-engine-v2');
+ const b=B.create({seed:'two-down-'+seed,home:Ro.preset('ground'),away:Ro.preset('aerial'),mode:'snap',control:'both',user:'home'});
+ E.startGame(b.game);Object.assign(b.game,{possession:'home',fieldPosition:35,down:3,distance,...overrides});B.advance(b);
+ return b;
+}
+test('two-down intent changes legal quick calls, survives resume and clears on the next snap',()=>{
+ const b=thirdDown(0),before=B.snapDecisions(b),rng=clone(b.rng);
+ B.submit(b,{type:'two_down',active:true});
+ const view=B.snapDecisions(b);
+ assert.match(view.clue,/gain 4 to leave fourth-and-two/i);
+ for(const aim of ['Set up fourth down','Go for the sticks','Take a shot'])assert.ok(view.choices.some(c=>c.detail.startsWith(aim)));
+ assert.equal(new Set(view.choices.map(c=>c.id)).size,view.choices.length);
+ for(const c of view.choices)assert.ok(b.pending.options.plays.some(p=>p.id===c.id&&!p.blocked&&p.cost<=b.pending.options.command));
+ const resumed=B.load(B.save(b));assert.deepEqual(B.snapDecisions(resumed),view);assert.deepEqual(b.rng,rng);
+ resumed.snap.def.play='secret';assert.deepEqual(B.snapDecisions(resumed),view);
+ B.submit(b,{type:'two_down',active:false});assert.deepEqual(B.snapDecisions(b),before);
+ const wrong=thirdDown(0,6,{down:2}),saved=B.save(wrong);
+ assert.throws(()=>B.submit(wrong,{type:'two_down',active:true}),/third downs/);assert.equal(B.save(wrong),saved);
+ const defense=thirdDown(0,6,{possession:'away'});
+ assert.throws(()=>B.submit(defense,{type:'two_down',active:true}),/offensive/);
+});
+test('staff uses the two-down objective on third down and recommends going on a short fourth without committing',()=>{
+ const b=thirdDown(0,8),regular=B.load(B.save(b));
+ B.submit(b,{type:'two_down',active:true});B.submit(b,{type:'auto'});B.submit(regular,{type:'auto'});
+ assert.equal(b.lastResult.play,'quick_slant');assert.equal(regular.lastResult.play,'vertical_shot');
+ const short=thirdDown(8),defaultPlan=B.load(B.save(short));
+ B.submit(short,{type:'two_down',active:true});
+ const fourth=B.submit(short,{type:'auto'}),defaultFourth=B.submit(defaultPlan,{type:'auto'});
+ assert.equal(fourth.kind,'fourth');assert.equal(fourth.situation.distance,2);assert.equal(fourth.recommended,'go');
+ assert.equal(defaultFourth.recommended,'punt');assert.ok(fourth.options.includes('punt'));
+ const next=B.submit(short,{choice:'go'});assert.equal(next.situation.down,4);
+ assert.ok(!short.snap.twoDown);assert.doesNotMatch(B.snapDecisions(short).clue,/two-down territory/i);
+});
+test('delegated fourth-down decisions also honor the coach’s two-down plan',()=>{
+ const b=thirdDown(8);b.mode='key';b.headset.fourth=false;
+ B.submit(b,{type:'two_down',active:true});B.submit(b,{type:'auto'});
+ const fourth=b.log.find(e=>e.type==='snap'&&e.sit?.down===4);
+ assert.ok(fourth);assert.equal(fourth.offSide,'home');assert.equal(fourth.sit.distance,2);
 });

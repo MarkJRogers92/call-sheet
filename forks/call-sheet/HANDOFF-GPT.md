@@ -1,12 +1,16 @@
 # Call Sheet: handoff
 
+## November 18, 2026 · Coaching and classic games
+
+Quick Battle and Dynasty support two-down territory, Read Option assignments, paired Inside Zone and PA Boot calls, and persistent Key Moments settings. Reward cards offer an isolated tryout before selection. Dynasty stores opponent film for rivalry prep and the final possession of newly recorded one-score card games. Game Center → Summary opens that possession in a separate, read-only replay. Games ending in a third-overtime shootout are excluded.
+
 ## November 18, 2026 · V17 reconciliation
 
 The `call-sheet-review` checkout now includes the gameplay changes from the published V17 Quick Battle and Dynasty pages alongside the later review work. Sites recorded a successful V17 deployment from hosting commit `978675190a6f165e8c11b7ef0d191afd4887ae10`. The earlier release review identified its game source as `41f41463c0f0924953c6f2af783fc3933748e304`. GitHub could not resolve that game commit.
 
 The V17 battle document embedded in the live Dynasty page had SHA-256 `1a63b3338490ea981b8940ff40512e99d64e1d4f97e0f6387d577c8c5e23e2ab`. Its game body and styles matched the standalone release. Comparing those pages with the verified V15 snapshot identified changes in ten modular files. A three-way merge preserved both the V17 changes and the review edits, including the manual clock controls alongside the coordinator’s late-lead behavior.
 
-Local build `6547da7d894b` passed 248 card regressions, 18 standalone battle tests, the real-roster adapter check, and lint. Quick Battle and Dynasty embed byte-identical battle documents. A guided offensive snap ran in Safari. The automated Chromium browser suite was blocked at launch by macOS permissions. This checkpoint is local. The published Site is still V17.
+Local build `6547da7d894b` passed 248 card regressions, 18 standalone battle tests, the real-roster adapter check, and lint. Quick Battle and Dynasty embed byte-identical battle documents. A guided offensive snap ran in Safari. The automated Chromium browser suite was blocked at launch by macOS permissions. This checkpoint shipped as V18 from hosting commit `ec50e808d9a0cbcd0ea629b9ef217695fa5629d2`.
 
 ## Continuation checkpoint — November 16, 2026
 

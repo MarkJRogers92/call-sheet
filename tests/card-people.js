@@ -194,7 +194,8 @@ test('a breakout signature keeps the real final score and game recap through a t
   const {cg,u,me,CS,e}=await setup(952),pb=u.callSheet.playbook;
   const cfg=cg.launch(),side=cfg.userSide,other=side==='home'?'away':'home';
   const home=CS.adapter.battleTeam(cfg.home,null,cfg.program.home),away=CS.adapter.battleTeam(cfg.away,null,cfg.program.away);
-  const b=CS.battle.simulate({home,away,seed:'signature-recap-11'});
+  // This replay produces an earned breakout and a deciding moment for the transfer-history fixture.
+  const b=CS.battle.simulate({home,away,seed:'signature-recap-7'});
   const candidates=CS.signatures.breakouts(b,side);assert.ok(candidates.length);
   const c=candidates[0],spec=CS.signatures.breakoutCard(b,side,c,{season:u.year});
   assert.ok(spec.provenance[0].includes(b.teams[other].name));assert.ok(spec.provenance[0].includes(b.game.score[side]+'–'+b.game.score[other]));

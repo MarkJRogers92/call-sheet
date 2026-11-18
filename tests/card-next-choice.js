@@ -38,8 +38,11 @@ test('film notes require an actual defensive family counter, including old banke
     const key=R.buildSnap({...lineups,play:D.PLAYS[sample[family]],call:D.CALLS[id]}).duels.find(d=>d.key==='K');
     assert.ok(key.mods.some(m=>m.v<0&&/Built for the run|Coverage built for it|Robber lurking/.test(m.src)),id+' does not counter '+family+' at the Key duel');
   }
-  const spyMods=play=>R.buildSnap({...lineups,play:D.PLAYS[play],call:D.CALLS.run_fit,defTactics:['spy']}).duels.flatMap(d=>d.mods.filter(m=>m.src==='QB spy'));
-  assert.ok(spyMods('read_option').some(m=>m.v===-2));assert.deepEqual(spyMods('inside_zone'),[]);
+  const spyMods=(play,edgeAssignment)=>R.buildSnap({...lineups,play:D.PLAYS[play],call:D.CALLS.run_fit,defTactics:['spy'],edgeAssignment}).duels.flatMap(d=>d.mods.filter(m=>m.src==='QB spy'));
+  assert.ok(spyMods('read_option').some(m=>m.v===-2),'coordinator can funnel this keeper toward the spy');
+  assert.ok(spyMods('read_option','crash').some(m=>m.v===-2));
+  assert.deepEqual(spyMods('read_option','contain'),[],'the spy stays with the QB after a handoff');
+  assert.deepEqual(spyMods('inside_zone'),[]);
   const film=P.openPack(pb,{won:false,oppTendency:{run:12},seed:'run-film'});
   const spy=film.cards.find(c=>c.id==='spy');assert.ok(spy);
   assert.match(spy.why,/quarterback|QB/);assert.doesNotMatch(spy.why,/Counters their run game/);

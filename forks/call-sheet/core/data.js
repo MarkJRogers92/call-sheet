@@ -120,7 +120,7 @@ const PLAYS={
       F:{label:'Finish',off:['RB'],ot:['power','durability'],def:['BOXS'],dt:['power','durability'],bias:0}},
     results:{fail:[R(1,'run',[-1,1.5])],short:[R(1,'run',[3,1])],success:[R(1,'run',[6,1.5])],explosive:[R(1,'run',[12,5],{tail:.12})]}},
   read_option:{id:'read_option',side:'off',name:'Read Option',family:'run',cost:1,carrier:'QB',needs:{role:'QB',trait:'speed',grade:7},
-    text:'Leave the end unblocked and let the quarterback decide. Needs a runner at QB.',
+    text:'Read the unblocked end. Keep outside if he crashes on the back, or hand off inside if he contains the QB. Needs a runner at QB.',
     duels:{
       G:{label:'Read the end',off:['QB'],ot:['iq','speed'],def:['SET'],dt:['iq','speed'],bias:1,qbRead:true,qbRun:true},
       K:{label:'Get to space',off:['QB'],ot:['speed','versatility'],def:['WILL'],dt:['speed','iq'],bias:0,qbRun:true},

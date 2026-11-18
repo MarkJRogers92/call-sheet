@@ -225,7 +225,8 @@ function cleanGamePack(x){
     const exchange=pool.find(a=>a.id===c.exchange)||list[DynastyRng.create('exchange:'+x.key+':'+c.id).int(0,list.length-1)];
     c.exchange=exchange.id;used.add(exchange.id);
   }
-  return {key:x.key,year:Math.max(0,Number(x.year)|0),source:String(x.source||'Game day').slice(0,140),type:String(x.type||'game').slice(0,20),title:String(x.title||'Game Pack').slice(0,60),subtitle:String(x.subtitle||'').slice(0,160),serial:Math.max(0,Number(x.serial)|0),cards};
+  const tryouts=Object.fromEntries(Object.entries(x.tryouts||{}).filter(([id,report])=>cardDef(id)&&typeof report==='string').slice(0,10).map(([id,report])=>[id,report.slice(0,700)]));
+  return {...(Object.keys(tryouts).length?{tryouts}:{}),key:x.key,year:Math.max(0,Number(x.year)|0),source:String(x.source||'Game day').slice(0,140),type:String(x.type||'game').slice(0,20),title:String(x.title||'Game Pack').slice(0,60),subtitle:String(x.subtitle||'').slice(0,160),serial:Math.max(0,Number(x.serial)|0),cards};
 }
 function freezeGamePack(pb,pack,context){return cleanGamePack({...pack,...context,cards:pack.cards.map(c=>({...c,id:c.rolledId||c.id})),serial:pb.packsOpened})}
 function gamePackChoices(pb,pack,taken=[]){

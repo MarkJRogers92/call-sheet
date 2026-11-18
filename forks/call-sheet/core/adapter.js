@@ -119,7 +119,7 @@ function battleTeam(team,decks,info){
   const programOn=info?.enabled!==false;
   coach.commandBonus=programOn?staffCommand(team):{off:0,def:0};
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
-    lineup,backfield,packageDepth,coach,specialists,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
+    ...(info?.rivalryBracketId?{rivalryBracketId:String(info.rivalryBracketId)}:{}),lineup,backfield,packageDepth,coach,specialists,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
 }
 return{ROLE_MAP,POS_FALLBACK,toBattlePlayer,conditionsOf,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });

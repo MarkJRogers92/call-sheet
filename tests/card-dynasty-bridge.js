@@ -40,3 +40,19 @@ test('Deck Room and Collection route to one saved playbook without moving cards 
  cg.openDynastyConnection('deckroom');assert.equal(JSON.stringify(u.callSheet),snapshot,'navigation is read-only');
  assert.ok(cs.packs.cardDef('screen'));
 });
+
+test('rivalry catch survives a save, identifies the new starter and prepares this meeting only',async()=>{
+ const {cg,u,me,opp,e}=await setup(),line=globalThis.CallSheet.adapter.lineupFromTeam(opp).lineup.off;
+ me.protectedRivalIds=[opp.id];const id=String(line.TE.id),name=line.TE.name;
+ const play={id,name,role:'TE',kind:'fourth',snaps:[{play:'Deep Cross',period:3,clock:142,down:4,distance:4,yards:8}]};
+ const entry={year:u.year-1,week:10,rivalryPlay:play};u.callSheet.oppFilm={[opp.id]:[entry]};e.normalizeCallSheet(u);
+ const h=cg.rivalryHistory();assert.equal(h.still,true);assert.deepEqual(h.snaps,play.snaps);assert.equal(h.target.id,id);
+ assert.equal(cg.setRivalryPrep(true),true);const cfg=cg.launch();assert.equal(cfg.program[cfg.userSide].rivalryBracketId,id);
+ const wrong=JSON.parse(JSON.stringify(u.callSheet));e.normalizeCallSheet({callSheet:wrong});assert.deepEqual(wrong.rivalryPrep,u.callSheet.rivalryPrep);
+ u.callSheet.rivalryPrep.match='earlier week';assert.equal(cg.launch().program[cfg.userSide].rivalryBracketId,undefined);
+ u.callSheet.oppFilm[opp.id][0].rivalryPlay={...play,id:'departed-TE',name:'Alex Graduate'};
+ (u.playerArchive??=[]).push({id:'departed-TE',exitReason:'Graduated'});
+ const other=cfg.userSide==='home'?'away':'home',starter=globalThis.CallSheet.adapter.battleTeam(opp,null,cfg.program[other]).lineup.off.TE;
+ const now=cg.rivalryHistory();assert.equal(now.still,false);assert.ok(now.text.includes('Alex Graduate graduated'));assert.ok(now.text.includes(starter.name+' now starts at TE'));assert.equal(now.target.id,String(starter.id));
+ u.callSheet.oppFilm[opp.id][0]={year:u.year-1,week:10,star:{id,name,w:6,l:3}};assert.equal(cg.rivalryHistory().snaps,undefined);assert.equal(cg.setRivalryPrep(true),false);
+});

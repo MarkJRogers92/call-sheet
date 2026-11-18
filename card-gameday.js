@@ -58,6 +58,15 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
   }else delete pb.gamePacks;
   return pb;
 }
+function cleanRivalryPlay(x){
+  if(!x||typeof x.id!=='string'||!x.id||typeof x.name!=='string'||!x.name||
+    !['X','Z','SLOT','TE','RB'].includes(x.role)||!['third','fourth','touchdown','explosive'].includes(x.kind)||!Array.isArray(x.snaps))return null;
+  const inRange=(v,min,max)=>Number.isInteger(v)&&v>=min&&v<=max;
+  const snaps=x.snaps.filter(e=>e&&typeof e.play==='string'&&e.play&&inRange(e.down,1,4)&&inRange(e.distance,1,99)&&
+    inRange(e.period,1,99)&&inRange(e.clock,0,900)&&inRange(e.yards,1,99)).slice(0,2)
+    .map(e=>({play:e.play.slice(0,80),down:e.down,distance:e.distance,period:e.period,clock:e.clock,yards:e.yards}));
+  return snaps.length?{id:x.id.slice(0,64),name:x.name.slice(0,60),role:x.role,kind:x.kind,snaps}:null;
+}
 function normalizeCallSheet(u){
   const cs=u?.callSheet;if(cs===undefined)return;
   if(!cs||typeof cs!=='object'||Array.isArray(cs)){delete u.callSheet;return}
@@ -69,6 +78,7 @@ function normalizeCallSheet(u){
   const integrations=Object.fromEntries(Object.entries(st.integrations&&typeof st.integrations==='object'?st.integrations:{}).filter(([k,v])=>typeof k==='string'&&typeof v==='boolean'));
   cs.settings={mode:['key','series','snap','sim'].includes(st.mode)?st.mode:'key',control:['offense','both','defense'].includes(st.control)?st.control:'offense',replays:st.replays==='moments'?'moments':'all',fast:!!st.fast,sound:st.sound!==false,integrations};
   if(cs.activeBattle&&(typeof cs.activeBattle.seed!=='string'||typeof cs.activeBattle.battle!=='string'||cs.activeBattle.battle.length>4000000))cs.activeBattle=null;
+  if(globalThis.CallSheet?.battle)cs.settings.headset=globalThis.CallSheet.battle.headsetSettings(st.headset);
   if(['system','reduced','instant'].includes(st.motion))cs.settings.motion=st.motion;
   if(['auto','primary'].includes(st.readMode))cs.settings.readMode=st.readMode;
   for(const key of ['guidedDrivePending','guidedDriveDone'])if(Object.hasOwn(st,key))cs.settings[key]=st[key]===true;
@@ -117,10 +127,13 @@ function normalizeCallSheet(u){
     .map(([k,v])=>[k,{games:ci(v.games),snaps:ci(v.snaps),mine:ci(v.mine),
       plays:Object.fromEntries(Object.entries(v.plays&&typeof v.plays==='object'?v.plays:{}).filter(([id,t])=>id.length<60&&t&&typeof t==='object').slice(0,80).map(([id,t])=>[id,{n:ci(t.n),yards:cnum(t.yards),stops:ci(t.stops),mine:ci(t.mine)}])),
       players:Object.fromEntries(Object.entries(v.players&&typeof v.players==='object'?v.players:{}).filter(([id,p])=>id.length<64&&p&&typeof p==='object').slice(0,150).map(([id,p])=>[id,{name:String(p.name||'').slice(0,60),w:ci(p.w),l:ci(p.l)}]))}]));
-  // Film on opponents from card battles against you: the last three meetings per team, counts only.
+  const plan=cs.rivalryPrep;
+  if(plan&&typeof plan.match==='string'&&plan.match.length<=240&&typeof plan.id==='string'&&plan.id.length<=64)cs.rivalryPrep={match:plan.match,id:plan.id};
+  else delete cs.rivalryPrep;
+  // Last three card meetings per opponent, with at most two remembered catches per rivalry meeting.
   const fc=(o,keys)=>Object.fromEntries(keys.map(k=>[k,ci(o?.[k])]));
   cs.oppFilm=Object.fromEntries(Object.entries(cs.oppFilm&&typeof cs.oppFilm==='object'?cs.oppFilm:{}).filter(([k,v])=>k.length<64&&Array.isArray(v)).slice(-80)
-    .map(([k,v])=>[k,v.filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),def:fc(x.def,['pressure','man','zone','total']),off:fc(x.off,['run','pass','total']),...(x.star&&typeof x.star==='object'&&x.star.id!=null&&typeof x.star.name==='string'?{star:{id:String(x.star.id).slice(0,64),name:x.star.name.slice(0,60),w:ci(x.star.w),l:ci(x.star.l)}}:{})}))]));
+    .map(([k,v])=>[k,v.filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),def:fc(x.def,['pressure','man','zone','total']),off:fc(x.off,['run','pass','total']),...(cleanRivalryPlay(x.rivalryPlay)?{rivalryPlay:cleanRivalryPlay(x.rivalryPlay)}:{}),...(x.star&&typeof x.star==='object'&&x.star.id!=null&&typeof x.star.name==='string'?{star:{id:String(x.star.id).slice(0,64),name:x.star.name.slice(0,60),w:ci(x.star.w),l:ci(x.star.l)}}:{})}))]));
 }
 
 (function(){
@@ -413,6 +426,7 @@ function normalizeCallSheet(u){
       activeBattle:meta.activeBattle?.seed===seed?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
       seed,moves:[],practiceReps:{},worldTaken:takenLegendaries(),program:{home:{enabled:false},away:{enabled:false}}};
     runHook('launch',{cfg,g,home,away,me,opp,userSide:cfg.userSide});
+    applyRivalryPrep(cfg,opp);
     // Eligibility is a game rule, not an optional program bonus. Apply after hooks replace program info.
     for(const side of ['home','away'])cfg.program[side]={...cfg.program[side],...availabilityFor(cfg[side])};
     if(cfg.moves.length)try{autosaveAfter('game')}catch(err){}
@@ -424,7 +438,7 @@ function normalizeCallSheet(u){
     CS.signatures.registerAll(pb);for(const p of Object.values(cardMeta().ai))CS.signatures.registerAll(p);
     const mine=CS.packs.decksOf(pb),theirs=cfg.oppPlaybook?CS.packs.decksOf(cfg.oppPlaybook):null;
     const team=(t,side)=>AD.battleTeam(t,side===cfg.userSide?mine:theirs,cfg.program?.[side]);
-    const b=CS.battle.simulate({home:team(cfg.home,'home'),away:team(cfg.away,'away'),seed:`${cfg.seed}:sim`,weather:cfg.weather,conditions:cfg.conditions,rivalry:cfg.rivalry});
+    const b=CS.battle.simulate({home:team(cfg.home,'home'),away:team(cfg.away,'away'),seed:`${cfg.seed}:sim`,classicSide:cfg.userSide,weather:cfg.weather,conditions:cfg.conditions,rivalry:cfg.rivalry});
     return{cfg,b};
   }
   function simWithCardsOn(){return!!universe?.callSheet&&integrationOn(SIM_WITH_CARDS)&&!!globalThis.CallSheet?.battle}
@@ -455,6 +469,8 @@ function normalizeCallSheet(u){
     // Their player who won the most duels against you (4+ wins), for rivalry history. Names come from the battle tally.
     const opp=teamById(oppId),theirs=new Set((opp?.roster||[]).map(p=>String(p.id)));
     const star=Object.entries(tally&&typeof tally==='object'?tally:{}).filter(([id,t])=>theirs.has(String(id))&&(t.w|0)>=4).sort((a,c)=>((c[1].w|0)-(c[1].l|0))-((a[1].w|0)-(a[1].l|0))||(c[1].w|0)-(a[1].w|0))[0];
+    const play=cleanRivalryPlay(film.rivalryPlay);
+    if(play&&theirs.has(play.id)&&(selected()?.protectedRivalIds||[]).includes(oppId))entry.rivalryPlay=play;
     if(star)entry.star={id:String(star[0]).slice(0,64),name:String(star[1].name||'').slice(0,60),w:n(star[1].w),l:n(star[1].l)};
     meta.oppFilm??={};meta.oppFilm[key]=[...(meta.oppFilm[key]||[]),entry].slice(-3);
     addSeasonCalls(film,tally);
@@ -488,7 +504,7 @@ function normalizeCallSheet(u){
       const g=findUserGame();if(g&&!g.played){try{sim=simulateCardGame();sim.week=g.week;sim.ranks=rankSnapshot(sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home);options={...options,externalState:sim.b.game}}catch(err){console.error('Card simulation failed; using the standard simulation.',err);sim=null}}
     }
     const out=recordGameBase(options);
-    if(sim&&out?.ok){completeSimCardGame(sim);try{markArchive(out.result?.gameId,{moments:CS.battle.decidingMoments(sim.b)})}catch(err){console.error(err)}if(!options.advancingWeek)try{autosaveAfter('game')}catch(err){console.error(err)}}
+    if(sim&&out?.ok){completeSimCardGame(sim);try{markArchive(out.result?.gameId,{classic:simClassic(sim),moments:CS.battle.decidingMoments(sim.b)})}catch(err){console.error(err)}if(!options.advancingWeek)try{autosaveAfter('game')}catch(err){console.error(err)}}
     return out;
   };
   function completeSimCardGame(sim){
@@ -541,10 +557,11 @@ function normalizeCallSheet(u){
         seed:`card:post:${universe.year}:${week}:${options.label||'post'}:${home.id}:${away.id}`,weather:battleWeather(conditions),conditions,
         playbook:userPlaybook(),practiceReps:{},moves:[],program:{home:{enabled:false},away:{enabled:false}},rivalry:(me.protectedRivalIds||[]).includes(opp.id)};
       runHook('launch',{cfg,g:{week,postseason:true,stage:cfg.stage},home,away,me,opp,userSide});
+      applyRivalryPrep(cfg,opp);
       for(const side of ['home','away'])cfg.program[side]={...cfg.program[side],...availabilityFor(cfg[side])};
       const sim=simulateCardGame(cfg);sim.week=week;sim.postseason=true;sim.ranks=rankSnapshot(opp);
       const out=postseasonRecordBase(home,away,{...options,externalState:sim.b.game});
-      if(out?.ok){completeSimCardGame(sim);out.record.cardBattle=true;try{out.record.cardMoments=cleanMoments(CS.battle.decidingMoments(sim.b))}catch(err){console.error(err)}}return out;
+      if(out?.ok){completeSimCardGame(sim);out.record.cardBattle=true;const classic=simClassic(sim);if(classic)out.record.classicDrive=classic;try{out.record.cardMoments=cleanMoments(CS.battle.decidingMoments(sim.b))}catch(err){console.error(err)}}return out;
       }catch(err){v2PostseasonStageRestore(snapshot);throw err}
     };
     if(globalThis.__DL_TEST__)globalThis.__DL_TEST__.v2PostseasonRecordMatch=v2PostseasonRecordMatch;
@@ -560,7 +577,7 @@ function normalizeCallSheet(u){
       if(!p||p.year!==universe.year||p.label!==options.label||String(p.homeId)!==String(home.id)||String(p.awayId)!==String(away.id))return null;
       if(options.peek)return{state:true};
       return{state:JSON.parse(JSON.stringify(p.state)),onRecorded(out){
-        const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true;if(p.moments?.length)out.record.cardMoments=p.moments}
+        const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true;if(p.classic)out.record.classicDrive=p.classic;if(p.moments?.length)out.record.cardMoments=p.moments}
         try{addCardCareer(p.tally,options.week)}catch(err){console.error(err)}
         try{recordOppFilm(String(home.id)===String(selected().id)?away.id:home.id,p.film,options.week,p.tally)}catch(err){console.error(err)}
         const side=String(home.id)===String(selected().id)?'home':'away',us=Number(p.state?.score?.[side])||0,them=Number(p.state?.score?.[side==='home'?'away':'home'])||0;
@@ -570,10 +587,10 @@ function normalizeCallSheet(u){
       }};
     };
     const STAGE_RUN={conference:()=>simConferenceChampionships(),bowl:()=>simBowls(),playoff:()=>simPlayoff(),title:()=>simPlayoff()};
-    function recordPostseasonBattle(g,state,tally,key,moments,film){
+    function recordPostseasonBattle(g,state,tally,key,moments,film,classic){
       const seed=key||g.seed;
       const oppTeam=teamById(String(g.homeId)===String(selected().id)?g.awayId:g.homeId);
-      cardMeta().pendingPostseason={seed,year:universe.year,label:g.label,homeId:g.homeId,awayId:g.awayId,ranks:rankSnapshot(oppTeam),oppName:oppTeam?.name||'',moments:cleanMoments(moments),state:JSON.parse(JSON.stringify(state)),tally:tally&&typeof tally==='object'?JSON.parse(JSON.stringify(tally)):{},film:film&&typeof film==='object'?JSON.parse(JSON.stringify(film)):null};
+      cardMeta().pendingPostseason={seed,classic,year:universe.year,label:g.label,homeId:g.homeId,awayId:g.awayId,ranks:rankSnapshot(oppTeam),oppName:oppTeam?.name||'',moments:cleanMoments(moments),state:JSON.parse(JSON.stringify(state)),tally:tally&&typeof tally==='object'?JSON.parse(JSON.stringify(tally)):{},film:film&&typeof film==='object'?JSON.parse(JSON.stringify(film)):null};
       v2PostseasonLastError=null;v2PostseasonPauseForUser=true;
       try{STAGE_RUN[g.stage]?.()}catch(err){console.error(err);v2PostseasonLastError=err}finally{v2PostseasonPauseForUser=false}
       const meta=cardMeta(); // a rolled-back stage replaces the universe object
@@ -774,7 +791,7 @@ function normalizeCallSheet(u){
         return `<button type="button" data-take="${escH(c.id)}" data-destination="${want}" aria-label="${escH(label+' · '+cardName(c.id))}"${full?' disabled':''}>${escH(label)}</button>`;
       }).join('');
       const note=c.exchangeFor?`Alternate for ${cardName(c.exchangeFor)}: ${c.why}`:c.why;
-      const footer=`${fit?.id===c.id?`<small data-pack-fit="${escH(c.id)}"><b>Coach’s pick:</b> ${escH(fit.reason)}</small>`:target?.missing.includes(c.id)?`<small>For your ${escH(target.name)} album</small>`:''}${note?`<small>${escH(note)}</small>`:''}<div class="rp-actions">${actions}</div>`;
+      const footer=`${fit?.id===c.id?`<small data-pack-fit="${escH(c.id)}"><b>Coach’s pick:</b> ${escH(fit.reason)}</small>`:target?.missing.includes(c.id)?`<small>For your ${escH(target.name)} album</small>`:''}${note?`<small>${escH(note)}</small>`:''}<div class="rp-actions">${actions}${game?`<button type="button" data-try-card="${escH(c.id)}" aria-label="${escH('Try '+cardName(c.id))}">Try this card</button>`:''}</div>`;
       return UI?.faceHTML?UI.faceHTML(c.id,{footer}):`<article><b>${escH(cardName(c.id))}</b>${footer}</article>`;
     };
     const wrapText={booster:'BOOSTER',signing:'SIGNING<br>DAY',album:'ALBUM',film:'FILM<br>STUDY',victory:'VICTORY',rivalry:'RIVALRY',...Object.fromEntries(Object.entries(CS.packs.STAGE_PACKS).map(([k,p])=>[k,p.wrap]))}[pack.type]||'REWARD';
@@ -792,6 +809,10 @@ function normalizeCallSheet(u){
     dialog.addEventListener('cancel',e=>{e.preventDefault();close()});
     dialog.querySelector('[data-later]').onclick=close;
     const rip=dialog.querySelector('[data-rip]');rip.onclick=()=>{rip.classList.add('ripped');setTimeout(()=>{rip.remove();dialog.querySelector('.rp-cards').hidden=false},reducedMotion()?0:330)};
+    dialog.querySelectorAll('[data-try-card]').forEach(el=>el.onclick=()=>{
+      const id=el.dataset.tryCard;
+      dialog.querySelector('[data-pack-status]').textContent=pack.tryouts?.[id]||CS.battle.tryRewardCard({team:CS.adapter.battleTeam(selected(),null,availabilityFor(selected())),seed:pack.key},id);
+    });
     dialog.querySelectorAll('[data-take]').forEach(el=>el.onclick=()=>{const r=game?takeGamePack(pack.key,el.dataset.take,el.dataset.destination):takeRewardCard(pack.key,el.dataset.take);if(r.ok)close();else dialog.querySelector('[data-pack-status]').textContent=r.error});
     dialog.showModal();
   }
@@ -996,14 +1017,20 @@ function normalizeCallSheet(u){
 
   // ============================================================== 8. duel moments and collection albums
   const cleanMoments=m=>(Array.isArray(m)?m:[]).filter(x=>typeof x==='string').map(x=>x.slice(0,220)).slice(0,3);
-  function markArchive(gameId,{coached=false,moments}={}){
+  function simClassic(sim){
+    return CS.battle.archivedDrive(sim.b,[sim.cfg.playbook,sim.cfg.oppPlaybook]);
+  }
+  function markArchive(gameId,{coached=false,moments,classic}={}){
     if(!gameId)return;const rec=(universe.gameArchive||[]).find(r=>r.id===gameId);if(!rec)return;
+    if(classic)rec.classicDrive=classic;
     rec.cardBattle=true;if(coached)rec.cardCoached=true;const m=cleanMoments(moments);if(m.length)rec.cardMoments=m;
   }
   if(typeof gameSummaryHTML==='function'){
     const gameSummaryBase=gameSummaryHTML;
     gameSummaryHTML=function gameSummaryWithDuels(g){
-      const html=gameSummaryBase(g);if(!g?.cardMoments?.length)return html;
+      let html=gameSummaryBase(g);
+      if(g?.classicDrive?.battle)html=`<p><button type="button" data-classic-drive="${escH(g.id)}">Replay the final drive</button> · Coach the original matchup from the spot where the drive began.</p>`+html;
+      if(!g?.cardMoments?.length)return html;
       return html+`<h3>Card battle${g.cardCoached?' · coached':''}</h3>`+g.cardMoments.map(t=>`<p class="cs-duel-moment">${escH(t)}</p>`).join('');
     };
   }
@@ -1268,9 +1295,46 @@ function normalizeCallSheet(u){
   // player is still on their roster. Only for protected rivals, and only from a recorded card battle.
   function rivalryHistory(me,opp){
     if(!me||!opp||!(me.protectedRivalIds||[]).includes(opp.id))return null;
-    const last=[...(universe.callSheet?.oppFilm?.[String(opp.id)]||[])].reverse().find(x=>x.star);if(!last)return null;
+    const last=[...(universe.callSheet?.oppFilm?.[String(opp.id)]||[])].reverse().find(x=>x.rivalryPlay||x.star);if(!last)return null;
+    const play=cleanRivalryPlay(last.rivalryPlay);
+    if(play){
+      const roster=opp.roster||[],still=roster.some(p=>String(p.id)===play.id),line=gameLineup(opp).lineup.off;
+      const roles=CS.resolver.bracketOptions(line),returning=roles.find(o=>String(line[o.role].id)===play.id);
+      const starter=line[play.role],realStarter=starter&&roster.some(p=>String(p.id)===String(starter.id));
+      const target=returning?line[returning.role]:realStarter&&roles.some(o=>o.role===play.role)?starter:null;
+      const archived=!still&&(universe.playerArchive||[]).find(p=>String(p.id)===play.id);
+      const departure=/graduat/i.test(archived?.exitReason||'')?'graduated':'has left their roster';
+      const change=returning?`${play.name} is back at ${returning.role}.`:
+        `${play.name} ${still?'is still on their roster':departure}.${realStarter&&String(starter.id)!==play.id?' '+starter.name+' now starts at '+play.role+'.':''}`;
+      const n=play.snaps.length,action=play.kind==='fourth'||play.kind==='third'?`caught ${n===2?'two':'a'} ${play.kind}-down conversion${n===2?'s':''}`:
+        play.kind==='touchdown'?`caught ${n===2?'two touchdown passes':'a touchdown pass'}`:`caught ${n===2?'two passes':'a pass'} for 20+ yards`;
+      return{...play,year:last.year,week:last.week,still,target:target?{id:String(target.id),name:target.name}:null,
+        text:`${last.year}, Week ${last.week} · ${play.name} ${action} against you. ${change}`};
+    }
+    if(!last.star)return null;
     const s=last.star,still=(opp.roster||[]).some(p=>String(p.id)===String(s.id));
     return{...s,year:last.year,week:last.week,still,text:`Last card meeting (${last.year}${last.week?`, Week ${last.week}`:''}): ${s.name} won ${s.w} of ${s.w+s.l} duels against you${still?' and is still on their roster':' and has since left'}.`};
+  }
+  function rivalryMatch(g,opp){return JSON.stringify([universe.year,g.week,String(opp.id),g.stage||'regular'])}
+  function applyRivalryPrep(cfg,opp){
+    const plan=universe.callSheet?.rivalryPrep;
+    if(cfg.rivalry&&plan?.match===rivalryMatch(cfg,opp))cfg.program[cfg.userSide].rivalryBracketId=plan.id;
+  }
+  function setRivalryPrep(enabled){
+    const g=currentCardGame(),me=selected();if(!g||!me||g.played)return false;
+    const opp=T(g.home===me.name?g.away:g.home),meta=cardMeta(),target=rivalryHistory(me,opp)?.target;
+    if(!target||meta.activeBattle?.seed===battleSeed(g))return false;
+    if(enabled)meta.rivalryPrep={match:rivalryMatch(g,opp),id:target.id};else delete meta.rivalryPrep;
+    autosaveAfter('game');return true;
+  }
+  function rivalryHistoryHTML(h,g,opp){
+    if(!h)return '';
+    if(!h.snaps)return `<p class="cpn-foot" id="rivalryHistory">${escH(h.text)}</p>`;
+    const ord=['','1st','2nd','3rd','4th'],meta=universe.callSheet,plan=meta.rivalryPrep;
+    const prepared=!!h.target&&plan?.id===h.target.id&&plan.match===rivalryMatch(g,opp);
+    const rows=h.snaps.map(e=>`<li>${e.period>4?'OT'+(e.period-4):'Q'+e.period+' '+Math.floor(e.clock/60)+':'+String(e.clock%60).padStart(2,'0')} · ${ord[e.down]} &amp; ${e.distance} · ${escH(e.play)} · ${e.yards} yards</li>`).join('');
+    const prep=h.target&&!g.played&&meta.activeBattle?.seed!==battleSeed(g)?`<button type="button" data-rivalry-prep aria-pressed="${prepared}">${prepared?'Clear prepared bracket':'Prepare bracket on '+escH(h.target.name)}</button><small> Sets the assignment when you play Bracket this game.</small>`:'';
+    return `<details class="cpn-foot" id="rivalryHistory"><summary>${escH(h.text)}</summary><ol>${rows}</ol>${prep}</details>`;
   }
   // Who the opponent is, in card terms: staff's pass estimate (Dynasty's weekly report) and their defensive call sheet.
   function opponentIdentityFor(me,opp){
@@ -1292,7 +1356,13 @@ function normalizeCallSheet(u){
     const top=[...Object.entries(lu.off),...Object.entries(lu.def)].map(([role,bp])=>({role,bp,p:byId.get(String(bp.id))})).filter(x=>x.p).sort((a,b)=>b.bp.ovr-a.bp.ovr).slice(0,4);
     if(!box){feature.insertAdjacentHTML('beforeend','<div id="matchupCards" class="cs-cards"></div>');box=feature.querySelector('#matchupCards')}
     const history=rivalryHistory(me,opp),ident=opponentIdentityFor(me,opp),film=filmNote(me,opp,g),stakes=CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null});
-    box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4>${stakes.elevated?`<p class="cpn-foot" id="packStakes"><b>${escH(stakes.text)}</b></p>`:''}${history?`<p class="cpn-foot" id="rivalryHistory">${escH(history.text)}</p>`:''}${ident?`<p class="cpn-foot" id="opponentIdentity">${escH(ident.text)}</p>`:''}${film?`<p class="cpn-foot" id="filmNote">${escH(film.text)}</p>`:''}<div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
+    box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4>${stakes.elevated?`<p class="cpn-foot" id="packStakes"><b>${escH(stakes.text)}</b></p>`:''}${rivalryHistoryHTML(history,g,opp)}${ident?`<p class="cpn-foot" id="opponentIdentity">${escH(ident.text)}</p>`:''}${film?`<p class="cpn-foot" id="filmNote">${escH(film.text)}</p>`:''}<div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
+    const prepButton=box.querySelector('[data-rivalry-prep]');
+    if(prepButton)prepButton.onclick=()=>{
+      if(!setRivalryPrep(prepButton.getAttribute('aria-pressed')!=='true'))return;
+      paintMatchupCards();const details=box.querySelector('#rivalryHistory');if(details)details.open=true;
+      box.querySelector('[data-rivalry-prep]')?.focus();
+    };
   }
   // The newsletter: this season's card moments (packs, breakouts, legacies, nemeses, rewards).
   function paintNewsCards(){
@@ -1687,11 +1757,13 @@ function normalizeCallSheet(u){
     closeCardSettings(false);const s=cardMeta().settings;settingsReturn=document.activeElement;
     const radio=(name,val,label,sub,checked)=>`<label class="opt"><input type="radio" name="${name}" value="${val}"${checked?' checked':''}><span>${escH(label)}${sub?`<small>${escH(sub)}</small>`:''}</span></label>`;
     const box=(name,label,sub,checked)=>`<label class="opt"><input type="checkbox" name="${escH(name)}"${checked?' checked':''}><span>${escH(label)}${sub?`<small>${escH(sub)}</small>`:''}</span></label>`;
+    const headset=CS.battle.headsetSettings(s.headset);
     const el=document.createElement('div');el.id='cardSettings';
     el.innerHTML=`<form class="cps" role="dialog" aria-modal="true" aria-labelledby="cpsTitle">
       <h2 id="cpsTitle">Card Settings</h2><p class="muted" style="margin:0;color:#aab6e8">Saved with this dynasty.</p>
       <fieldset><legend>How much you call</legend>${MODES.map(m=>radio('mode',m[0],m[1],m[2],s.mode===m[0])).join('')}</fieldset>
       <fieldset><legend>You coach</legend><div class="seg">${CONTROLS.map(c=>radio('control',c[0],c[1],'',s.control===c[0])).join('')}</div></fieldset>
+      <fieldset><legend>Key Moments headset</legend>${CS.battle.HEADSET_RULES.map(({id,label})=>box('headset:'+id,label,'',headset[id])).join('')}</fieldset>
       <fieldset><legend>Game feel</legend><div class="seg">${box('fast','Fast animations','',s.fast)}${box('sound','Sound','',s.sound!==false)}</div></fieldset>
       <fieldset><legend>Dynasty connections</legend>${INTEGRATIONS.map(x=>box('int:'+x.id,x.label,x.about,integrationOn(x))).join('')}</fieldset>
       <div class="cps-actions"><button type="button" data-cps-cancel>Cancel</button><button type="submit" class="go">Save</button></div></form>`;
@@ -1700,6 +1772,7 @@ function normalizeCallSheet(u){
     form.addEventListener('submit',e=>{e.preventDefault();
       const f=new FormData(form),meta=cardMeta();
       meta.settings.mode=f.get('mode')||meta.settings.mode;meta.settings.control=f.get('control')||meta.settings.control;
+      meta.settings.headset=Object.fromEntries(CS.battle.HEADSET_RULES.map(({id})=>[id,f.has('headset:'+id)]));
       meta.settings.fast=f.has('fast');meta.settings.sound=f.has('sound');
       for(const x of INTEGRATIONS)meta.settings.integrations[x.id]=f.has('int:'+x.id);
       try{autosaveAfter('game')}catch(err){console.error(err)}
@@ -2021,19 +2094,39 @@ function normalizeCallSheet(u){
   };
   if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();const trigger=e.target.closest('[data-card-deck]');if(trigger){const origin=trigger.closest('#cardBinder')?'#cardBinder':'#cardProgram';if(deckEditsLocked()){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{maxStored:CALL_SHEET_RESERVE_LIMIT,maxUnusedSignatures:CALL_SHEET_UNUSED_SIGNATURE_LIMIT,lineup:gameLineup(selected()).lineup,onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()},onClose:()=>document.querySelector(origin+' [data-card-deck]')?.focus()})}});
 
+  // Replays get a separate iframe and a read-only host. An active weekly game can stay suspended.
+  function openClassicDrive(id,trigger){
+    const game=universe.gameArchive?.find(row=>row.id===id);
+    if(!game?.classicDrive?.battle||!globalThis.CallSheetBundle)return;
+    const dialog=document.createElement('dialog');
+    dialog.setAttribute('aria-label','Replay the final drive');
+    dialog.style.cssText='padding:0;width:100vw;height:100dvh;max-width:none;max-height:none;border:0;background:#07090f;color:white';
+    const back=document.createElement('button');back.type='button';back.textContent='Back to Game Center';back.onclick=()=>dialog.close();
+    const frame=document.createElement('iframe');frame.dataset.classicDrive='true';frame.title='Classic game final drive';
+    frame.style.cssText='display:block;border:0;width:100%;height:calc(100% - 42px)';
+    const finalScore=`${game.away.name} ${game.score.away} · ${game.home.name} ${game.score.home}`;
+    const config={classicDrive:game.classicDrive,finalScore,label:`${game.season} · Final drive`,userSide:game.classicDrive.side,seenHelp:true};
+    globalThis.__callSheetClassic={launch:()=>config,close:()=>dialog.close()};
+    dialog.addEventListener('close',()=>{delete globalThis.__callSheetClassic;dialog.remove();trigger?.focus()},{once:true});
+    frame.srcdoc=globalThis.CallSheetBundle;dialog.append(back,frame);document.body.append(dialog);dialog.showModal();
+  }
+  document.addEventListener('click',event=>{
+    const button=event.target.closest?.('[data-classic-drive]');
+    if(button)openClassicDrive(button.dataset.classicDrive,button);
+  });
   let host=null;
   globalThis.__callSheetDynasty={
     launch:buildLaunch,
     committedPlaybook:()=>JSON.parse(JSON.stringify(userPlaybook())),
     rewardContext:()=>({worldTaken:takenLegendaries(),pursuit:pursuit()}),
-    record(state,tally,moments,film){
+    record(state,tally,moments,film,classic){
       const key=cardMeta().activeBattle?.seed;
       if(key&&cardMeta().recordedBattleSeed===key)return{ok:true};
       const pg=currentCardGame();
-      if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key,moments,film)}
+      if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key,moments,film,classic)}
       try{const g=findUserGame(),week=g?.week,me=selected(),userSide=g&&g.home===me.name?'home':'away',opp=g?T(userSide==='home'?g.away:g.home):null,ranks=rankSnapshot(opp);
         const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}try{if(out?.ok!==false)recordOppFilm(opp?.id,film,week,tally)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
-        try{markArchive(out?.result?.gameId,{coached:true,moments})}catch(err){console.error(err)}
+        try{markArchive(out?.result?.gameId,{coached:true,moments,classic})}catch(err){console.error(err)}
         try{noteUsage(state,userSide)}catch(err){console.error(err)}
         try{const us=Number(state?.score?.[userSide])||0,them=Number(state?.score?.[userSide==='home'?'away':'home'])||0;programAwards({won:us>them,us,them,postseason:false,ranks,oppName:opp?.name,opp})}catch(err){console.error(err)}
         return{ok:true,result:out.result}}
@@ -2059,7 +2152,7 @@ function normalizeCallSheet(u){
   }
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
-  globalThis.DynastyCardGameDay={signingGoals:(season=universe.year)=>{const me=selected();const cls=(me.roster||[]).filter(p=>String(recruitmentOf(p)?.schoolId)===String(me.id)&&Number(recruitmentOf(p)?.season)===season);return signingGoals(cls,me,season)},seasonRecap:()=>CS.battle.seasonRecap(universe.callSheet?.seasonCalls?.[String(universe.year)]),hireFilmEffect,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+  globalThis.DynastyCardGameDay={signingGoals:(season=universe.year)=>{const me=selected();const cls=(me.roster||[]).filter(p=>String(recruitmentOf(p)?.schoolId)===String(me.id)&&Number(recruitmentOf(p)?.season)===season);return signingGoals(cls,me,season)},seasonRecap:()=>CS.battle.seasonRecap(universe.callSheet?.seasonCalls?.[String(universe.year)]),hireFilmEffect,setRivalryPrep,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),

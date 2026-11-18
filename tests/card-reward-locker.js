@@ -138,3 +138,29 @@ test('an entirely full destination never consumes a game or program pack; anothe
   assert.equal(cg.takeGamePack(pack.key,'inside_zone_plus').ok,true);assert.equal(cg.takeRewardCard('album:test','press').ok,true);
   assert.equal(pb.reserve.def.wrinkles.length,500);assert.equal(pb.packsOpened,1);
 });
+
+test('game pack tryouts reuse eligible film and keep battle, reward and practice rolls independent',()=>{
+  const B=require('../forks/call-sheet/core/battle'),Ro=require('../forks/call-sheet/core/roster');
+  const home=Ro.preset('aerial'),away=Ro.preset('ground'),battle=B.simulate({home,away,seed:'reward-tryout'});
+  battle.user='away';
+  const before=B.save(battle),current=JSON.stringify(away);
+  for(const {id} of P.POOL){
+    const report=B.tryRewardCard({battle},id);
+    assert.ok(report.length>25,id);
+    assert.equal(B.tryRewardCard({battle},id),report,id+' practice is repeatable');
+  }
+  assert.equal(B.save(battle),before);
+  assert.match(B.tryRewardCard({battle},'fake_punt'),/4th & .*Practice result/);
+  assert.match(B.tryRewardCard({battle},'film_tell'),/Game film vs .*Practice read .* (run|quick|deep|constraint) play/);
+  assert.match(B.tryRewardCard({battle},'swinging_gate'),/two-point try (was good|failed)/);
+  assert.match(B.tryRewardCard({team:away,seed:'old-pack'},'quick_slant'),/current roster scrimmage/);
+  assert.equal(JSON.stringify(away),current);
+});
+test('banked tryout summaries survive save normalization and opening stays optional',()=>{
+  const pb=P.newPlaybook(),pack=envelope(pb,['two_man','press','pa_boot']);
+  pack.tryouts={press:'Practice result · Press',unknown:'ignored'};
+  pb.gamePacks=[P.cleanGamePack(pack)];
+  assert.deepEqual(pb.gamePacks[0].tryouts,{press:'Practice result · Press'});
+  assert.equal(pb.packsOpened,0);
+  assert.equal(P.claimGamePack(pb,pack.key,'two_man',[]).ok,true);
+});

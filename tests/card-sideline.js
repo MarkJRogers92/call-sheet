@@ -122,3 +122,35 @@ test('recorded success can change the defensive commitment before the offense se
   }
   assert.fail('Expected an observed repeated threat to influence at least one defensive call');
 });
+
+test('Key Moments headset delegates fourth downs and stops once per drive at the opponent’s 25',()=>{
+  function setup(game,headset={}){
+    const b=fixture('headset-offense',game);
+    b.mode='key';b.control='offense';b.headset=B.headsetSettings(headset);return b;
+  }
+  const fourth={down:4,fieldPosition:25,distance:9};
+  assert.equal(B.advance(setup(fourth)).kind,'fourth');
+  const delegate=setup(fourth,{fourth:false});
+  B.advance(delegate);assert.equal(delegate.log.find(e=>e.type==='kick').kick,'punt');
+  const entering=setup({fieldPosition:75},{inside25:true});
+  assert.equal(B.advance(entering).kind,'snap');assert.equal(entering.telemetry.snaps,0);
+  const checkpoint=B.load(B.save(entering));assert.equal(checkpoint.headset25Drive,checkpoint.game.drive);
+  for(const alreadyCalled of [false,true]){
+    const b=setup({fieldPosition:75},{inside25:true});
+    b.headset25Drive=alreadyCalled?b.game.drive:b.game.drive-1;
+    B.advance(b);assert.equal(b.telemetry.snaps===0,!alreadyCalled);
+  }
+  const outside=setup({fieldPosition:74},{inside25:true});B.advance(outside);assert.ok(outside.telemetry.snaps>0);
+  const old=setup({fieldPosition:75});delete old.headset;
+  const loaded=B.load(B.save(old));assert.deepEqual(loaded.headset,{fourth:true,inside25:false,defendLead:false});
+  B.advance(loaded);assert.ok(loaded.telemetry.snaps>0);
+});
+
+test('one-score lead puts an offense-only coach on defense only in Key Moments',()=>{
+  for(const [lead,mode,enabled,stops] of [[1,'key',true,true],[8,'key',true,true],[9,'key',true,false],[0,'key',true,false],[-3,'key',true,false],[3,'key',false,false],[3,'snap',true,false]]){
+    const b=fixture('headset-defense',{possession:'away',score:{home:14+lead,away:14}});
+    b.mode=mode;b.control='offense';b.headset=B.headsetSettings({defendLead:enabled});
+    const req=B.advance(b);assert.equal(b.telemetry.snaps===0,stops);
+    if(stops){assert.equal(req.kind,'snap');assert.equal(req.role,'def')}
+  }
+});

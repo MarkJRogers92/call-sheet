@@ -16,7 +16,7 @@ test('the battle names the deciding duel and the biggest swings with real player
   for(let i=0;i<8;i++){
     const b=CS.battle.simulate({home:Ro.preset('aerial'),away:Ro.preset('ground'),seed:`moments-${i}`}),m=CS.battle.decidingMoments(b);
     assert.deepEqual(CS.battle.decidingMoments(b),m);assert.ok(m.length<=3);
-    const names=new Set(Object.values(b.teams).flatMap(t=>[...Object.values(t.lineup.off),...Object.values(t.lineup.def),...(t.backfield||[])]).map(p=>p.name));
+    const names=new Set(Object.values(b.personnel).map(p=>p.name));
     for(const line of m){assert.match(line,/^(Deciding duel|Turning point|Interception|Fumble|Big play): .+ beat .+ on .+ \((Q\d|OT)/);
       const [,w,l]=line.match(/: (.+?) beat (.+?) on /);assert.ok(names.has(w)&&names.has(l),line)}
     if(m.length)found++;
@@ -53,4 +53,49 @@ test('completing an album earns one Album Pack; evolved cards count for their ro
   const before=cg.albumProgress().find(a=>a.id==='ground').have;
   pb.mastery.inside_zone=99;CS.evolution.evolve(pb,'inside_zone','duo');
   assert.equal(cg.albumProgress().find(a=>a.id==='ground').have,before,'Duo still counts as Inside Zone');
+});
+
+test('an archived final drive reopens with its historical players, hand and clocks without recording a second result',async()=>{
+  const {e,u,CS,host}=await setup(963),cfg=host.launch(),B=CS.battle;
+  const teams=Object.fromEntries(['home','away'].map(side=>[side,CS.adapter.battleTeam(cfg[side])]));
+  let b,record;
+  for(let i=0;i<24&&!record;i++){
+    b=B.simulate({...teams,seed:'final-drive-'+i,classicSide:cfg.userSide});
+    record=B.archivedDrive(b);
+  }
+  assert.ok(record,'a one-score game yielded a final drive');
+  const ordinary=B.simulate({...teams,seed:b.seed});
+  assert.deepEqual(b.game,ordinary.game,'capturing history consumes no RNG');
+  host.save({activeBattle:{seed:cfg.seed,battle:'{}'}});
+  assert.ok(host.record(b.game,B.duelTally(b),[],null,record).ok);
+  const row=u.gameArchive.find(r=>r.classicDrive);
+  assert.match(e.gameSummaryHTML(row),/Replay the final drive/);
+  assert.doesNotMatch(e.gameSummaryHTML({...row,classicDrive:null}),/Replay the final drive/);
+  const season=JSON.stringify([u.gameArchive,u.callSheet,u.teams.map(t=>[t.w,t.l])]);
+  const original=JSON.parse(record.battle),r=B.replayDrive(row.classicDrive);
+  assert.equal(original.classicDrive,undefined,'snapshots do not recursively embed older drives');
+  assert.deepEqual(r.teams,original.teams);
+  assert.deepEqual(r.hands,original.hands);
+  assert.deepEqual(r.rng,original.rng);
+  assert.deepEqual(r.game,original.game);
+  const first=B.advance(r);
+  assert.ok(['snap','fourth'].includes(first.kind));
+  assert.equal(first.side,cfg.userSide);
+  r.mode='sim';r.pending=null;
+  assert.equal(B.advance(r),null);
+  assert.ok(r.game.drive!==original.game.drive||r.game.status==='final');
+  assert.equal(r.final,undefined,'replay stops before normal postgame processing');
+  assert.deepEqual(B.replayDrive(row.classicDrive).hands,original.hands);
+  assert.equal(JSON.stringify([u.gameArchive,u.callSheet,u.teams.map(t=>[t.w,t.l])]),season);
+});
+
+test('a classic overtime drive starts on the final overtime possession',()=>{
+  const B=require('../forks/call-sheet/core/battle'),Ro=require('../forks/call-sheet/core/roster');
+  const b=B.simulate({home:Ro.preset('ground'),away:Ro.preset('ground','rival'),seed:'replay9',classicSide:'away'});
+  const record=B.archivedDrive(b),replay=B.replayDrive(record);
+  assert.equal(replay.game.ot.possessions,b.game.ot.possessions-1);
+  assert.equal(replay.game.fieldPosition,75);
+  assert.equal(replay.game.down,1);
+  replay.mode='sim';assert.equal(B.advance(replay),null);
+  assert.equal(replay.game.ot.possessions,b.game.ot.possessions);
 });

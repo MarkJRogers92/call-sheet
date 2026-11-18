@@ -28,6 +28,10 @@ const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/ch
     const persisted=await page.evaluate(()=>window.DynastyCardGameDay.meta().playbook.gamePacks[0]);assert.deepEqual(persisted,offer,'unchanged offer after week advance and real cold reload');
     const eligible=await page.evaluate(()=>{const pb=window.DynastyCardGameDay.meta().playbook;return window.CallSheet.packs.gamePackChoices(pb,pb.gamePacks[0],window.__callSheetDynasty.rewardContext().worldTaken).map(c=>c.id)});
     assert.deepEqual(await take.evaluateAll(els=>[...new Set(els.map(el=>el.dataset.take))]),eligible);
+    const trial=page.locator('#rewardPack [data-try-card]').first(),trialId=await trial.getAttribute('data-try-card');
+    const unclaimed=await page.evaluate(()=>window.DynastyCardGameDay.meta().playbook);
+    await trial.click();assert.equal(await page.locator('#rewardPack [data-pack-status]').innerText(),offer.tryouts[trialId]);
+    assert.deepEqual(await page.evaluate(()=>window.DynastyCardGameDay.meta().playbook),unclaimed);
     await page.keyboard.press('Escape');await page.click('[data-game-pack]');await page.click('#rewardPack [data-rip]');
     const before=await page.evaluate(()=>window.DynastyCardGameDay.meta().playbook);
     const keep=page.locator('#rewardPack [data-take][data-destination="collection"]').first();await keep.waitFor();

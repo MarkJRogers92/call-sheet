@@ -100,3 +100,39 @@ test('the submitted bracket assignment survives into the actual snap; invalid as
   B.submit(b,selected);
   assert.equal(b.log[index].bracketRole,'X');
 });
+
+test('against Read Option the end takes one threat and the linebacker must fit the other',()=>{
+  const away=Ro.preset('tempo');
+  away.decks=structuredClone(D.DEFAULT_DECKS);
+  away.decks.off.base=['read_option'];away.decks.off.wrinkles=[];away.decks.off.tactics=[];
+  const b=B.create({home:Ro.preset('ground'),away,user:'home',mode:'snap',control:'defense',seed:'bracket-owner'});
+  assert.equal(B.advance(b).role,'def');
+  const saved=B.save(b),choice={type:'call',play:'cover3',tactics:[]};
+  assert.throws(()=>B.submit(b,{...choice,edgeAssignment:'blitz'}),/edge assignment/);
+  assert.equal(B.save(b),saved);
+  for(const [assignment,role,trait] of [['crash','QB','speed'],['contain','RB','power']]){
+    const copy=B.load(saved),index=copy.log.length;
+    const off=copy.teams.away.lineup.off,def=copy.teams.home.lineup.def;
+    const attempts=copy.players[off[role].id]?.rushAtt||0;
+    B.submit(copy,{...choice,edgeAssignment:assignment});
+    const snap=copy.log[index];
+    assert.equal(snap.edgeAssignment,assignment);assert.equal(snap.participants.carrier,role);
+    assert.deepEqual(snap.duels[1].offNames,[off[role].name]);
+    assert.deepEqual(snap.duels[1].defNames,[def.WILL.name]);assert.ok(snap.duels[1].offTraits.includes(trait));
+    for(const name of [def.SET.name,def.WILL.name,off[role].name])assert.ok(snap.text.includes(name));
+    assert.equal(copy.players[off[role].id].rushAtt,attempts+1);
+  }
+});
+
+test('the coordinator takes away the stronger option matchup and leaves ordinary runs alone',()=>{
+  const {off,def}=Ro.preset('ground').lineup;
+  const ctx={off,def,call:D.CALLS.cover3,play:D.PLAYS.read_option};
+  for(const [keep,give,assignment] of [[95,40,'contain'],[40,95,'crash']]){
+    Object.assign(off.QB.traits,{speed:keep,versatility:keep});
+    Object.assign(off.RB.traits,{power:give,technique:give});
+    assert.equal(R.buildSnap(ctx).edgeAssignment,assignment);
+  }
+  assert.equal(D.PLAYS.read_option.carrier,'QB');
+  const ordinary={...ctx,play:D.PLAYS.inside_zone};
+  assert.deepEqual(R.buildSnap({...ordinary,edgeAssignment:'crash'}),R.buildSnap({...ordinary,edgeAssignment:'contain'}));
+});
