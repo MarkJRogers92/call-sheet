@@ -34,7 +34,8 @@ const resolveDecisions = async page => {
       await startNewDynasty(page);
 
       // Navigation icons.
-      if (phone) assert.equal(await page.locator('.client-mobile-nav .client-nav-icon').count(), 5, `[${label}] every bottom-bar item has an icon`);
+      // The Call Sheet fork adds a Cards item, so count items rather than assuming the base game's five.
+      if (phone) { const items = await page.locator('.client-mobile-nav > button, .client-mobile-nav > a').count(); assert.ok(items >= 5, `[${label}] bottom bar has its items`); assert.equal(await page.locator('.client-mobile-nav .client-nav-icon').count(), items, `[${label}] every bottom-bar item has an icon`); }
       else assert.ok(await page.locator('.client-rail .client-nav-icon').count() >= 14, `[${label}] every sidebar item has an icon`);
 
       // No internal version labels in any tab (the sidebar footer carries the real version, outside the tabs).
