@@ -91,3 +91,14 @@ test('after a loss, the swap removes one copy of the play that struggled and add
   assert.equal(P.lossSwap(pb,{...note,weakId:pb.off.base[0]}),null,'base calls are never removed');
   assert.equal(P.lossSwap(pb,{...note,weakId:null}),null);
 });
+
+test('pack stakes before kickoff match the pack the game actually opens',()=>{
+  for(const [opts,title,elevated] of [[{},'Victory Pack',false],[{rivalry:true},'Rivalry Pack',true],[{stage:'bowl'},'Bowl Pack',true],[{stage:'title',rivalry:true},'National Title Pack',true]]){
+    const st=P.packStakes(opts);assert.equal(st.win.title,title);assert.equal(st.elevated,elevated);
+    const won=P.openPack(P.newPlaybook(),{...opts,won:true,seed:'stakes'}),lost=P.openPack(P.newPlaybook(),{...opts,won:false,seed:'stakes'});
+    assert.equal(won.cards.length,st.win.picks,`${title} pick count`);assert.equal(lost.cards.length,st.loss.picks);
+    if(opts.stage)assert.equal(won.title,title);
+  }
+  assert.match(P.packStakes({rivalry:true}).text,/Rivalry Pack if you win \(pick 1 of 5, last slot 35% legendary\) · Film Study Pack if not/);
+  assert.doesNotMatch(P.packStakes({}).text,/legendary/);
+});

@@ -221,3 +221,11 @@ test('last game\'s card Player of the Game joins This Week\'s player stories, on
   u.callSheet.moments.push({year:u.year,week:u.week+1,kind:'big',playerId:p.id,text:'later game'});
   assert.ok(!stories().some(x=>x.type==='card_duels'),'a newer game replaces last game\'s story');
 });
+
+test('a rivalry week says what is at stake before kickoff, using the same rivalry flag as the battle',async()=>{
+  const {cg,me,e}=await setup(947);const g=e.findUserGame(),opp=e.T(g.home===me.name?g.away:g.home);
+  me.protectedRivalIds=(me.protectedRivalIds||[]).filter(id=>id!==opp.id);
+  assert.equal(cg.packStakes().elevated,false);assert.equal(cg.launch().rivalry,false);
+  me.protectedRivalIds.push(opp.id);
+  const st=cg.packStakes();assert.equal(cg.launch().rivalry,true);assert.equal(st.elevated,true);assert.equal(st.win.title,'Rivalry Pack');
+});

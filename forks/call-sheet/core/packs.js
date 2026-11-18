@@ -64,6 +64,14 @@ const STAGE_PACKS={
   playoff:{type:'playoff',title:'Playoff Pack',subtitle:'Pick 1 of 5 · still alive',wrap:'PLAYOFF',legendary:.3},
   title:{type:'title',title:'National Title Pack',subtitle:'Pick 1 of 5 · national champions',wrap:'NATIONAL<br>TITLE',legendary:.6}
 };
+// What a game's pack will be, before kickoff: the same rules openPack uses (stage and rivalry upgrade a win; a loss is
+// always a Film Study pack built from counters to what beat you). Names match the final screen's pack buttons.
+function packStakes({rivalry=false,stage=null}={}){
+  const post=STAGE_PACKS[stage]||null,legendary=post?Math.max(post.legendary,rivalry?.35:0):rivalry?.35:0;
+  const win=post?{title:post.title,picks:5}:rivalry?{title:'Rivalry Pack',picks:5}:{title:'Victory Pack',picks:4};
+  return{elevated:!!(post||rivalry),win,loss:{title:'Film Study Pack',picks:3},legendary,
+    text:`At stake: ${win.title} if you win (pick 1 of ${win.picks}${legendary?`, last slot ${Math.round(legendary*100)}% legendary`:''}) · Film Study Pack if not (pick 1 of 3, counters to what beat you).`};
+}
 function openPack(pb,opts){
   const rng=DynastyRng.create(`pack:${opts.seed}:${pb.packsOpened}`);
   const rivalWin=opts.rivalry&&opts.won,post=opts.won&&STAGE_PACKS[opts.stage]||null,n=rivalWin||post?5:opts.won?4:3,cards=[],used=new Set();
@@ -296,5 +304,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{lossSwap,lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{packStakes,lossSwap,lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });
