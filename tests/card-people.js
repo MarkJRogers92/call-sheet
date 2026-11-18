@@ -197,3 +197,14 @@ test('a prospect preview states its deck fit; switching decks changes the advice
   assert.equal(JSON.stringify([...(u.callSheet.playbook.signatures||[]),...(u.callSheet.playbook.reserveSignatures||[])]),owned,'a preview never grants the card');
   assert.match(globalThis.DynastyRecruitCard.dossierHTML(ol.id),/CARD PREVIEW · PROSPECT[\s\S]*fit with your deck[\s\S]*Nothing is granted/);
 });
+
+test('the pre-game film note matches the battle\'s confidence and moves with the staff, not recruiting scouting',async()=>{
+  const {cg,u,me}=await setup(943);
+  const note=cg.filmNote(),cfg=cg.launch();assert.ok(note&&cfg.scouting);
+  assert.equal(note.confidence,Math.round(cfg.scouting.confidence),'same number the battle uses');
+  assert.match(note.text,note.exact?/exact grades/:/coordinators and head coach.*ranges/);
+  for(const k of ['OC','DC'])if(me.staff?.[k])me.staff[k].playCall=40;if(me.staff?.HC)me.staff.HC.development=40;
+  const low=cg.filmNote();assert.ok(low.confidence<=note.confidence);assert.equal(low.exact,false);assert.match(low.text,/narrows them|shows them exactly/);
+  for(const r of u.recruits.slice(0,20))r.scouted=true; // recruiting scouting does not change film confidence
+  assert.equal(cg.filmNote().confidence,low.confidence);
+});

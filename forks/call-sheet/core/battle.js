@@ -934,6 +934,15 @@ function lastUserCall(b,side=b?.user){
   }
   return null;
 }
+// Film confidence (Dynasty: the coordinators' play-calling and the head coach's development rating) sets how
+// precisely opponent grades show. Exact at 82+, a one-point range from 64, wider below. Display only: duel math never
+// changes. One definition shared by the battle and the dynasty's pre-game note.
+const FILM_EXACT=82,FILM_NARROW=64;
+function filmFog(confidence){
+  const c=Number(confidence);if(confidence==null||!Number.isFinite(c))return{spread:0,exact:true,nextAt:null};
+  const spread=c>=FILM_EXACT?0:c>=FILM_NARROW?1:2;
+  return{spread,exact:!spread,confidence:Math.round(c),nextAt:spread===2?FILM_NARROW:spread===1?FILM_EXACT:null};
+}
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
   const tally=onlyMine=>{
@@ -1096,5 +1105,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{VERSION,filmFog,lastCallRecap,lastUserCall,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

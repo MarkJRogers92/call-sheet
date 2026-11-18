@@ -286,13 +286,13 @@ function readHTML(){
     clearGlow();
     const duels=req.role==='off'?pv.snap.duels:pv.vs.slice().sort((a,c)=>c.weight-a.weight)[0]?.snap.duels||[];
     const side=b.user==='home'?'away':'home';
-    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}%: scout them to sharpen the matchup. Exact forecasts are unavailable.</div>
+    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}% (from your coordinators and head coach). Exact forecasts are unavailable.</div>
       ${duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} vs ${esc(d.defNames.join(' & '))}<br>Opponent grade ${esc(fogGrade(req.role==='off'?d.defGrade:d.offGrade,(req.role==='off'?d.defNames:d.offNames)[0],side).text)}</span><span class="chip fogchip">?</span></div>`).join('')}</div>`;
   }
   if(req.role==='off'){
     fieldGlow(pv.snap.duels,true);
     const bonus=pv.snap.duels.flatMap(d=>d.mods.filter(m=>m.src!=='Play design').map(m=>({...m,k:d.key})));
-    return`<div class="box"><h3>The read</h3><div class="mini">Estimate from the visible look; hidden adjustments can change it.</div>${DYN&&fogSpread()?`<div class="mini" style="color:#9fe3ff">Film confidence ${DYN.scouting.confidence}%: their ratings are ranges. Scout them to sharpen.</div>`:''}<div class="exp">${pv.ev.yards.toFixed(1)}<small>yds estimated</small></div>
+    return`<div class="box"><h3>The read</h3><div class="mini">Estimate from the visible look; hidden adjustments can change it.</div>${DYN&&fogSpread()?`<div class="mini" style="color:#9fe3ff">Film confidence ${DYN.scouting.confidence}% (from your coordinators and head coach): their ratings are ranges.</div>`:''}<div class="exp">${pv.ev.yards.toFixed(1)}<small>yds estimated</small></div>
       <div class="kpis"><span>1ST DOWN <b>${Math.round(pv.ev.first*100)}%</b></span><span>TURNOVER <b>${(pv.ev.turnover*100).toFixed(0)}%</b></span></div>
       ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}${(()=>{const dside=req.side===b.user?(b.user==='home'?'away':'home'):b.user,fg=fogGrade(d.defGrade,d.defNames[0],dside);return fg.fog?` <span class="muted">(${fg.text})</span>`:''})()}${duelMath(d)}</span><span class="chip ${d.chip}${fogSpread()&&DYN?' fogchip':''}">${d.chip}${fogSpread()&&DYN?'?':''}</span></div>`).join('')}
       ${bonus.length?`<div class="bonus">${bonus.map(m=>`<span class="${m.v<0?'neg':''}">${m.k} ${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>`:''}</div>`;
@@ -344,7 +344,7 @@ function setupReceipt(e){
 }
 function matchupStoryHTML(e){
   const note=B.matchupStory(e);if(!note)return'';
-  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Scout them to sharpen your matchup read.':note.detail))}</span>`;
+  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Their grades are ranges at your film confidence.':note.detail))}</span>`;
 }
 function showMatchupStory(e){
   let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
@@ -595,7 +595,7 @@ async function quickKick(e){
 function initials(n){return n.split(' ').map(x=>x[0]).join('')}
 // Scouting fog (Dynasty Lab film confidence): below 82, opponent grades show as a range that always contains the
 // true grade; below 64 the range is wider. Your own players are always exact. The duel math never changes.
-function fogSpread(){const c=DYN?.scouting?.confidence;return c==null||c>=82?0:c>=64?1:2}
+function fogSpread(){return B.filmFog(DYN?.scouting?.confidence).spread}
 function isOpponentSide(side){return!!DYN&&side!==b.user}
 function fogGrade(grade,pid,side){
   const sp=isOpponentSide(side)?fogSpread():0;if(!sp)return{text:String(Number(grade.toFixed(1))),fog:false};

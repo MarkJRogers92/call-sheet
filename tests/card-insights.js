@@ -55,3 +55,10 @@ test('postgame takeaway leads with the coach\'s own calls and names who called a
   b.log.push(weakSnap('pa_boot',true));t=B.postgameTakeaway(b);
   assert.equal(t.caller,'mixed');assert.match(t.summary,/^PA Boot struggled/);assert.match(t.evidence,/you called 1, your staff 6/);
 });
+test('film fog thresholds are shared: exact at 82, one-point ranges from 64, wider below; unknown is exact',()=>{
+  assert.deepEqual(B.filmFog(90),{spread:0,exact:true,confidence:90,nextAt:null});
+  assert.deepEqual(B.filmFog(82),{spread:0,exact:true,confidence:82,nextAt:null});
+  assert.deepEqual(B.filmFog(70),{spread:1,exact:false,confidence:70,nextAt:82});
+  assert.deepEqual(B.filmFog(50),{spread:2,exact:false,confidence:50,nextAt:64});
+  assert.equal(B.filmFog(undefined).spread,0);assert.equal(B.filmFog('x').spread,0);
+});
