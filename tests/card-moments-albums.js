@@ -25,8 +25,14 @@ test('the battle names the deciding duel and the biggest swings with real player
 });
 
 test('a card-simulated week stores duel moments in the archive and the game summary shows them',async()=>{
-  const {e,u,me}=await setup(962);
-  e.simWeek();
+  const {e,u,me,CS}=await setup(962);
+  u.callSheet.settings.headset={restStarters:false};
+  const simulate=CS.battle.simulate;let game;
+  CS.battle.simulate=opts=>{game=simulate(opts);return game};
+  try{e.simWeek()}finally{CS.battle.simulate=simulate}
+  assert.equal(game.teams[game.headsetSide].name,me.name);
+  assert.equal(game.headset.restStarters,false);
+  assert.equal(game.telemetry.userSnaps,0);
   const rec=(u.gameArchive||[]).find(r=>r.cardBattle&&(r.home?.id===me.id||r.away?.id===me.id));
   assert.ok(rec,'the user game was a card game');assert.ok(Array.isArray(rec.cardMoments)&&rec.cardMoments.length);
   const html=e.gameSummaryHTML(rec);assert.match(html,/<h3>Card battle<\/h3>/);assert.ok(html.includes(rec.cardMoments[0].replace(/&/g,'&amp;')));

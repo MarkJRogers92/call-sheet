@@ -529,6 +529,14 @@ function renderSide(){
 }
 
 // ================================================================ the Look
+function leanMeterText(req){
+  const m=req.leanMeter;if(!m?.count)return '';
+  const family={run:'runs',quick:'quick passes',deep:'deep passes'}[m.family]||m.family;
+  const next={run:'run',quick:'quick pass',deep:'deep pass'}[m.family]||m.family;
+  if(!req.look?.lean?.confirmed||!Number.isFinite(m.threshold))return `Your tendency: ${family} · ${m.count}`;
+  const left=m.threshold-m.count;
+  return left>0?`Your tendency: ${family} · ${m.count}/${m.threshold}. ${left} more ${left===1?next+' draws':family+' draw'} a defensive adjustment.`:'';
+}
 let lastLook={};
 function renderLook(){
   const el=$('#look');if(!req||req.kind!=='snap'){el.innerHTML='';return}
@@ -542,7 +550,7 @@ function renderLook(){
     if(l.coverage.confirmed)tags.push(['coverage',`COVERAGE: ${l.coverage.value}`,true]);
     if(l.lean.value&&l.lean.confirmed)tags.push(['lean',B.leanRead(l.lean.value),true,'lean']);
     if(l.heat)tags.push(['heat','🔥 BLITZ-HAPPY',true,'lean']);
-    const lm=req.leanMeter;if(lm&&lm.count>0)tags.push(['meter',`${lm.family.toUpperCase()} ${Math.min(lm.count,lm.threshold)}/${lm.threshold} · ${lm.threshold-lm.count<=1?'one more and they lean':'until they lean'}`,true,'lean']);
+    if(req.leanMeter){const text=leanMeterText(req);if(text)tags.push(['meter',text,true,'lean'])}
   }else{
     const t=req.offTendency,f=req.offLook.family;
     tags.push(['family',`PLAY: ${f.confirmed?f.value:'?'}`,f.confirmed]);
@@ -583,21 +591,21 @@ function quickSheetHTML(view){
   const opt=req.options,selected=opt.plays.find(p=>p.id===sel.play),cost=selCost();
   const cards=view.choices.map(c=>{
     const p=opt.plays.find(p=>p.id===c.id);
-    const m=c.matchup?`<span class="quick-matchup">${esc(c.matchup.label)}: ${esc(c.matchup.offense)} vs ${esc(c.matchup.defense)} <i class="chip ${esc(c.matchup.chip)}">${esc(c.matchup.chip)}</i></span>`:'';
+    const m=c.matchup?`<span class="quick-choice-matchup">Projected ${esc(c.matchup.label)}: ${esc(c.matchup.offense)} vs ${esc(c.matchup.defense)} <i class="chip ${c.matchup.chip==='?'?'fogchip':esc(c.matchup.chip)}" title="${c.matchup.chip==='?'?'Opponent grade uncertain':'Projected matchup from the shown look'}">${esc(c.matchup.chip)}</i></span>`:'';
     return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${m}<span class="trade">${esc(c.detail)}</span></button>`;
   }).join('');
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   return `<div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
     ${req.role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}
-    ${pinnedCallHTML()}<p id="quickClue">${esc(view.clue)}</p>
+    ${pinnedCallHTML()}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${assignmentHTML()}${matchupHTML()}${tacticNoteHTML(true)}
     <div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
     ${guidedDriveHTML()}${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
 }
 function renderQuickHand(h){
-  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req,sel));
+  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req,sel,DYN?.scouting?.confidence));
   {const story=$('#matchupStory');if(story&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
   for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
     if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
@@ -923,7 +931,7 @@ async function cinematic(e){
   else if(firstDown)await callout('FIRST DOWN!',goodFor(true)?'':'bad',1000);
   else if(e.yards<=0)await callout('STUFFED!',goodFor(false)?'':'bad small',800);
   if(goodFor(true)&&(td||e.yards>=20||firstDown))S.crowd(td?2:1.2,td?.55:.35);
-  if(e.reset)await callout('DEFENSE BACKS OFF','hotc small',1000,e.reset==='run'?'They stop committing to the run':'They stop sitting on short passes');
+  if(e.reset)await callout('DEFENSE BACKS OFF','hotc small',1000,{run:'They stop committing to the run',quick:'They stop sitting on short passes',pressure:'They back off the repeated pressure'}[e.reset]);
   for(const ev of e.events||[])await eventCallout(ev);
   ticker(e.text);
 }
@@ -975,13 +983,13 @@ function halftimeDialog(){
   const dialog=coachingDialog('Halftime adjustment',`
     ${evidence?`<p class="statline">${esc(evidence)}</p>`:''}
     <p>Make one adjustment. Feature a personnel package on offense or script an equipped tactic for its unit’s first second-half hand. The tactic replaces one normal draw.</p>
-    ${preferred?`<p>Staff suggestion · <b>${esc(preferred.name)}</b>${r.suggestion==='bracket'&&r.threat?.name?` on ${esc(r.threat.name)}`:''} · ${esc(preferred.text)}</p>`:''}
+    ${preferred?`<p>Staff suggestion · <b>${esc(preferred.name)}</b>${r.suggestion==='bracket'&&r.bracketTarget?.name?` on ${esc(r.bracketTarget.name)} · Extra help against this receiver leaves others more space.`:` · ${esc(preferred.text)}`}</p>`:''}
     <label>Second-half adjustment <select id="halfTactic"><option value="">Keep the game plan</option>${(r.packages||[]).map(o=>`<option value="package:${esc(o.id)}">${esc(o.name)} personnel</option>`).join('')}${r.options.map(({id,role})=>`<option value="${esc(id)}">${esc(D.TACTICS[id].name)} · ${role==='off'?'offense':'defense'}</option>`).join('')}</select></label><p id="halfDetail" aria-live="polite"></p>
     <button type="button" class="btn go" id="halfContinue">Start the second half</button>`);
   const select=dialog.querySelector('select');
   select.onchange=()=>{
     const id=select.value,group=r.packages?.find(p=>'package:'+p.id===id);
-    dialog.querySelector('#halfDetail').textContent=group?.detail||D.TACTICS[id]?.text||'';
+    dialog.querySelector('#halfDetail').textContent=id==='bracket'&&r.bracketTarget?`Prepare a bracket on ${r.bracketTarget.name} when he is on the field. You can change the assignment before the snap.`:group?.detail||D.TACTICS[id]?.text||'';
   };
   const finish=id=>{dialog.close();go({type:'halftime',adjustment:id||null})};
   dialog.querySelector('#halfContinue').onclick=()=>finish(dialog.querySelector('select').value);
@@ -997,10 +1005,10 @@ $('#sidelineBtn').onclick=()=>{
     ${o.retained?`<p>You carried ${esc(D.TACTICS[o.retained]?.name||o.retained)} into this series.</p>`:''}
     ${o.late&&o.offense?`<label>Two-minute tempo <select id="clockIntent">${[['normal','Normal snap timing'],['preserve','Hurry to the line · up to 13 seconds'],['drain','Use the play clock · up to 10 extra seconds']].map(([id,label])=>`<option value="${id}" ${id===o.intent?'selected':''}>${label}</option>`).join('')}</select></label><p>Applies to running-clock snaps for the rest of this half. Stoppages and opponent timeouts still apply.</p>`:''}
     ${o.late?`<label class="timeout-choice"><input type="checkbox" id="clockTimeout" ${o.timeoutNext?'checked':''} ${o.timeouts?'':'disabled'}> Call timeout after this snap if the clock would run · ${o.timeouts} left</label>`:''}
-    ${o.offense&&o.featurable?.length?(o.featured?`<p>Featured this half · <b>${esc(o.featured.name||'your player')}</b> · ${o.featured.left} boosted touch${o.featured.left===1?'':'es'} left.</p>`
+    ${o.offense&&o.featurable?.length?(o.featured?`<p>Featured this half · <b>${esc(o.featured.name||'your player')}</b> · ${o.featured.left} touch${o.featured.left===1?'':'es'} left with the feature active.</p>`
       :`<label>Feature a player this half <select id="featurePlayer"><option value="">No featured player</option>${o.featurable.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.role)}</option>`).join('')}</select></label>
-       <p>His first two touches get +1 on every duel he is in. The defense spots him on film sooner.</p>`):''}
-    ${threat?`<p>Recent film · ${esc(b.personnel[threat.playerId]?.name||'The same player')} gained ${threat.yards} yards on ${threat.count} productive ${esc(D.PLAYS[threat.play].name)} calls.</p>`:''}
+       <p>Calls designed for him give his duels +1 until he records two carries or catches. The defense spots his productive touches sooner.</p>`):''}
+    ${threat?`<p>Recent film · ${esc(b.personnel[threat.playerId]?.name||'The same player')} gained ${threat.yards} yards on ${threat.count} productive ${esc(D.PLAYS[threat.play].name)} call${threat.count===1?'':'s'}.</p>`:''}
     <div><button type="button" class="btn go" id="sidelineApply">Apply</button> <button type="button" class="btn" id="sidelineCancel">Cancel</button></div>`);
   dialog.querySelector('#sidelineApply').onclick=()=>{
     B.setSideline(b,{keep:dialog.querySelector('#keepTactic')?.value||null,

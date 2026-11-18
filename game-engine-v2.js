@@ -159,15 +159,15 @@ function endRegulationPeriodIfNeeded(state){
 
 function applyScrimmage(state,outcome={}){
   requireStatus(state,'live');
-  if(state.period>4)return applyOvertimeSnap(state,outcome);
   if(!state.possession)throw new Error('Cannot run a play without possession.');
   if(outcome.penalty)return applyPenalty(state,outcome);
+  if(state.period>4)return applyOvertimeSnap(state,outcome);
   const offense=state.possession,defense=other(offense),beforeField=state.fieldPosition,beforeDown=state.down,beforeDistance=state.distance;
   const clock=clamp(Math.round(outcome.clock??30),1,45);consumeClock(state,clock);
   if(outcome.turnover){
     const yards=clamp(Math.round(outcome.yards??0),-99,99);const spot=clamp(beforeField+yards,1,99);
     state.play++;
-    pushEvent(state,outcome.turnover==='fumble'?'fumble':'interception',{team:offense,yards,from:{fieldPosition:beforeField,down:beforeDown,distance:beforeDistance}});
+    pushEvent(state,outcome.turnover==='fumble'?'fumble':'interception',{team:offense,yards:spot-beforeField,from:{fieldPosition:beforeField,down:beforeDown,distance:beforeDistance}});
     setPossession(state,defense,100-spot,outcome.turnover);
     endRegulationPeriodIfNeeded(state);validateState(state);return state;
   }
@@ -199,8 +199,8 @@ function applyPenalty(state,outcome){
   const spec=outcome.penalty,offense=state.possession,defense=other(offense);
   const type=PENALTY_TYPES[spec?.kind];if(!type)throw new Error(`Unknown penalty: ${spec?.kind}`);
   const against=type.against==='defense'?defense:offense,beforeField=state.fieldPosition,beforeDown=state.down,beforeDistance=state.distance;
-  const half=Math.max(1,Math.floor((against===offense?beforeField:100-beforeField)/2));
-  const yards=clamp(Math.round(Number(spec.yards)||type.yards||5),1,half);
+  const half=Math.floor((against===offense?beforeField:100-beforeField)/2);
+  const yards=Math.min(half,Math.max(1,Math.round(Number(spec.yards)||type.yards||5)));
   // A foul never ends a period by itself: the clock stops with one second left and the next snap is the untimed down.
   consumeClock(state,Math.min(clamp(Math.round(outcome.clock??(type.dead?4:12)),0,45),Math.max(0,state.clock-1)));
   let field,down=beforeDown,distance;
@@ -383,7 +383,8 @@ function applyOvertimeSnap(state,outcome={}){
   const offense=state.possession,beforeField=state.fieldPosition,beforeDown=state.down,beforeDistance=state.distance;
   if(state.ot.period>=3)return resolveTwoPointShootout(state,outcome);
   if(outcome.turnover){
-    pushEvent(state,outcome.turnover==='fumble'?'fumble':'interception',{team:offense,yards:outcome.yards??0,ot:true});
+    const spot=clamp(beforeField+Math.round(outcome.yards??0),1,99);
+    pushEvent(state,outcome.turnover==='fumble'?'fumble':'interception',{team:offense,yards:spot-beforeField,ot:true,from:{fieldPosition:beforeField,down:beforeDown,distance:beforeDistance}});
     endOvertimePossession(state);return state;
   }
   const yards=clamp(Math.round(outcome.yards??0),-99,99),next=beforeField+yards;state.play++;

@@ -75,11 +75,14 @@ test('Hard Count reverses a real exhausted trick and its exact charge after save
   }
   assert.equal(b.snap.def.play,'ghost_blitz');
   const starting=b.snap.def.restore.hand.command;
+  b.game.fieldPosition=4;
   for(let i=0;;i++){const rng=RNG.create('dead-ball-'+i),snapshot=rng.snapshot();if(rng.next()<.15){b.rng=snapshot;break}}
   const ids=game=>[...game.hands.away.wrinkles,...game.piles.away.def.wrinkle.draw,...game.piles.away.def.wrinkle.discard,...game.exhausted.away].sort();
   const before=ids(b),saved=B.load(B.save(b));B.submit(b,{type:'info',tactic:'hard_count'});
   B.submit(saved,{type:'info',tactic:'hard_count'});
   assert.equal(b.box.home.penalties,1);assert.deepEqual(ids(b),before);
+  const flag=b.log.findLast(e=>e.type==='penalty');
+  assert.equal(flag.yards,2);assert.match(flag.text,/2 yards/);assert.equal(b.box.home.penaltyYds,2);
   assert.equal(b.snap.def.restore.hand.command,starting);
   assert.deepEqual(B.save(saved),B.save(b));
 });

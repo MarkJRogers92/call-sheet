@@ -438,7 +438,7 @@ function normalizeCallSheet(u){
     CS.signatures.registerAll(pb);for(const p of Object.values(cardMeta().ai))CS.signatures.registerAll(p);
     const mine=CS.packs.decksOf(pb),theirs=cfg.oppPlaybook?CS.packs.decksOf(cfg.oppPlaybook):null;
     const team=(t,side)=>AD.battleTeam(t,side===cfg.userSide?mine:theirs,cfg.program?.[side]);
-    const b=CS.battle.simulate({home:team(cfg.home,'home'),away:team(cfg.away,'away'),seed:`${cfg.seed}:sim`,classicSide:cfg.userSide,weather:cfg.weather,conditions:cfg.conditions,rivalry:cfg.rivalry});
+    const b=CS.battle.simulate({home:team(cfg.home,'home'),away:team(cfg.away,'away'),seed:`${cfg.seed}:sim`,user:cfg.userSide,headset:cardMeta().settings.headset,classicSide:cfg.userSide,weather:cfg.weather,conditions:cfg.conditions,rivalry:cfg.rivalry});
     return{cfg,b};
   }
   function simWithCardsOn(){return!!universe?.callSheet&&integrationOn(SIM_WITH_CARDS)&&!!globalThis.CallSheet?.battle}

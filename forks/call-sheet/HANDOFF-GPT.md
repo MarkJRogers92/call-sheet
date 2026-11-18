@@ -1,6 +1,12 @@
 # Call Sheet: handoff
 
-## November 18, 2026 · V20 review changes (Claude)
+## November 18, 2026 · Integrated V20
+
+Applied Claude’s patch to the exact V19 source and verified its ten files against the supplied ZIP. Integration fixes keep hidden scouting grades out of Quick Calls, carry the halftime bracket onto the named eligible receiver, and use the same resolver inputs for reward odds and the practice snap. The featured-player counter follows actual catches and carries. Rest settings apply to simulated Dynasty games and package changes. Fourth-down staff decisions account for field goals that tie, win or cut a 9–11 point deficit to one possession. Film, box scores and narration now agree on recovery spots, sacks and enforced penalty yards.
+
+A separate balance check used one generated Dynasty league (seed 2026), real depth charts, 20 game seeds and both home/away assignments. The widest starter-grade matchup in this league was Chicago Metropolitan vs Wyoming State. Chicago won all 40, with a median margin of 43.5 and a maximum of 61. In the neighboring mid-table matchup, Red Dirt won 25 of 40 against Detroit Metropolitan. Median absolute margin was 13.5 and the widest was 30. These are samples from those two matchups.
+
+## November 18, 2026 · Claude’s original V20 review and pre-integration measurements
 
 Built from the V19 review (`3ceb239d`). The review played a drive, swept 1,200 seeded games and traced the worst.
 
@@ -23,8 +29,7 @@ it on a makeable fourth down (5 or less, any distance inside two minutes) when t
 inside six minutes or any deficit inside two, unless a field goal would make it a one-score game. All of this is inside
 the battle; Game Engine 2's `defaultFourthDown` is unchanged.
 
-**Featured player** (sideline). Once per half, name one skill player: +1 on every duel he is in for his first two touches
-(labeled "Featured: Name"). His productive touches count twice in `revealedThreat`, so the defense adjusts to him sooner.
+**Featured player** (sideline). Name one active skill player per half. On calls designed for him, his duels get +1 until he records two carries or catches. The defense can recognize his first productive touch. Film reports his actual touches and yards.
 
 **Lean meter.** The offense's snap request carries `leanMeter` {family, count, threshold}; the Look shows it until the
 lean triggers. The threshold is the coordinator's discipline, already public as the aggressive/disciplined label.

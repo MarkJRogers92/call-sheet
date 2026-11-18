@@ -154,3 +154,49 @@ test('one-score lead puts an offense-only coach on defense only in Key Moments',
     if(stops){assert.equal(req.kind,'snap');assert.equal(req.role,'def')}
   }
 });
+
+test('feature selection is atomic and the boost follows the actual call and receiver',()=>{
+  const b=fixture('feature-duels');B.advance(b);
+  const rb=b.teams.home.lineup.off.RB,slot=b.teams.home.lineup.off.SLOT,feature=rb.id;
+  assert.throws(()=>B.setSideline(b,{feature,keep:'missing'}));assert.equal(B.sidelineOptions(b).featured,null);
+  B.setSideline(b,{feature});
+  const labeled=(play,target)=>B.preview(b,'home',{play,target,tactics:[]}).snap.duels.some(d=>d.mods.some(m=>m.src==='Featured: '+rb.name));
+  assert.ok(labeled('inside_zone'));assert.equal(labeled('pa_boot'),false,'selling the fake is not a designed touch');
+  const R=require('../forks/call-sheet/core/resolver');
+  const option=edgeAssignment=>R.buildSnap({off:b.teams.home.lineup.off,def:b.teams.away.lineup.def,play:D.PLAYS.read_option,call:D.CALLS.cover3,
+    featured:{role:'RB',id:rb.id,v:1},edgeAssignment}).duels.some(d=>d.mods.some(m=>m.src==='Featured: '+rb.name));
+  assert.equal(option('contain'),true,'read option actually hands off');assert.equal(option('crash'),false,'quarterback keeps');
+  const saved=B.save(b),sub=b.teams.home.packageDepth.find(p=>p.pos==='RB');
+  b.teams.home.lineup.off.RB=sub;assert.equal(labeled('inside_zone'),false);
+  const resumed=B.load(saved);assert.equal(B.sidelineOptions(resumed).featured.id,feature);
+  resumed.game.period=3;assert.equal(B.sidelineOptions(resumed).featured,null);
+  B.setSideline(resumed,{feature:slot.id});assert.equal(B.sidelineOptions(resumed).featured.id,slot.id);
+});
+test('a featured pass target spends a touch only on a recorded catch',()=>{
+  const results=new Set();
+  for(let i=0;i<35&&results.size<2;i++){
+    const b=fixture('feature-receipt-'+i);B.advance(b);
+    const id=b.teams.home.lineup.off.SLOT.id;B.setSideline(b,{feature:id});
+    const start=b.log.length;B.submit(b,{type:'call',play:'quick_slant',tactics:[],read:'primary'});
+    const e=b.log.slice(start).find(x=>x.type==='snap');
+    if(e?.participants?.target!=='SLOT')continue;
+    assert.equal(b.featured.home.touches,e.completed?1:0);
+    assert.equal(e.featuredTouch,e.completed?id:undefined);
+    results.add(!!e.completed);
+  }
+  assert.equal(results.size,2,'saw an actual catch and a missed target');
+});
+test('film counts actual plays, notices only contemporaneous featured touches, and clears between halves',()=>{
+  const b=fixture('sampled-feature'),rb=b.teams.home.lineup.off.RB,slot=b.teams.home.lineup.off.SLOT;
+  const catchPlay={type:'snap',offSide:'home',play:'quick_slant',primaryTarget:'SLOT',completed:true,sit:{distance:5,period:1},
+    participants:{target:'RB'},lineups:{off:{RB:rb.id,SLOT:slot.id}},yards:9};
+  b.featured={home:{id:rb.id,half:1,touches:0}};b.log=[catchPlay];assert.equal(B.revealedThreat(b,'home'),null);
+  b.log=[{...catchPlay,featuredTouch:rb.id}];let t=B.revealedThreat(b,'home');
+  assert.equal(t.count,1);assert.equal(t.featuredTouches,1);assert.equal(t.yards,9);assert.equal(t.playerId,rb.id);
+  assert.match(B.adaptationRead(b,{kind:'snap',side:'home',role:'off'}).summary,/1 productive Quick Slant call\./);
+  b.log.push({...catchPlay,completed:false});assert.equal(B.revealedThreat(b,'home').count,1);
+  b.log.push(catchPlay);t=B.revealedThreat(b,'home');assert.equal(t.count,2);assert.equal(t.yards,18);assert.equal(t.featuredTouches,1);
+  b.teams.home.lineup.off.RB=b.teams.home.packageDepth.find(p=>p.pos==='RB');assert.equal(B.revealedThreat(b,'home'),null);
+  b.teams.home.lineup.off.RB=rb;b.game.period=3;assert.equal(B.revealedThreat(b,'home'),null);
+  b.game.period=5;b.log=[{...catchPlay,sit:{...catchPlay.sit,period:4},featuredTouch:rb.id}];assert.equal(B.revealedThreat(b,'home'),null);
+});
