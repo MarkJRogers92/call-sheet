@@ -1518,7 +1518,11 @@ function normalizeCallSheet(u){
       if(tabs&&feature&&tabs.nextElementSibling!==feature)tabs.after(feature);
       // Cards & Deck is the first row of the weekly desk, right under the This Week tabs (dashboard-views keeps the desk
       // directly after the tabs, so the strip goes inside it rather than competing for that slot).
-      if(desk&&link&&desk.firstElementChild!==link)desk.prepend(link);else if(!desk&&feature&&link&&feature.nextElementSibling!==link)feature.after(link)}}catch(err){console.error(err)}
+      // On a phone the week's primary action (#weeklyDeskFocus) must stay in the first screen, so the strip follows the
+      // desk block that holds it rather than preceding it.
+      const focusBlock=desk?[...desk.children].find(c=>c!==link&&(c.id==='weeklyDeskFocus'||c.querySelector?.('#weeklyDeskFocus'))):null;
+      if(desk&&link){if(focusBlock){if(focusBlock.nextElementSibling!==link)focusBlock.after(link)}else if(desk.firstElementChild!==link)desk.prepend(link)}
+      else if(!desk&&feature&&link&&feature.nextElementSibling!==link)feature.after(link)}}catch(err){console.error(err)}
     try{labelNextButton()}catch(err){console.error(err)}
     try{paintMatchupCards()}catch(err){console.error(err)}
     // Postseason with the card default off: offer the coached game beside the briefing's primary "Next" button.
