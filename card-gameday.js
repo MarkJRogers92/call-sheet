@@ -637,6 +637,19 @@ function normalizeCallSheet(u){
     const pack=CS.packs.rewardPack(userPlaybook(),{seed:`signing:${season}:${me.id}`,weights:w,n:4,bonusRare:Math.min(.12,cls.length/150),worldTaken:takenLegendaries(),type:'signing',title:'Signing Day Pack',
       subtitle:`Built around your ${cls.length} signee${cls.length===1?'':'s'} (${top}) · pick 1 of 4`});
     queueRewardPack(`signing:${season}`,pack);
+    try{signingGoals(cls,me,season)}catch(err){console.error(err)}
+  }
+  // Signing day: for up to two signees whose public archetype fits your active playbook, name the signature they are
+  // chasing and the breakout bar. A goal, not a grant; posted once per class.
+  function signingGoals(cls,me,season){
+    const meta=cardMeta(),key=`goal:${season}`;if((meta.rewardKeys||[]).includes(key))return;
+    const picks=cls.map(p=>({p,fit:recruitingFit(me,p),role:battleRoleOf(p,me)?.role})).filter(x=>x.role&&x.fit.plays?.length)
+      .sort((a,b)=>(Number(recruitmentOf(b.p)?.stars)||0)-(Number(recruitmentOf(a.p)?.stars)||0)||b.fit.plays.length-a.fit.plays.length).slice(0,2);
+    for(const x of picks){
+      const spec=CS.signatures.specFor(CS.adapter.toBattlePlayer(x.p,x.role)),name=CS.signatures.describe(spec)?.def?.name;if(!name)continue;
+      meta.moments.push({year:universe.year,week:0,kind:'signing-goal',playerId:x.p.id,text:`Signed: ${x.p.name} (${x.p.pos}) fits your ${x.fit.plays.slice(0,2).join(' and ')} and is chasing ${name}. Breakout bar: ${CS.signatures.BREAKOUT.wins}+ duels at ${Math.round(CS.signatures.BREAKOUT.rate*100)}% in one game, or catch fire ${CS.signatures.BREAKOUT.fire} times.`});
+    }
+    meta.moments=meta.moments.slice(-60);(meta.rewardKeys??=[]).push(key);
   }
   function schemeCards(){
     const me=selected();if(!programRewardsOn()||!me?.staff)return;
@@ -1620,7 +1633,7 @@ function normalizeCallSheet(u){
     }).join(' · ');
     const line=kind==='play'?(def.pass?`A deep pass to the ${ROLE_NAMES[def.target]?.toLowerCase()||def.target}.`:`A designed run for the ${ROLE_NAMES[def.carrier]?.toLowerCase()||def.carrier}.`):
       `${kind==='call'?'Defensive call':spec.side==='off'?'Offensive tactic':'Defensive tactic'}${effect?' · '+effect:''}.`;
-    const how=!status?'A breakout at this role can earn it.':archived?'':status==='In collection'?(ownTeam?'Select it under Build Deck → Signatures to put it in your deck.':'Stored, not in the game deck.'):'Only playable with him on the field at '+(ROLE_NAMES[spec.role]?.toLowerCase()||spec.role)+'.';
+    const how=!status?(CS.signatures.breakoutGoal?.()||'A breakout at this role can earn it.'):archived?'':status==='In collection'?(ownTeam?'Select it under Build Deck → Signatures to put it in your deck.':'Stored, not in the game deck.'):'Only playable with him on the field at '+(ROLE_NAMES[spec.role]?.toLowerCase()||spec.role)+'.';
     const earned=status&&spec.earned?`Earned: ${spec.earned}${spec.season?' · '+spec.season:''}.`:'';
     return `<aside class="cs-signature-story"><small>${escH(status||'Possible signature')}</small><strong>${escH(def.name)}</strong><p>${escH(line)}</p>${def.matchupText?`<p class="cs-signature-matchup">${escH(def.matchupText)}</p>`:''}${earned||how?`<p>${escH([earned,how].filter(Boolean).join(' '))}</p>`:''}</aside>`;
   }
@@ -1885,7 +1898,7 @@ function normalizeCallSheet(u){
   }
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
-  globalThis.DynastyCardGameDay={seasonRecap:()=>CS.battle.seasonRecap(universe.callSheet?.seasonCalls?.[String(universe.year)]),hireFilmEffect,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+  globalThis.DynastyCardGameDay={signingGoals:(season=universe.year)=>{const me=selected();const cls=(me.roster||[]).filter(p=>String(recruitmentOf(p)?.schoolId)===String(me.id)&&Number(recruitmentOf(p)?.season)===season);return signingGoals(cls,me,season)},seasonRecap:()=>CS.battle.seasonRecap(universe.callSheet?.seasonCalls?.[String(universe.year)]),hireFilmEffect,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),

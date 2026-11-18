@@ -286,3 +286,18 @@ test('three simulated card games build a season recap in the Deck Room, kept to 
   const copy=JSON.parse(JSON.stringify({callSheet:u.callSheet}));copy.callSheet.seasonCalls['1999']={games:'2',plays:{x:{n:'3'}}};copy.callSheet.seasonCalls.bad={};copy.callSheet.seasonCalls['2001']={games:1};
   e.normalizeCallSheet(copy);assert.ok(Object.keys(copy.callSheet.seasonCalls).length<=2);assert.equal(copy.callSheet.seasonCalls.bad,undefined);
 });
+
+test('signing day names the signature each fitting signee is chasing and the breakout bar, once, without granting it',async()=>{
+  const {cg,u,me,CS}=await setup(959);
+  assert.match(CS.signatures.breakoutGoal(),/win 15\+ duels at 80% or better, or catch fire 5 times\. A program earns at most one new signature every 3 games\./);
+  const pool=me.roster.slice(0,12);for(const p of pool)p.recruitment={...(p.recruitment||{}),schoolId:me.id,season:u.year,stars:4};
+  const owned=JSON.stringify([...(u.callSheet.playbook.signatures||[]),...(u.callSheet.playbook.reserveSignatures||[])]);
+  const before=u.callSheet.moments.length;cg.signingGoals(u.year);
+  const posted=u.callSheet.moments.slice(before).filter(m=>m.kind==='signing-goal');
+  assert.ok(posted.length>=1&&posted.length<=2,`posted ${posted.length}`);
+  for(const m of posted)assert.match(m.text,/^Signed: .+ fits your .+ and is chasing .+\. Breakout bar: 15\+ duels at 80% in one game, or catch fire 5 times\.$/);
+  cg.signingGoals(u.year);assert.equal(u.callSheet.moments.filter(m=>m.kind==='signing-goal').length,posted.length,'once per class');
+  assert.equal(JSON.stringify([...(u.callSheet.playbook.signatures||[]),...(u.callSheet.playbook.reserveSignatures||[])]),owned,'a goal never grants the card');
+  const p=me.roster.find(x=>!(u.callSheet.playbook.signatures||[]).some(s=>String(s.playerId)===String(x.id)));
+  assert.match(cg.playerCard(p.id),/Earn it with a breakout game: win 15\+ duels/);
+});

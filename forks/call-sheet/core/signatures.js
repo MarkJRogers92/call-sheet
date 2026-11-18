@@ -154,6 +154,10 @@ function specFor(player,info={}){
 }
 // Who broke out in this game? A dominant share of his duels, or catching fire again and again.
 // Plus a cooldown: at most one breakout every COOLDOWN games, so a signature card stays an event.
+// The breakout bar, in one place: in a single game, win BREAKOUT.wins+ duels at BREAKOUT.rate or better, or catch fire
+// BREAKOUT.fire times. A program earns at most one new signature every COOLDOWN games.
+const BREAKOUT={wins:15,rate:.8,fire:5};
+function breakoutGoal(){return`Earn it with a breakout game: win ${BREAKOUT.wins}+ duels at ${Math.round(BREAKOUT.rate*100)}% or better, or catch fire ${BREAKOUT.fire} times. A program earns at most one new signature every ${COOLDOWN} games.`}
 function breakouts(b,side){
   const tally=new Map();
   const touch=(p,won)=>{if(!p)return;const t=tally.get(p.id)||{p,wins:0,duels:0,fire:0};t.duels++;if(won)t.wins++;tally.set(p.id,t)};
@@ -165,7 +169,7 @@ function breakouts(b,side){
       if(e.defSide===side)for(const r of d.defRoles)touch(lu.def[r],!won);});
     for(const ev of e.events||[])if(ev.type==='fire'&&ev.side===side){const t=tally.get(ev.id);if(t)t.fire++}
   }
-  return[...tally.values()].filter(t=>t.fire>=5||(t.wins>=15&&t.wins/t.duels>=.8)).map(t=>({...t,score:t.wins+t.fire*4})).sort((a,c)=>c.score-a.score);
+  return[...tally.values()].filter(t=>t.fire>=BREAKOUT.fire||(t.wins>=BREAKOUT.wins&&t.wins/t.duels>=BREAKOUT.rate)).map(t=>({...t,score:t.wins+t.fire*4})).sort((a,c)=>c.score-a.score);
 }
 // The best breakout who doesn't already have a card.
 const COOLDOWN=3;
@@ -182,5 +186,5 @@ function add(pb,spec,replaceIndex){
   return{full:false};
 }
 
-return{SLOTS,COOLDOWN,deckFit,templateFor,build,buildAny,describe,register,registerAll,specFor,breakouts,candidate,add,lastName};
+return{SLOTS,COOLDOWN,BREAKOUT,breakoutGoal,deckFit,templateFor,build,buildAny,describe,register,registerAll,specFor,breakouts,candidate,add,lastName};
 });
