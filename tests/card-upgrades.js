@@ -65,3 +65,18 @@ test('program card ids never collide with evolution branches',async()=>{
   assert.deepEqual(CS.data.PROGRAM_CARDS.filter(id=>ids.has(id)),[]);
   for(const id of CS.data.PROGRAM_CARDS)assert.ok(!CS.packs.cardDef(id).evolvedFrom,id);
 });
+
+test('install suggestion: finish an evolution first, then reset film, then the furthest play; never sets the focus',async()=>{
+  const EV=require('../forks/call-sheet/core/evolution');
+  const row=(root,reps,need)=>({root,name:root.toUpperCase(),reps,need});
+  assert.equal(EV.installSuggestion([]),null);assert.equal(EV.installSuggestion([row('a',60,60)]),null,'a ready play needs a choice, not reps');
+  let t=EV.installSuggestion([row('far',50,100),row('near',56,60)],{perInstall:6});assert.equal(t.root,'near');assert.equal(t.reason,'finish');assert.match(t.text,/4 reps from evolving/);
+  t=EV.installSuggestion([row('far',70,100),row('filmed',10,100)],{worn:[{id:'filmed'}],perInstall:6});assert.equal(t.root,'filmed');assert.equal(t.reason,'film');
+  t=EV.installSuggestion([row('a',30,100),row('b',50,100)],{perInstall:6});assert.equal(t.root,'b');assert.equal(t.reason,'progress');
+  const {cg,u}=await setup(951);const pb=u.callSheet.playbook;
+  const root=Object.keys(EV.TREE).find(r=>[...pb.off.base,...pb.off.wrinkles].includes(r));assert.ok(root,'the default deck has an evolvable play');
+  pb.mastery={...(pb.mastery||{}),[root]:EV.progress(pb,root).need-3};
+  const tip=cg.installTip();assert.equal(tip.root,root);assert.equal(tip.reason,'finish');
+  assert.match(cg.cardProgramHTML(),/Suggested install:/);assert.equal(u.callSheet.installFocus??null,null,'advice does not choose the install');
+  cg.setInstallFocus(root);assert.doesNotMatch(cg.cardProgramHTML(),/Suggested install:/,'no suggestion once that play is chosen');
+});

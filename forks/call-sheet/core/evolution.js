@@ -131,5 +131,18 @@ function evolve(pb,rootId,branchId,opts={}){
 }
 const branchTag=id=>(D.PLAYS[id]||D.CALLS[id])?.branch||'';
 
-return{NEEDS,lockReason,TREE,BASE_REPS,WRINKLE_REPS,rootOf,recordReps,addReps,ready,progress,evolve,branchTag};
+// One install suggestion from plays the coach already owns and is mastering. Advice only: never sets the focus.
+// Order: an install that completes an evolution this week, then a play opponents have film on (an install resets
+// it), then the play furthest along. Plays already ready to evolve are left out; they need a choice, not reps.
+function installSuggestion(list,{worn=[],perInstall=6}={}){
+  const open=(list||[]).filter(x=>x&&Number.isFinite(x.reps)&&Number.isFinite(x.need)&&x.reps<x.need);if(!open.length)return null;
+  const left=x=>x.need-x.reps,wornIds=new Set(worn.map(w=>rootOf(w.id)));
+  const finish=open.filter(x=>left(x)<=perInstall).sort((a,b)=>left(a)-left(b))[0];
+  if(finish)return{root:finish.root,name:finish.name,reason:'finish',left:left(finish),text:`${finish.name} is ${left(finish)} rep${left(finish)===1?'':'s'} from evolving. One install week gets it there.`};
+  const filmed=open.find(x=>wornIds.has(x.root));
+  if(filmed)return{root:filmed.root,name:filmed.name,reason:'film',left:left(filmed),text:`Opponents have film on ${filmed.name}. Installing it resets that and adds ${perInstall} reps.`};
+  const best=open.slice().sort((a,b)=>b.reps/b.need-a.reps/a.need||left(a)-left(b))[0];
+  return{root:best.root,name:best.name,reason:'progress',left:left(best),text:`${best.name} is your closest play to evolving (${best.reps}/${best.need}).`};
+}
+return{installSuggestion,NEEDS,lockReason,TREE,BASE_REPS,WRINKLE_REPS,rootOf,recordReps,addReps,ready,progress,evolve,branchTag};
 });

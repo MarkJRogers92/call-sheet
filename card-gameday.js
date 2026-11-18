@@ -846,9 +846,11 @@ function normalizeCallSheet(u){
     for(const g of meta.filmLog||[])if(g.plays?.[root])g.plays[root]=0;
   }
   function setInstallFocus(root){const meta=cardMeta();meta.installFocus=root&&installable().some(x=>x.root===root)?root:null;try{autosaveAfter('game')}catch(err){}return meta.installFocus}
+  function installTip(){return upgradesOn()&&universe?.callSheet?.playbook?CS.evolution.installSuggestion(installable(),{worn:wornPlays(),perInstall:INSTALL_REPS}):null}
   function upgradesHTML(){
     if(!upgradesOn())return'';const era=eraFor(universe.year),list=installable(),focus=universe.callSheet.installFocus,worn=wornPlays();
     return`<div class="cpn-upgrades"><p class="cpn-foot"><b>${universe.year}: ${escH(era.name)}</b> · ${escH(era.about)} for every team.</p>
+      ${(()=>{const tip=installTip();return tip&&tip.root!==focus?`<p class="cpn-foot cpn-install-tip" id="installTip"><b>Suggested install:</b> ${escH(tip.text)}</p>`:''})()}
       ${list.length?`<label class="cpn-foot">Install this week (+${INSTALL_REPS} reps): <select data-install><option value="">None</option>${list.map(x=>`<option value="${escH(x.root)}" ${x.root===focus?'selected':''}>${escH(x.name)} · ${x.reps}/${x.need}</option>`).join('')}</select></label>`:''}
       ${worn.length?`<p class="cpn-foot">Opponents have film on ${worn.map(w=>escH(w.name)).join(' and ')} (Key −1). Mix it up, or install it again to reset.</p>`:''}</div>`;
   }
@@ -1381,7 +1383,8 @@ function normalizeCallSheet(u){
     // One line on where last game's card went, read from the live deck (a later cut or edit is reflected).
     const won=CS.packs.lastGameCard?.(universe.callSheet.playbook),wonWhere=!won?'':won.status==='upgrade'?`replaced ${escH(won.replaced||'a card')} ${won.inDeck?'in your deck':'in your collection'}.`:won.status==='deck'?'is in your deck for next game.':won.status==='split'?`· ${won.inDeck} in your deck, ${won.inCollection} in your collection.`:'is in your collection, not your deck. Add it in Deck Room.';
     const wonLine=won?`<p class="cpn-last-card" id="lastGameCard"><span>From ${escH(won.source)}:</span> <b>${escH(won.name)}</b> ${wonWhere}</p>`:'';
-    const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b>${wonLine}<button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}</div>`;
+    let tipLine='';try{const tip=installTip();if(tip?.reason==='finish'&&!universe.callSheet.installFocus)tipLine=`<p class="cpn-last-card" id="installTipWeek"><span>Install:</span> ${escH(tip.text)} Pick it in Deck Room.</p>`}catch(err){console.error(err)}
+    const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b>${wonLine}${tipLine}<button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}</div>`;
     if(old)old.outerHTML=shortcut;else dash.insertAdjacentHTML('beforeend',shortcut);
     try{if(cardGameIsDefault()){const tabs=dash.querySelector(':scope > .dash-views'),feature=dash.querySelector(':scope > #broadcastFeature'),link=dash.querySelector(':scope > #cardDeskLink');
       if(tabs&&feature&&tabs.nextElementSibling!==feature)tabs.after(feature);if(feature&&link&&feature.nextElementSibling!==link)feature.after(link)}}catch(err){console.error(err)}
@@ -1764,7 +1767,7 @@ function normalizeCallSheet(u){
   }
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
-  globalThis.DynastyCardGameDay={recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+  globalThis.DynastyCardGameDay={installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
