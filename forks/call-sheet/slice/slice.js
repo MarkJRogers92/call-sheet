@@ -23,6 +23,7 @@ function writeSave(){
   try{localStorage.setItem(STORE,JSON.stringify(save))}catch(e){}
 }
 let save=loadSave()||{team:null,playbook:P.newPlaybook(),settings:{mode:'key',control:'offense',fast:false,sound:true},combos:[],games:0};
+P.updateStarterBook(save.playbook);
 save.settings??={mode:'key',control:'offense',fast:false,sound:true};save.combos??=[];
 save.settings.headset=B.headsetSettings(save.settings.headset);
 // Saves from before the league existed get one.
@@ -329,7 +330,7 @@ function sameLookHTML(){
   const m=pair.mate;
   const action=!m?'':m.reason?`<small>${esc(m.name)} · ${esc(m.reason)}</small>`:
     `<button type="button" class="auto" data-same-look="${esc(m.id)}">Switch to ${esc(m.name)} · ${m.cost} CMD</button>`;
-  const diagrams=m?`<details><summary>Compare diagrams</summary><div class="pair-diagrams">${['inside_zone','pa_boot'].map(id=>
+  const diagrams=m?`<details><summary>Compare diagrams</summary><div class="pair-diagrams">${(pair.diagrams||['inside_zone','pa_boot']).map(id=>
     `<figure>${window.SliceCards.diagram(id,'off')}<figcaption>${esc(D.PLAYS[id].name)}</figcaption></figure>`).join('')}</div></details>`:'';
   return `<section class="same-look"><b>${esc(pair.title)}</b><p>${esc(pair.read)}</p>${pair.setup?`<small>${esc(pair.setup)}</small>`:''}${diagrams}${action}</section>`;
 }
@@ -785,6 +786,7 @@ function decide(){
     }
     finalScreen();return;
   }
+  if(req.kind==='mesh'){meshDialog();return}
   if(req.kind==='halftime'){halftimeDialog();return}
   if(req.kind==='fourth'){fourthModal();return}
   if(req.kind==='plan'){go({type:'plan',calls:[]});return}
@@ -974,6 +976,17 @@ function coachingDialog(title,body){
   dialog.addEventListener('close',()=>dialog.remove(),{once:true});
   dialog.showModal();
   return dialog;
+}
+function meshDialog(){
+  renderBug();
+  const r=req,dialog=coachingDialog('Read the end',`<p>${esc(r.cue)}</p>
+    <p class="statline">Watch the unblocked end. ${esc(r.linebacker)} has the other lane.</p>
+    <button type="button" class="btn" data-mesh="give">Give inside · ${esc(r.back)}</button>
+    <button type="button" class="btn" data-mesh="keep">Keep outside · ${esc(r.qb)}</button>
+    <button type="button" class="btn" data-mesh="auto">Let the QB read it</button>`);
+  const finish=choice=>{dialog.close();go(choice==='auto'?{type:'auto'}:{type:'mesh',choice})};
+  for(const button of dialog.querySelectorAll('[data-mesh]'))button.onclick=()=>finish(button.dataset.mesh);
+  dialog.oncancel=e=>{e.preventDefault();finish('auto')};
 }
 function halftimeDialog(){
   renderBug();setFormation(sitNow());refresh();
@@ -1354,7 +1367,13 @@ async function seasonEndScreen(){
 // Signing Day: your class in one row, best recruit already in each spot. Tap a card to see the next option.
 function recruitCard(sp,j){
   const p=sp.prospects[j],signature=SG.describe(SG.specFor(p)).def;
-  return`<span class="spotLab">${esc(ROLE_NAME[sp.role]||sp.role)}</span><canvas data-pid="${esc(p.id)}" width="56" height="56"></canvas><span class="rs">${starStr(p.stars)}</span><span class="rn">${esc(p.name)}</span><span class="mini">${esc(p.archetype)}</span><span class="rimp">${esc(gameImpact(p))}</span><span class="recruit-signature">Possible signature: <b>${esc(signature.name)}</b><br>${esc(signature.matchupText)}</span><span class="rcycle">${j+1} of ${sp.prospects.length} ↻</span>`;
+  const strengths=D.STYLE_TRAITS[p.archetype]||[];
+  const jobs=window.CallSheet.program.prospectJobs(save.playbook,p.pos,null,sp.role).map(job=>{
+    const fit=job.traits.filter(t=>strengths.includes(t)).map(t=>t==='iq'?'IQ':t);
+    const matchup=job.opposingPlay?` vs. ${job.opposingPlay}`:'';
+    return `<span class="mini" data-prospect-job><b>${esc(job.name+matchup)}</b> · ${esc(job.label)}<br>${fit.length?'Style fits '+esc(fit.join(' + ')):'Outside his style strengths'}</span>`;
+  }).join('');
+  return`<span class="spotLab">${esc(ROLE_NAME[sp.role]||sp.role)}</span><canvas data-pid="${esc(p.id)}" width="56" height="56"></canvas><span class="rs">${starStr(p.stars)}</span><span class="rn">${esc(p.name)}</span><span class="mini">${esc(p.archetype)}</span><span class="rimp">${esc(gameImpact(p))}</span><span class="recruit-signature">Possible signature: <b>${esc(signature.name)}</b><br>${esc(signature.matchupText)}</span>${jobs}<span class="rcycle">${j+1} of ${sp.prospects.length} ↻</span>`;
 }
 function signingDayScreen(){
   const o=save.world.offseason,me=specOf(save.team),m=$('#modal');

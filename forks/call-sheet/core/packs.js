@@ -13,7 +13,7 @@ const clone=v=>JSON.parse(JSON.stringify(v));
 
 // Every card a pack can hold. kind: play (offense wrinkle) | call (defense wrinkle) | tactic | upgrade.
 const POOL=[
-  ...['deep_cross','pa_boot','screen','power','read_option','draw','four_verts','vertical_shot','statue_left','rpo_bubble','hb_wheel','qb_draw','hook_ladder','wishbone_dive','power_lead','fake_punt','fake_field_goal','fade_route','quick_kick','spinner','buck_lateral','triple_option','split_veer','shallow_cross','curl_flat'].map(id=>({id,kind:'play',side:'off'})),
+  ...['deep_cross','pa_boot','screen','power','read_option','draw','four_verts','vertical_shot','out_and_up','statue_left','rpo_bubble','hb_wheel','qb_draw','hook_ladder','wishbone_dive','power_lead','fake_punt','fake_field_goal','fade_route','quick_kick','spinner','buck_lateral','triple_option','split_veer','shallow_cross','curl_flat'].map(id=>({id,kind:'play',side:'off'})),
   ...['motion','max_protect','route_adjust','seal_block','hard_count','check_with_me','hurry_up','audible','timeout_settle','kill_kill','onside_kick','swinging_gate','two_way_star'].map(id=>({id,kind:'tactic',side:'off'})),
   ...[['inside_zone_plus','inside_zone'],['quick_slant_plus','quick_slant'],['pa_boot_plus','pa_boot']].map(([id,replaces])=>({id,kind:'upgrade',side:'off',replaces})),
   ...['zone_pressure','two_man','robber','sim_pressure','bear','corner_blitz','cover2_trap','cover0','midnight_mirage','tampa2','ghost_blitz','forty_six','zone_blitz'].map(id=>({id,kind:'call',side:'def'})),
@@ -31,7 +31,17 @@ function invalidFilmNote(c){
 
 const CAPACITY={wrinkles:14,tactics:14};
 function newPlaybook(){
-  return{version:1,reserve:{off:{wrinkles:[],tactics:[]},def:{wrinkles:[],tactics:[]}},achievements:[],off:clone(D.DEFAULT_DECKS.off),def:clone(D.DEFAULT_DECKS.def),capacity:clone(CAPACITY),legendaries:[],record:{w:0,l:0},history:[],packsOpened:0,mastery:{},signatures:[]};
+  return{version:2,reserve:{off:{wrinkles:[],tactics:[]},def:{wrinkles:[],tactics:[]}},achievements:[],off:clone(D.DEFAULT_DECKS.off),def:clone(D.DEFAULT_DECKS.def),capacity:clone(CAPACITY),legendaries:[],record:{w:0,l:0},history:[],packsOpened:0,mastery:{},signatures:[]};
+}
+// Older books receive the starter double move in storage without changing their active deck.
+function updateStarterBook(pb,reserveLimit=500){
+  if(!pb?.off||Number(pb.version)>=2)return;
+  const stored=ensureCollection(pb).off.wrinkles;
+  if(![...pb.off.base,...pb.off.wrinkles,...stored].includes('out_and_up')){
+    if(stored.length>=reserveLimit)return;
+    stored.push('out_and_up');
+  }
+  pb.version=2;
 }
 // Signature cards ride along outside the capacity limits: one copy each, in the pile their kind belongs to.
 function decksOf(pb){const d={off:clone(pb.off),def:clone(pb.def)};for(const sg of pb.signatures||[])d[sg.side][sg.pile].push(sg.id);return d}
@@ -387,5 +397,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

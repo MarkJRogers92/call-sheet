@@ -34,6 +34,38 @@ function prospectFit(pb,p){
   const result={bonus:Math.round(clamp((fit-.45)*5,0,2.5)*10)/10,role:roles[0]||null,plays:matches.filter(m=>m.fit>=2/3).sort((a,b)=>b.fit-a.fit||b.weight-a.weight).slice(0,3).map(m=>m.name)};
   cache.values.set(key,result);return result;
 }
+// Use the assignments and trait lists the resolver actually contests. The same deck
+// picks the same two jobs for every prospect at a position, so their ranges compare.
+function prospectJobs(pb,pos,estimate,spot){
+  const offense=Object.values(D.OFF_ROLES).includes(pos),side=offense?'off':'def',deck=pb?.[side];
+  if(!deck)return [];
+  const positions=offense?D.OFF_ROLES:D.DEF_ROLES;
+  const active=[...new Set([...deck.base,...deck.wrinkles])];
+  const commonPlays=[...new Set([...D.DEFAULT_DECKS.off.base,...D.DEFAULT_DECKS.off.wrinkles])].map(id=>D.PLAYS[id]);
+  const jobs=[];
+  for(const id of active){
+    const card=(offense?D.PLAYS:D.CALLS)[id];
+    if(!card||card.signature)continue;
+    // A defense's duel also depends on what the offense runs. Show the opposing play explicitly.
+    const plays=offense?[card]:commonPlays.filter(p=>card.counters.includes(p.family));
+    for(const play of plays)for(const duel of Object.values(play.duels)){
+      const role=duel[side].find(r=>positions[r]===pos&&(!spot||r===spot));
+      if(!role)continue;
+      const traits=offense?duel.ot:duel.dt;
+      const job={id,name:card.name,root:rootOf(card),opposingPlay:offense?null:play.name,role,label:duel.label,traits};
+      if(estimate){
+        const mean=bounds=>traits.reduce((sum,t)=>sum+bounds[t],0)/traits.length;
+        job.low=Math.floor(mean(estimate.low));job.high=Math.ceil(mean(estimate.high));
+      }
+      jobs.push(job);
+    }
+  }
+  const first=jobs[0];if(!first)return [];
+  const distinct=j=>j.traits.some(t=>!first.traits.includes(t))||first.traits.some(t=>!j.traits.includes(t));
+  const other=jobs.filter(j=>j.root!==first.root);
+  const second=other.find(distinct)||other[0]||jobs.find(distinct);
+  return second?[first,second]:[first];
+}
 function trainingRates(team,pb,support={}){
   const out={};for(const side of ['off','def']){
     const coach=team.staff?.[side==='off'?'OC':'DC'],status=String(coach?.status||'ACTIVE').toUpperCase();
@@ -57,5 +89,5 @@ function developmentImpact(p,role,pb){
   const helps=plays.filter(c=>Object.values(c.duels).some(d=>(d.off.includes(role)&&d.ot.includes(trait))||(d.def.includes(role)&&d.dt.includes(trait)))).slice(0,3).map(c=>c.name);
   return{year:receipt.year,phase:receipt.phase,trait,gain,plays:helps};
 }
-return{facilityCapacity,syncCapacity,prospectFit,trainingRates,developmentImpact};
+return{facilityCapacity,syncCapacity,prospectFit,prospectJobs,trainingRates,developmentImpact};
 });

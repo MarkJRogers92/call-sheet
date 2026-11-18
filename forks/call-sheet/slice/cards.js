@@ -14,6 +14,7 @@ function pairRoutes(card){return zonePair[card.evolvedFrom||card.upgradeOf||card
 const ROUTES={
   outside_zone:'M50 42 Q72 42 82 22',power:'M44 36 L57 36 M50 42 L54 18',read_option:'M50 38 Q34 36 26 18 M50 38 L57 22',
   quick_slant:'M78 34 L78 30 L60 18',stick:'M66 34 L66 22 L60 22',deep_cross:'M82 34 L82 24 L20 8',vertical_shot:'M16 34 L16 2',
+  quick_out:'M16 36 L16 23 L6 23',out_and_up:'M16 36 L16 23 L9 23 L9 4',
   screen:'M50 40 L28 40 M44 34 L28 28',draw:'M50 42 L50 40 L50 16',
   four_verts:'M16 34 L16 2 M34 34 L34 4 M66 34 L66 4 M84 34 L84 2',statue_left:'M50 42 L44 44 L22 30 L14 8'
 };

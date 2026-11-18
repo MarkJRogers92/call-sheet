@@ -42,11 +42,13 @@ function defaultEdgeAssignment(off,def,hasSpy){
   const give=ability(off,['RB'],giveTraits,'K')-ability(def,['WILL'],fillTraits,'K');
   return keep>give?'contain':'crash';
 }
-function readOptionPlay(card,assignment){
-  const keep=assignment==='crash',carrier=keep?'QB':'RB';
+function readOptionPlay(card,assignment,meshChoice){
+  const keep=meshChoice?meshChoice==='keep':assignment==='crash',carrier=keep?'QB':'RB';
+  const covered=keep===(assignment==='contain');
   const {G,K,F}=card.duels;
   return {...card,carrier,duels:{
-    G:{...G,label:keep?'Read the crashing end':'Read the containing end',qbRun:keep,dt:keep?['power','technique']:['speed','iq']},
+    G:{...G,label:covered?'Beat the waiting end':assignment==='crash'?'Read the crashing end':'Read the containing end',
+      ...(covered?{off:[carrier],ot:keep?keepTraits:giveTraits}:{}),qbRun:keep,dt:assignment==='crash'?['power','technique']:['speed','iq']},
     K:{...K,label:keep?'Keep outside vs scrape':'Give inside vs fill',off:[carrier],ot:keep?keepTraits:giveTraits,dt:keep?scrapeTraits:fillTraits,qbRun:keep},
     F:{...F,off:[carrier]}
   }};
@@ -135,12 +137,21 @@ function bracketRole(offLineup){
 function buildSnap(ctx){
   const {off,def,call}=ctx,ot=new Set(ctx.offTactics||[]),dt=new Set(ctx.defTactics||[]);
   const edgeAssignment=rootPlay(ctx.play)==='read_option'?(ctx.edgeAssignment||defaultEdgeAssignment(off,def,dt.has('spy'))):null;
-  const play=edgeAssignment?readOptionPlay(ctx.play,edgeAssignment):ctx.play;
+  const play=edgeAssignment?readOptionPlay(ctx.play,edgeAssignment,ctx.meshChoice):ctx.play;
   const sit=ctx.situation||{down:1,distance:10,field:25};
   // when: rain | snow | wind | clear | late (4th quarter) | money (3rd/4th down). Used by effects, edges and matchups.
   const whenOn=w=>!w||(w==='late'?(sit.period||1)>=4:w==='money'?sit.down>=3:w==='redzone'?(sit.field||0)>=80:w==='fourth'?sit.down===4:['rain','snow','wind'].includes(w)?ctx.weather===w:w==='clear'?!['rain','snow','wind'].includes(ctx.weather):false);
   const brRole=dt.has('bracket')?(ctx.bracketRole||bracketRole(off)):null;
   const flags={},origin=rootPlay(play),abilityContext={play:{...play,id:origin},call,offTactics:[...ot],defTactics:[...dt],situation:sit};
+  // The defender's first step precedes the receiver's separate attempt to win leverage.
+  let jumpChance=0;
+  if(origin==='out_and_up'){
+    const corner=def.BCB,outs=clamp(ctx.boundaryOuts||0,0,2);
+    const discipline=playerAvg(corner,['iq','composure']),sell=playerAvg(off.X,['technique','iq']);
+    jumpChance=clamp(.16+.22*outs+(sell-discipline)/180+(corner?.archetype==='Ball Hunter'?.12:0)
+      +(call.id==='cover2_trap'?.12:call.id==='cover3'?-.10:0),.05,.90);
+    if(Number.isFinite(ctx.cornerRoll))flags.cornerStep={jumped:ctx.cornerRoll<jumpChance,outs};
+  }
   const duels=['G','K','F'].map(key=>{
     let d=play.duels[key];
     // In heavy personnel the second TE/back takes part in the blocking duel.
@@ -150,6 +161,10 @@ function buildSnap(ctx){
     const mods=[];
     const add=(v,src)=>{if(v)mods.push({v,src})};
     add(d.bias,'Play design');
+    const doubleMove=jumpChance>0&&key==='K',step=flags.cornerStep;
+    // A preview mixes both possible first steps. A committed play gets one actual step.
+    if(doubleMove&&step)add(step.jumped?2:-.5,step.jumped?'Corner jumped the out':'Corner stayed on top');
+    if(edgeAssignment&&key==='G'&&ctx.meshChoice===(edgeAssignment==='crash'?'give':'keep'))add(-2,'End stayed with the runner');
     // Call vs call: the Football Strategy matrix, as duel modifiers.
     if(play.family==='run'){
       if(key==='G'){if(call.box==='loaded')add(-2,'Loaded box');if(call.box==='light')add(1,'Light box');if(call.pressure>0)add(-1,'Run blitz')}
@@ -258,7 +273,19 @@ function buildSnap(ctx){
     const qbTraits=play.family==='deep'?['power','technique','composure']:['technique','iq','composure'];
     const receiverGrade=ability(off,d.off,d.ot,key),offGrade=throwing?.7*receiverGrade+.3*ability(off,['QB'],qbTraits,key):receiverGrade,defGrade=ability(def,d.def,d.dt,key);
     const offRoles=throwing?[...d.off,'QB']:d.off;
-    const raw=offGrade-defGrade+mods.reduce((s,m)=>s+m.v,0),margin=clamp(raw,-3,3);
+    let raw=offGrade-defGrade+mods.reduce((s,m)=>s+m.v,0);
+    if(doubleMove&&!step){
+      const chance=jumpChance*winChance(raw+2)+(1-jumpChance)*winChance(raw-.5);
+      if(Math.abs(chance-winChance(raw))>1e-8){
+        // Express the mixed forecast on the same edge scale used by the chip and its breakdown.
+        let low=-3;
+        while(low<2&&winChance(low+1)<chance)low++;
+        const projected=low+(chance-winChance(low))/(winChance(low+1)-winChance(low));
+        add(projected-raw,'Possible corner reaction');
+        raw=projected;
+      }
+    }
+    const margin=clamp(raw,-3,3);
     return{key,label:d.label,offRoles,defRoles:d.def,offTraits:d.ot,defTraits:d.dt,qbTraits:throwing?qbTraits:null,offNames:offRoles.map(r=>off[r]?.name),defNames:d.def.map(r=>def[r]?.name),offGrade,defGrade,mods,raw,margin,p:winChance(margin),chip:D.chip(margin)};
   });
   // Result conversions that come from people.

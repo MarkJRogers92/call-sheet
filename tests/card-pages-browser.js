@@ -42,6 +42,11 @@ const go=async(page,tab)=>{await page.evaluate(t=>document.querySelector(`[data-
       const ranges=await page.locator('#prospectCards .cs-mini-ovr').allInnerTexts();
       assert.ok(ranges.length>0&&ranges.some(t=>t.includes('–')),'prospect cards show scouting ranges');
       if(shots)await page.screenshot({path:`${shots}/pages-recruiting-${view.name}.png`});
+      await page.locator('#prospectCards [data-card-recruit]').filter({hasText:/quarterback|running back|receiver|tight end|tackle|corner|linebacker|safety/i}).first().click();
+      const jobs=page.locator('#recruitBattleCard [data-prospect-jobs] li');
+      await jobs.first().waitFor();
+      assert.ok((await jobs.allTextContents()).every(t=>/Projected \d+–\d+\/99/.test(t)),'each assignment carries its scouting range');
+      await page.keyboard.press('Escape');
       // Staff: coach cards explain their battle effects.
       await go(page,'staff');await page.locator('#staffCards .cs-coach article').first().waitFor();
       assert.match(await page.locator('#staffCards').innerText(),/Command/);

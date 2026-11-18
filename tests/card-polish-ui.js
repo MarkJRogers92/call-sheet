@@ -58,7 +58,9 @@ test('standalone signing day previews the named recruit’s possible signature a
  const SG=require('../forks/call-sheet/core/signatures'),D=require('../forks/call-sheet/core/data');
  const p={id:'unsigned-wr',name:'Max <Rivers>',role:'X',pos:'WR',archetype:'Route Sculptor',stars:3};
  const def=SG.describe(SG.specFor(p)).def;
- const html=run('recruitCard',{SG,ROLE_NAME:{X:'Receiver'},starStr:()=>'',gameImpact:()=>'Archetype impact',esc},[{role:'X',prospects:[p]},0]);
+ const program=require('../forks/call-sheet/core/program'),save={playbook:{off:{base:['quick_slant'],wrinkles:['vertical_shot']}}};
+ const html=run('recruitCard',{SG,D,window:{CallSheet:{program}},save,ROLE_NAME:{X:'Receiver'},starStr:()=>'',gameImpact:()=>'Archetype impact',esc},[{role:'X',prospects:[p]},0]);
+ assert.match(html,/data-prospect-job.*Vertical Shot/s);assert.doesNotMatch(html,/Quick Slant/,'the slot has that assignment, not the X vacancy');
  assert.ok(html.includes('Archetype impact'));
  assert.ok(html.includes('Possible signature')&&html.includes(esc(def.name)),'clearly a projected card for the recruit on screen');
  assert.ok(typeof def.matchupText==='string'&&html.includes(esc(def.matchupText)),'same matchup rule as the actual earned card');

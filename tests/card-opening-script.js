@@ -41,9 +41,13 @@ test('stored, base, signature, trick, restricted-down and roster-blocked plays n
  const pb=P.newPlaybook();pb.off.wrinkles.push('fake_punt','quick_kick','statue_left');pb.reserve.off.wrinkles.push('fade_route');
  assert.equal(typeof P.setOpeningScript,'function');
  for(const id of ['fake_punt','quick_kick','statue_left','fade_route','inside_zone','sig_42','bear','max_protect','__proto__'])assert.throws(()=>P.setOpeningScript(pb,id));
- const plain=create('script-0'),blocked=create('script-0','read_option');B.advance(plain);B.advance(blocked);
+ const roster=Ro.preset('ground'),book=P.newPlaybook();book.off.wrinkles.push('triple_option');
+ const plain=create('script-0',null,{home:{...roster,decks:P.decksOf(book)}});
+ P.setOpeningScript(book,'triple_option');
+ const blocked=create('script-0',null,{home:{...roster,decks:P.decksOf(book)}});
+ B.advance(plain);B.advance(blocked);
  assert.deepEqual(plain.hands.home.wrinkles,blocked.hands.home.wrinkles);assert.deepEqual(plain.rng,blocked.rng);
- assert.equal(blocked.pending.options.openingScript,undefined);assert.match(blocked.pending.options.openingScriptMiss,/Read Option.*QB/i);
+ assert.equal(blocked.pending.options.openingScript,undefined);assert.match(blocked.pending.options.openingScriptMiss,/Triple Option.*QB/i);
 });
 test('presets carry the selected opener, while storing its final copy or moving it to base clears it',()=>{
  const pb=P.newPlaybook();assert.equal(typeof P.setOpeningScript,'function');
@@ -68,7 +72,7 @@ test('the chooser shows the current roster assignment, not an invented opponent 
  const before=clone(lineup);assert.equal(typeof U.openingScriptHTML,'function');
  pb.off.openingScript='screen';const html=U.openingScriptHTML(pb.off,lineup);
  assert.match(html,/Lead block.*Oliver &lt;West&gt;.*speed.*versatility/i);assert.doesNotMatch(html,/win chance|opponent grade/i);
- pb.off.openingScript='read_option';assert.match(U.openingScriptHTML(pb.off,lineup),/Needs a QB with speed 7\+/);
+ pb.off.wrinkles.push('triple_option');pb.off.openingScript='triple_option';assert.match(U.openingScriptHTML(pb.off,lineup),/Needs a QB with speed 7\+/);
  const unscouted=U.openingScriptHTML(pb.off,null);assert.doesNotMatch(unscouted,/Oliver|Needs a QB/);
  assert.deepEqual(lineup,before);
 });

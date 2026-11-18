@@ -2,6 +2,7 @@
 const assert=require('node:assert/strict'),path=require('node:path'),fs=require('node:fs'),os=require('node:os');
 const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/chromium-path'),{startNewDynasty}=require('./helpers/start-new-dynasty');
 const {bundle}=require('../forks/call-sheet/tools/bundle');
+const exerciseCoachingChoices=require('./helpers/exercise-coaching-choices');
 const exerciseOwnedDeck=require('./helpers/exercise-owned-deck');
 const exerciseGamePack=require('./helpers/exercise-game-pack');
 const {finishPackChoice}=require('./helpers/play-card-battle');
@@ -28,6 +29,8 @@ async function showOptions(page){
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'card-deck-')),file=path.join(dir,'battle.html');fs.writeFileSync(file,bundle({document:true}));
  const browser=await chromium.launch({executablePath:chromiumPath(),args:['--no-sandbox']});
  try{
+  const coaching=await browser.newPage({viewport:{width:390,height:844}});
+  await coaching.goto('file://'+file);await coaching.evaluate(exerciseCoachingChoices);await coaching.close();
   const page=await browser.newPage({viewport:{width:1400,height:900}}),errors=[];page.on('pageerror',e=>errors.push(String(e)));
   await page.goto('file://'+file);await page.locator('[data-team]').first().click();
   await page.locator('.headset-options summary').click();await page.locator('[data-headset="inside25"]').check();

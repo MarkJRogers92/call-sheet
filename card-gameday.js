@@ -73,6 +73,7 @@ function normalizeCallSheet(u){
   if(Number(cs.version)>CALL_SHEET_SAVE_VERSION)throw new Error('This dynasty’s card playbook needs a newer version of Call Sheet.');
   cs.version=CALL_SHEET_SAVE_VERSION;
   cs.playbook=normalizeCardPlaybook(cs.playbook);
+  globalThis.CallSheet?.packs?.updateStarterBook(cs.playbook,CALL_SHEET_RESERVE_LIMIT);
   cs.combos=Array.isArray(cs.combos)?cs.combos.filter(x=>typeof x==='string').slice(0,20):[];
   const st=cs.settings&&typeof cs.settings==='object'?cs.settings:{};
   const integrations=Object.fromEntries(Object.entries(st.integrations&&typeof st.integrations==='object'?st.integrations:{}).filter(([k,v])=>typeof k==='string'&&typeof v==='boolean'));
@@ -2034,12 +2035,23 @@ function normalizeCallSheet(u){
   function prospectDeckFitHTML(bp){
     const f=prospectDeckFit(bp);return f?`<p class="cs-pcard-note" data-deck-fit="${escH(f.fit)}"><b>With your current deck:</b> ${escH(f.text)}</p>`:'';
   }
+  function prospectJobsHTML(r,pe){
+    if(!integrationOn(RECRUIT_LINK))return '';
+    const jobs=CS.program.prospectJobs(universe.callSheet?.playbook,r.pos,pe);
+    if(!jobs.length)return '';
+    const rows=jobs.map(j=>{
+      const details=j.opposingPlay?`against ${j.opposingPlay} · contest “${j.label}”`:j.label;
+      return `<li><b>${escH(j.name)}</b> · ${escH(ROLE_NAMES[j.role]||j.role)} · ${escH(details)}
+        <br><small>Projected ${j.low}–${j.high}/99 for ${escH(j.traits.map(t=>t==='iq'?'IQ':t).join(' + '))}</small></li>`;
+    }).join('');
+    return `<div class="cs-pcard-note" data-prospect-jobs><b>Jobs in your playbook</b><ul>${rows}</ul></div>`;
+  }
   // The recruiting board's dossier: point at the card that lives in the full profile.
   function recruitDossierCardHTML(id){
     const r=universe?.recruits?.find(x=>String(x.id)===String(id)),u=selected();if(!r||!u||!pagesOn())return'';
     const pe=prospectEstimate(r,u);if(!pe)return'';
     const spec=CS.signatures.specFor(pe.bp),name=CS.signatures.describe(spec)?.def?.name,f=prospectDeckFit(pe.bp);
-    return`<div class="rw-card-hint" id="rwCardHint"><span class="eyebrow">CARD PREVIEW · PROSPECT</span><p>${name?`Possible signature <b>${escH(name)}</b> after a breakout. `:''}${f?escH(f.text):''}</p><small>Open Full Profile for the card. Nothing is granted until a breakout earns it.</small></div>`;
+    return`<div class="rw-card-hint" id="rwCardHint"><span class="eyebrow">CARD PREVIEW · PROSPECT</span><p>${name?`Possible signature <b>${escH(name)}</b> after a breakout. `:''}${f?escH(f.text):''}</p>${prospectJobsHTML(r,pe)}<small>Open Full Profile for the card. Nothing is granted until a breakout earns it.</small></div>`;
   }
   function recruitCardHTML(r,u){
     const AD=CS.adapter,D=CS.data;if(!AD||!D||!r||!u)return'';
@@ -2061,6 +2073,7 @@ function normalizeCallSheet(u){
         <span class="eyebrow">PROSPECT CARD · SCOUTING ${Math.round(conf)}%</span>
         <h3>Projects as: ${escH(ROLE_NAMES[role]||role)}</h3>
         ${signatureStory({projection:bp})}
+        ${prospectJobsHTML(r,pe)}
         ${branchForecast(pb,r,pe,lineup)}
         ${prospectDeckFitHTML(bp)}
         ${peopleOn()?visitPitchHTML(r,u):''}

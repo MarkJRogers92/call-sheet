@@ -73,7 +73,9 @@ test('a team three scores down in the second half goes for a makeable fourth dow
   assert.equal(setup({home:0,away:0}).recommended,'punt');
 });
 test('a tryout shows repeatable pre-penalty estimates with and without the card on the same film snap',()=>{
-  const b=B.simulate({home:Ro.preset('aerial'),away:Ro.preset('ground'),seed:'try-1'});b.user='home';
+  const b=B.create({home:Ro.preset('aerial'),away:Ro.preset('ground'),seed:'try-1',user:'home'});
+  b.log=[{type:'snap',offSide:'home',defSide:'away',play:'vertical_shot',call:'sim_pressure',yards:6,
+    sit:{period:1,clock:630,down:3,distance:10,field:40,score:{home:0,away:0}}}];
   const t=B.tryRewardCard({battle:b,seed:'x'},'max_protect');
   assert.match(t,/Your odds on this snap · Max Protect: \d+% to convert/);assert.match(t,/Without it: \d+% to convert/);assert.match(t,/one rep/);
   assert.equal(B.tryRewardCard({battle:b,seed:'x'},'max_protect'),t);

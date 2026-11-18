@@ -137,6 +137,77 @@ function firstHandChance(pb,side,id,lineup=null){
   const scripts=draws.filter(x=>x===opener).length;
   return Math.max(0,chance-count/n*allFrom(n-count-scripts,n-1,hand-1));
 }
+// Keep copies shared by both decks in the same physical slots. A one-for-one swap
+// changes exactly that slot in every deal, even if the editor appended the new card.
+function pairedDrawSlots(saved,draft){
+  const remaining=[...draft];
+  const slots=saved.map(id=>{
+    const index=remaining.indexOf(id);
+    return {saved:id,draft:index<0?null:remaining.splice(index,1)[0]};
+  });
+  for(const slot of slots)if(!slot.draft&&remaining.length)slot.draft=remaining.shift();
+  return slots.concat(remaining.map(id=>({saved:null,draft:id})));
+}
+function thirdDownHands(saved,draft,lineup){
+  if(!lineup?.off||!lineup?.def)return [];
+  const {battle:B,data:D,packs:P,resolver:R}=root.CallSheet;
+  const decks={saved:P.decksOf(saved),draft:P.decksOf(draft)},slots={};
+  for(const pile of ['wrinkles','tactics']){
+    const cards=side=>decks[side].off[pile].filter(id=>!D.TACTICS[id]?.special);
+    slots[pile]=pairedDrawSlots(cards('saved'),cards('draft'));
+  }
+  const situation={down:3,distance:7,field:45,period:2,clock:480};
+  const call=D.CALLS.cover3,command=2,projections=new Map();
+  function project(play,tactic){
+    const key=JSON.stringify([play.id,tactic?.id]);
+    if(!projections.has(key)){
+      const snap=R.buildSnap({...lineup,play,call,offTactics:tactic?[tactic.id]:[],read:'auto',weather:'clear',situation});
+      projections.set(key,R.evaluate(snap,situation).first);
+    }
+    return projections.get(key);
+  }
+  return Array.from({length:10},(_,index)=>{
+    const hands={saved:{},draft:{}};
+    for(const [pile,limit] of [['wrinkles',D.RULES.wrinkleRow],['tactics',D.RULES.tacticHand]]){
+      const rng=root.DynastyRng.create('third-and-seven:'+index+':'+pile);
+      const order=slots[pile].map(slot=>({slot,priority:rng.next()})).sort((a,b)=>a.priority-b.priority);
+      for(const side of ['saved','draft'])hands[side][pile]=order.map(item=>item.slot[side]).filter(Boolean).slice(0,limit);
+    }
+    for(const side of ['saved','draft']){
+      const hand=hands[side];
+      const options=B.offOptions({game:{down:3,distance:7,fieldPosition:45,period:2,clock:480},
+        decks:{home:decks[side]},teams:{home:{lineup}},hands:{home:{...hand,role:'off',command,onceUsed:[]}}},'home');
+      const calls=new Map();
+      for(const p of options.plays){
+        if(calls.has(p.id)||p.blocked||p.cost>command)continue;
+        let best={id:p.id,cost:p.cost,chance:project(p.card),tactic:null};
+        for(const t of options.tactics){
+          const cost=p.cost+t.cost;
+          if(t.card.info||cost>command||R.tacticBlocked(t.card,p.card,lineup.off))continue;
+          const chance=project(p.card,t.card);
+          if(chance>best.chance||chance===best.chance&&cost<best.cost)best={id:p.id,cost,chance,tactic:t.id};
+        }
+        calls.set(p.id,best);
+      }
+      hand.calls=[...calls.values()].sort((a,b)=>b.chance-a.chance||a.cost-b.cost);
+    }
+    return hands;
+  });
+}
+function thirdDownHTML(hands){
+  const name=id=>escF(root.CallSheet.packs.cardDef(id)?.name||id);
+  const pct=x=>Math.round(100*x)+'%';
+  const count=side=>hands.filter(h=>h[side].calls.filter(c=>c.chance>=.3).length>=2).length;
+  function report(h){
+    const best=h.calls[0];
+    return (best?`<b>${name(best.id)}${best.tactic?' + '+name(best.tactic):''}</b> · ${pct(best.chance)} to convert · ${best.cost} Command`:'No affordable call')+
+      `<small>Play draws · ${h.wrinkles.map(name).join(', ')||'None'}<br>Tactic draws · ${h.tactics.map(name).join(', ')||'None'}<br>Calls at 30% or better · ${h.calls.filter(c=>c.chance>=.3).map(c=>name(c.id)).join(', ')||'None'}</small>`;
+  }
+  return `<p>Your offense faces your defense in Cover 3 at your 45. Each sample gives you a fresh hand, two Command left, and up to one tactic per call. Base calls and available player discounts apply.</p>
+    <p><b>Hands with two or more calls at 30% or better to convert</b><br>Saved ${count('saved')}/10 · Draft ${count('draft')}/10</p>
+    <p>Change a card to replay these draws before saving.</p>
+    ${hands.map((h,i)=>`<details><summary>Hand ${i+1} · best conversion ${pct(h.saved.calls[0]?.chance||0)} → ${pct(h.draft.calls[0]?.chance||0)}</summary><p>Saved · ${report(h.saved)}</p><p>Draft · ${report(h.draft)}</p></details>`).join('')}`;
+}
 function openingScriptHTML(deck,lineup){
   const {data:D,resolver:R}=root.CallSheet;
   const choices=[...new Set(deck.wrinkles)].filter(id=>D.canScriptOpener(deck,id));
@@ -214,6 +285,7 @@ const EDITOR_CSS=`
 #deckEditor [data-category][aria-pressed=true]{border-color:#dfbc62;color:#ffe3a1;background:#312d22}
 #deckEditor [data-type-count]{font:700 13px/1.1 ui-monospace,monospace;white-space:nowrap;color:inherit}
 #deckEditor .de-body{overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable;min-height:0}
+#deckEditor #de-hand-report small{display:block;margin-top:3px;color:#bac8d7}#deckEditor [data-hand-test]{margin-top:10px}
 #deckEditor .de-sub{margin:4px 0 13px;font-size:14px;color:#bac8d7}#deckEditor .de-grid,#deckEditor .de-cards,#deckEditor .de-base{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 #deckEditor .de-card{border:1px solid #354354;border-radius:10px;background:#19232f;padding:12px 14px;display:flex;flex-direction:column;gap:7px;min-width:0}
 #deckEditor .de-card[data-selected=true]{border-left:3px solid #80bfae;padding-left:12px}
@@ -245,7 +317,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
-  let side='off',category='wrinkles',planKey='',presetChanges=[],repairingPreset=null;
+  let side='off',category='wrinkles',planKey='',presetChanges=[],repairingPreset=null,showHands=false;
   // A suggested swap is staged in the draft only; Save keeps it, Cancel discards it with everything else.
   let staged=null;
   if(suggest?.remove&&suggest?.add){const deck=draft.off.wrinkles,res=draft.reserve.off.wrinkles,i=deck.indexOf(suggest.remove),j=res.indexOf(suggest.add);
@@ -329,7 +401,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,ma
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
-    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
+    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(side==='off'&&lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup)):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
     <p>Each series, draw up to ${D.RULES.wrinkleRow} extra plays and ${D.RULES.tacticHand} tactics. Base calls are always available. Special-teams tactics trigger in their own situations instead of being drawn.</p>
     ${side==='off'?openingScriptHTML(deck,lineup):''}
 <details data-plans ${plansOpen?'open':''}><summary>Try a different ${adjective} build</summary>
@@ -363,6 +435,7 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
     const b=e.target.closest('button');if(!b||b.disabled)return;
     if(b.hasAttribute('data-side')){side=b.dataset.side;if(category==='signatures')category='wrinkles';planKey='';render({reset:true,focus:at('[data-side',side)});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
     if(b.hasAttribute('data-category')){category=b.dataset.category;render({reset:true,focus:at('[data-category',category)});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
+    if(b.hasAttribute('data-hand-test')){showHands=!showHands;render({focus:'[data-hand-test]'});return}
     if(b.hasAttribute('data-cancel')){close();return}
     if(b.hasAttribute('data-save')){const wrong=invalidDraft();if(wrong){side=wrong.side;category=wrong.category;render({reset:true,focus:'#de-list-title'});status(wrong.msg,true);return}if(repairingPreset&&draft.deckPresets.includes(repairingPreset))savePreset(draft,repairingPreset.name);onSave(draft);close();return}
     const sig=b.hasAttribute('data-sig-store')||b.hasAttribute('data-sig-equip');
@@ -386,5 +459,5 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
   });
   render();const initialIssue=invalidDraft();status(initialIssue?.msg||'Ready to play.',!!initialIssue);dialog.showModal();return dialog;
 }
-root.CallSheet.playbookUI={firstHandChance,openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS};
+root.CallSheet.playbookUI={thirdDownHands,firstHandChance,openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS};
 })(typeof window==='object'?window:globalThis);

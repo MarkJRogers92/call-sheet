@@ -84,6 +84,20 @@ const PLAYS={
       F:{label:'Fall forward',off:['TE'],ot:['power','technique'],def:['MIKE'],dt:['power','technique'],bias:0}},
     results:{fail:[R(.8,'inc',[0,0],{int:.03}),R(.2,'catch',[2,1.5])],short:[R(.45,'inc',[0,0],{int:.03}),R(.55,'catch',[4,1.2])],success:[R(.88,'catch',[6.5,1.5]),R(.12,'inc',[0,0],{int:.02})],explosive:[R(1,'catch',[10,4],{tail:.05})]}},
   // Wrinkles: drawn from the play pile.
+  quick_out:{id:'quick_out',side:'off',name:'Quick Out',family:'quick',cost:0,target:'X',pass:true,
+    text:'X breaks to the sideline at five yards. Available while Out-and-Up is on the sheet. Complete two to tempt the same corner.',
+    duels:{
+      G:{label:'Boundary release',off:['X'],ot:['technique','speed'],def:['BCB'],dt:['technique','speed'],bias:1,release:true},
+      K:{label:'Throw to the sideline',off:['QB'],ot:['technique','composure'],def:['BCB'],dt:['iq','technique'],bias:0,qbRead:true},
+      F:{label:'Turn upfield',off:['X'],ot:['speed','versatility'],def:['BOXS'],dt:['speed','technique'],bias:0}},
+    results:{fail:[R(.9,'inc',[0,0],{int:.05}),R(.1,'catch',[2,1])],short:[R(.5,'inc',[0,0],{int:.04}),R(.5,'catch',[4,1])],success:[R(.9,'catch',[6,1.5]),R(.1,'inc',[0,0])],explosive:[R(1,'catch',[10,3])]}},
+  out_and_up:{id:'out_and_up',side:'off',name:'Out-and-Up',family:'deep',cost:2,target:'X',pass:true,protection:true,
+    text:'Adds a repeatable Quick Out to this hand. Show the same break, then send X deep. A corner who jumps the out gives up a step.',
+    duels:{
+      G:{label:'Hold the pocket',off:['LT','RT'],ot:['technique','power'],def:['RUSH','SET'],dt:['speed','technique'],bias:0,protect:true},
+      K:{label:'Sell the out',off:['X'],ot:['technique','speed'],def:['BCB'],dt:['technique','speed'],bias:0,separation:true},
+      F:{label:'Beat the safety',off:['X'],ot:['speed','composure'],def:['FS'],dt:['speed','iq'],bias:0}},
+    results:{fail:[R(.35,'sack',[-7,2]),R(.65,'inc',[0,0],{int:.06})],short:[R(.7,'inc',[0,0],{int:.09}),R(.3,'catch',[6,2])],success:[R(.68,'catch',[17,4]),R(.32,'inc',[0,0],{int:.05})],explosive:[R(1,'catch',[28,7],{tail:.16})]}},
   deep_cross:{id:'deep_cross',side:'off',name:'Deep Cross',family:'deep',cost:1,target:'Z',pass:true,protection:true,
     text:'Z crosses at 18 yards behind the linebackers. Needs time.',
     duels:{
@@ -119,8 +133,8 @@ const PLAYS={
       K:{label:'Downhill',off:['RB'],ot:['power','iq'],def:['MIKE'],dt:['power','iq'],bias:0},
       F:{label:'Finish',off:['RB'],ot:['power','durability'],def:['BOXS'],dt:['power','durability'],bias:0}},
     results:{fail:[R(1,'run',[-1,1.5])],short:[R(1,'run',[3,1])],success:[R(1,'run',[6,1.5])],explosive:[R(1,'run',[12,5],{tail:.12})]}},
-  read_option:{id:'read_option',side:'off',name:'Read Option',family:'run',cost:1,carrier:'QB',needs:{role:'QB',trait:'speed',grade:7},
-    text:'Read the unblocked end. Keep outside if he crashes on the back, or hand off inside if he contains the QB. Needs a runner at QB.',
+  read_option:{id:'read_option',side:'off',name:'Read Option',family:'run',cost:1,carrier:'QB',
+    text:'Read the unblocked end. Keep outside if he crashes on the back, or hand off inside if he contains the QB. A mobile QB has the edge on a keeper.',
     duels:{
       G:{label:'Read the end',off:['QB'],ot:['iq','speed'],def:['SET'],dt:['iq','speed'],bias:1,qbRead:true,qbRun:true},
       K:{label:'Get to space',off:['QB'],ot:['speed','versatility'],def:['WILL'],dt:['speed','iq'],bias:0,qbRun:true},
@@ -352,7 +366,7 @@ Object.assign(RARITY,{rpo_bubble:'common',hb_wheel:'common',qb_draw:'common',hoo
 // Game-day decks for the sandbox: base plays are always on the sheet; wrinkles and tactics are drawn.
 const DEFAULT_DECKS={
   off:{base:['inside_zone','outside_zone','quick_slant','stick'],
-    wrinkles:['deep_cross','deep_cross','pa_boot','pa_boot','screen','screen','power','power','vertical_shot','vertical_shot','read_option','read_option'],
+    wrinkles:['deep_cross','deep_cross','pa_boot','pa_boot','screen','screen','power','power','vertical_shot','out_and_up','read_option','read_option'],
     tactics:['motion','motion','hard_count','hard_count','max_protect','max_protect','route_adjust','route_adjust','seal_block','seal_block','check_with_me','check_with_me']},
   def:{base:['two_high','cover1','cover3','run_fit'],
     wrinkles:['zone_pressure','zone_pressure','cover0','cover0','sim_pressure','sim_pressure','two_man','two_man','robber','robber','bear','bear'],

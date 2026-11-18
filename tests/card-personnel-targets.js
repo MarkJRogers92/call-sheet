@@ -136,3 +136,125 @@ test('the coordinator takes away the stronger option matchup and leaves ordinary
   const ordinary={...ctx,play:D.PLAYS.inside_zone};
   assert.deepEqual(R.buildSnap({...ordinary,edgeAssignment:'crash'}),R.buildSnap({...ordinary,edgeAssignment:'contain'}));
 });
+
+test('the key-down mesh saves the committed call and credits the chosen runner exactly once',()=>{
+  const home=Ro.preset('ground');
+  home.decks={...D.DEFAULT_DECKS,off:{base:['read_option'],wrinkles:[],tactics:[]}};
+  const b=B.create({home,away:Ro.preset('tempo'),user:'home',mode:'snap',control:'offense',seed:'personnel-final'});
+  const engine=require('../game-engine-v2');
+  engine.startGame(b.game);
+  Object.assign(b.game,{possession:'home',down:3,distance:2,fieldPosition:45});
+  const q=B.advance(b);
+  assert.equal(q.options.plays[0].blocked,null);
+  const old=JSON.parse(B.save(b)),oldOption=old.pending.options.plays[0];
+  oldOption.card.needs={role:'QB',trait:'speed',grade:7};oldOption.blocked='Needs a QB with speed 7+';
+  const upgraded=B.load(JSON.stringify(old));
+  assert.deepEqual(upgraded.pending,q);assert.deepEqual(upgraded.hands,b.hands);
+  b.snap.def.edgeAssignment='crash';
+  const before=b.log.length,command=b.hands.home.command;
+  const mesh=B.submit(b,{type:'call',play:'read_option',tactics:[]});
+  assert.equal(mesh.kind,'mesh');assert.match(mesh.cue,/steps inside/);
+  assert.equal(b.log.length,before);assert.equal(b.hands.home.command,command-q.options.plays[0].cost);
+  const saved=B.save(b);
+  assert.throws(()=>B.submit(b,{type:'mesh',choice:'pitch'}),/Give or Keep/);assert.equal(B.save(b),saved);
+  for(const [choice,carrier] of [['give','RB'],['keep','QB'],['auto','QB']]){
+    const game=B.load(saved),off=game.teams.home.lineup.off;
+    assert.deepEqual(B.advance(game),mesh);
+    B.submit(game,choice==='auto'?{type:'auto'}:{type:'mesh',choice});
+    const e=game.log[before];
+    assert.equal(e.sit.down,3);assert.equal(e.sit.distance,2);
+    assert.equal(e.participants.carrier,carrier);
+    assert.equal(game.players[off[carrier].id].rushAtt,1);
+    assert.equal(e.duels[0].mods.some(m=>m.src==='End stayed with the runner'),choice==='give');
+    assert.ok(e.text.includes(off[carrier].name));
+    assert.equal(game.telemetry.userSnaps,1);
+  }
+});
+
+test('on the same third-and-two read a mobile QB has a better keeper and neither QB has a guaranteed conversion',()=>{
+  const {off,def}=Ro.preset('ground').lineup,play=D.PLAYS.read_option;
+  const situation={down:3,distance:2,field:45,period:2,clock:300};
+  // The end crashes but the defense has also assigned a QB spy.
+  Object.assign(def.WILL.traits,{power:85,technique:85,speed:65,iq:65});
+  Object.assign(off.RB.traits,{power:72,technique:72});
+  const odds=(mobile,choice)=>{
+    Object.assign(off.QB.traits,mobile?{speed:92,versatility:85}:{speed:42,versatility:48});
+    assert.equal(R.playBlocked(play,off),null);
+    const snap=R.buildSnap({off,def,play,call:D.CALLS.cover3,defTactics:['spy'],situation,edgeAssignment:'crash',meshChoice:choice});
+    return R.evaluate(snap,situation).first;
+  };
+  const pocket=odds(false,'keep'),mobile=odds(true,'keep'),give=odds(false,'give');
+  assert.ok(pocket>0&&pocket<give&&give<mobile&&mobile<1);
+  assert.equal(odds(true,'give'),give);
+});
+
+test('a repeatable Quick Out can set up the drawn double move on the actual call sheet',()=>{
+  const P=require('../forks/call-sheet/core/packs'),book=P.newPlaybook();
+  P.setOpeningScript(book,'out_and_up');
+  const b=B.create({home:{...Ro.preset('aerial'),decks:P.decksOf(book)},away:Ro.preset('tempo'),user:'home',control:'both',mode:'snap',seed:'route-57'});
+  B.advance(b);B.setGrouping(b,'home','11');
+  const play=(battle,id)=>{
+    const start=battle.log.length;
+    B.submit(battle,{type:'call',play:id,read:'primary',tactics:[]});
+    return battle.log.slice(start).find(e=>e.type==='snap'&&e.play===id);
+  };
+  const q=b.pending,cmd=q.options.command;
+  assert.equal(B.sameLookPair(b,q,'out_and_up').mate.id,'quick_out');
+  for(let count=0;count<2;count++){
+    assert.match(B.sameLookPair(b,b.pending,'quick_out').setup,new RegExp(count+'/2'));
+    const entry=play(b,'quick_out');
+    assert.ok(entry.completed&&entry.participants.target==='X'&&entry.yards>0);
+    assert.ok(b.hands.home.wrinkles.includes('out_and_up'));
+    assert.equal(b.hands.home.command,cmd);
+  }
+  const resumed=B.load(B.save(b));
+  const step=play(b,'out_and_up');
+  assert.deepEqual(step,play(resumed,'out_and_up'));
+  assert.deepEqual(step.cornerStep,{jumped:true,outs:2});
+  assert.ok(step.text.includes(b.teams.away.lineup.def.BCB.name+' drove on the out'));
+  assert.ok(step.duels[1].mods.some(m=>m.src==='Corner jumped the out'));
+  assert.ok(!b.hands.home?.wrinkles.includes('out_and_up'));
+  const saved=B.save(b),tryout=B.tryRewardCard({battle:b},'out_and_up');
+  assert.match(tryout,/Game film/);assert.match(tryout,/In the game: Out-and-Up/);
+  assert.equal(B.save(b),saved);
+});
+
+test('only positive catches by the same receiver against this corner in the same look set up the route',()=>{
+  const b=opening(),q=b.pending;
+  const entry={type:'snap',offSide:'home',defSide:'away',play:'quick_out',sit:{period:1},grouping:b.snap.grouping,
+    completed:true,yards:5,participants:{target:'X'},lineups:{off:{X:b.teams.home.lineup.off.X.id},def:{BCB:b.teams.away.lineup.def.BCB.id}}};
+  const count=()=>B.sameLookPair(b,q,'quick_out').setup.match(/(\d)\/2/)[1];
+  b.log=[entry,{...entry,grouping:'other'},{...entry,penalty:{}},{...entry,participants:{target:'RB'}},
+    {...entry,lineups:{...entry.lineups,def:{BCB:'substitute'}}},{...entry,yards:0},{...entry,turnover:'fumble'}];
+  assert.equal(count(),'1');
+  b.log.push(entry);assert.equal(count(),'2');
+  b.log.push({...entry,play:'out_and_up'});assert.equal(count(),'0');
+  b.log.push(entry,{type:'halftime'});assert.equal(count(),'0');
+});
+
+test('the corner can stay deep after two completions and coverage and discipline change the odds',()=>{
+  const off=Ro.preset('aerial').lineup.off,def=Ro.preset('tempo').lineup.def;
+  const build=(outs,cornerRoll,call='cover1')=>R.buildSnap({off,def,play:D.PLAYS.out_and_up,call:D.CALLS[call],cornerRoll,boundaryOuts:outs});
+  const jumps=(outs,call)=>Array.from({length:100},(_,i)=>build(outs,(i+.5)/100,call).flags.cornerStep.jumped).filter(Boolean).length;
+  assert.ok(jumps(0,'cover1')<jumps(2,'cover1'));
+  assert.ok(jumps(2,'cover3')<jumps(2,'cover2_trap'));
+  const normal=jumps(2,'cover1');def.BCB.traits.iq=99;def.BCB.traits.composure=99;
+  assert.ok(jumps(2,'cover1')<normal);
+  const stay=build(2,.99),bite=build(2,0),preview=build(2);
+  assert.equal(stay.flags.cornerStep.jumped,false);assert.equal(bite.flags.cornerStep.jumped,true);
+  assert.equal(preview.flags.cornerStep,undefined);
+  assert.equal(R.winChance(preview.duels[1].margin),preview.duels[1].p);
+  assert.ok(stay.duels[1].p<preview.duels[1].p&&preview.duels[1].p<bite.duels[1].p);
+  assert.equal(stay.duels[0].p,bite.duels[0].p);
+});
+
+test('earlier books receive one stored Out-and-Up without changing a customized deck',()=>{
+  const P=require('../forks/call-sheet/core/packs'),pb=P.newPlaybook();
+  pb.version=1;pb.off.wrinkles=pb.off.wrinkles.map(id=>id==='out_and_up'?'screen':id);
+  const before=JSON.stringify(pb.off);
+  P.updateStarterBook(pb,0);assert.equal(pb.version,1);
+  P.updateStarterBook(pb);P.updateStarterBook(pb);
+  assert.deepEqual(pb.reserve.off.wrinkles,['out_and_up']);
+  assert.equal(JSON.stringify(pb.off),before);
+  assert.ok(P.POOL.some(c=>c.id==='out_and_up'));
+});

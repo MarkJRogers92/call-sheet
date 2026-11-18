@@ -57,3 +57,22 @@ test('failed postseason recording restores card progression and program changes'
   assert.throws(()=>globalThis.__DL_TEST__.v2PostseasonRecordMatch(me,opp,{week:13,label:'Fault Bowl',testFault:'afterArchive'}),/Injected/);
   assert.equal(JSON.stringify(e.universe.callSheet),before);assert.equal((e.universe.gameArchive||[]).length,archive);
 });
+test('recruiting shows assignments from the active deck with public scouting ranges',async()=>{
+  const {u,cg,CS}=await setup(836),pb=u.callSheet.playbook;
+  const te=u.recruits.find(r=>r.pos==='TE'),cb=u.recruits.find(r=>r.pos==='CB');
+  const panel=html=>html.match(/<div class="cs-pcard-note" data-prospect-jobs>[\s\S]*?<\/div>/)?.[0];
+  const jobs=()=>panel(cg.recruitCard(te.id));
+  pb.off.base=['outside_zone','stick'];pb.off.wrinkles=['outside_zone'];
+  const before=jobs();assert.match(before,/Outside Zone.*Edge block/s);assert.match(before,/Stick.*Release/s);
+  assert.equal(before.match(/<li>/g).length,2);
+  assert.equal(panel(globalThis.DynastyRecruitCard.dossierHTML(te.id)),before);
+  for(const k of CS.data.TRAITS)te[k]=99;
+  te.trueNow=99;te.upside=99;assert.equal(jobs(),before);
+  te.scoutingDomains.blocking.estimate=40;const lower=jobs();
+  te.scoutingDomains.blocking.estimate=80;assert.notEqual(jobs(),lower);
+  pb.off.base=['stick'];pb.off.wrinkles=[];assert.doesNotMatch(jobs(),/Outside Zone/);
+  pb.def.base=['cover1'];pb.def.wrinkles=[];const defense=panel(cg.recruitCard(cb.id));
+  assert.match(defense,/Cover 1/);assert.match(defense,/against Quick Slant/);
+  pb.off.base=['inside_zone'];assert.equal(jobs(),undefined);
+  cg.setIntegration('playbook-recruiting',false);assert.equal(panel(cg.recruitCard(cb.id)),undefined);
+});

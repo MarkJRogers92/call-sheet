@@ -101,3 +101,31 @@ test('first hand odds match every permutation of a scripted pile, including dupl
  pb.off.tactics=['motion','seal_block','hard_count','max_protect','route_adjust','onside_kick'];
  assert.equal(U.firstHandChance(pb,'off','onside_kick'),0);assert.equal(U.firstHandChance(pb,'off','motion'),.8);
 });
+
+test('third-and-seven draws pair physical copies and use game-day costs and personnel',()=>{
+  global.DynastyRng=require('../rng');global.CallSheet.battle=require('../forks/call-sheet/core/battle');
+  const saved=P.newPlaybook(),draft=copy(saved),lineup=Ro.preset('ground').lineup;
+  saved.off.wrinkles=['deep_cross','deep_cross','vertical_shot','pa_boot','power','quick_slant'];
+  draft.off.wrinkles=['deep_cross','vertical_shot','pa_boot','power','quick_slant','screen'];
+  saved.off.tactics=['hard_count','max_protect'];draft.off.tactics=[...saved.off.tactics].reverse();
+  lineup.off.TE.pos='WR';
+  const before=JSON.stringify([saved,draft,lineup]),hands=U.thirdDownHands(saved,draft,lineup);
+  assert.equal(hands.length,10);assert.deepEqual(hands,U.thirdDownHands(saved,draft,lineup));
+  assert.ok(hands.some(h=>h.draft.wrinkles.includes('screen'))&&hands.some(h=>!h.draft.wrinkles.includes('screen')));
+  for(const {saved:a,draft:b} of hands){
+    assert.deepEqual(b.wrinkles.map(x=>x==='screen'?'deep_cross':x),a.wrinkles);
+    assert.deepEqual(a.tactics,b.tactics);
+    for(const h of [a,b]){
+      assert.ok(h.calls.length);assert.ok(!h.calls.some(c=>c.id==='pa_boot'));
+      assert.ok(h.calls.every(c=>c.cost<=2&&c.chance>=0&&c.chance<=1));
+      assert.equal(h.calls.length,new Set(h.calls.map(c=>c.id)).size);
+      assert.ok(h.calls.every((c,i)=>!i||h.calls[i-1].chance>=c.chance));
+    }
+  }
+  assert.equal(JSON.stringify([saved,draft,lineup]),before);
+  assert.deepEqual(U.thirdDownHands(saved,draft,null),[]);
+  lineup.off.QB.archetype='Run-First Weapon';lineup.off.QB.traits.speed=85;
+  saved.off.wrinkles=['read_option'];saved.off.tactics=[];
+  const withQB=U.thirdDownHands(saved,saved,lineup);
+  assert.ok(withQB.every(h=>h.saved.calls.some(c=>c.id==='read_option'&&c.cost===0)));
+});

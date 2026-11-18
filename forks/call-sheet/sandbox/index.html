@@ -281,6 +281,7 @@ function render(){
   if(!req||b.game.status==='final'){renderFinal(lastSnap);return}
   let body='';
   if(req.kind==='fourth')body=fourthHTML(req);
+  else if(req.kind==='mesh')body=`<div class="panel"><h2>Read the end</h2><p>${esc(req.cue)}</p><button class="btn" data-mesh="give">Give inside · ${esc(req.back)}</button> <button class="btn" data-mesh="keep">Keep outside · ${esc(req.qb)}</button> <button class="btn" id="autoBtn">Let the QB read it</button></div>`;
   else if(req.kind==='plan')body=planHTML(req);
   else body=snapHTML(req);
   $('#app').innerHTML=scoreboard()+`<div class="grid"><div>${body}</div><div>${lastSnap?`<div class="panel">${cascade(lastSnap)}</div>`:''}<div class="panel" style="margin-top:12px">${feedHTML()}</div></div></div>`;
@@ -331,6 +332,7 @@ function renderFinal(last){
   $('#again').onclick=setup;
 }
 function wire(){
+  document.querySelectorAll('[data-mesh]').forEach(el=>el.onclick=()=>act({type:'mesh',choice:el.dataset.mesh}));
   document.querySelectorAll('[data-fourth]').forEach(el=>el.onclick=()=>act({choice:el.dataset.fourth}));
   document.querySelectorAll('#plays .card').forEach(el=>el.onclick=()=>{if(el.getAttribute('aria-disabled'))return;sel.play=sel.play===el.dataset.play?null:el.dataset.play;err='';render()});
   document.querySelectorAll('#tacs .card').forEach(el=>el.onclick=()=>{
