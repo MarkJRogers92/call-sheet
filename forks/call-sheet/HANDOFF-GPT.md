@@ -474,3 +474,27 @@ One commit each on `claude/new-session-8fuxi1`, in order. Every item comes with 
 - `tests/game-engine-v2-cutover-browser.js` fails on the untouched V15 snapshot too ("quick/season simulation should remain on the legacy engine", 12 !== 0). In the card fork, simulated games route through the card sim when sim-with-cards is on. That base-game assertion predates the fork.
 - `tests/signing-day-stop-browser.js` and `card-deck-browser.js` each timed out once and then passed on rerun (3/3 and 2/2). Treat them as timing flakes.
 - The browser suites chain tests with `&&`, so one failure hides the rest. Run them one by one (see below) to get a real picture.
+
+## Round 2: tests you can trust, then deeper Dynasty links — November 18, 2026
+
+Mark skipped the season playtest and matchup-strip folding (item 3) for now. Everything else is one commit each on `claude/new-session-8fuxi1`:
+
+- **Suite health.**
+  - `5492e83`: the GE2 cutover test turns off sim-with-cards for its legacy quick-sim check.
+  - `1b77504`: ui-upgrades counts bottom-bar items instead of assuming 5.
+  - `9a994f2`: card-gameday judges the phone fit after the hand finishes sliding in.
+  - All three failed on the untouched V15 snapshot too.
+  - `36b0f86`: `tools/browser-run.js` (`npm run test:browser-all`) runs every browser test one by one, retries two documented timing flakes once, and can write a JSON report. Validate (full mode) uses it, and now runs the 9 card browser suites CI never ran (browser-extended job: 60 minutes).
+- **Stacked sum before the snap** (`1ecd5b4`). The full sheet's Read panel shows the same Ability + modifiers = Total columns as the replay, projected. The old duelMath text is gone.
+- **Cards & Deck under the tabs** (`cccc78a`). It is the weekly desk's first row (dashboard-views keeps the desk right after the tabs). Approved by Mark; card-default-browser was updated to the new order.
+- **Deck editor families** (`df3c7e0`). Plays/calls are grouped Run/Quick/Deep/Constraint/Trick and Zone/Man/Pressure, collapsed on phone, and the state survives redraws.
+- **Opponent film** (`4aded5d`). Other teams' games are not card-simulated, so the only real film is from games against you. Every card battle stores the opponent's call mix (last 3 meetings, validated on load); with 8+ snaps, the identity line uses it and says "when you last met".
+- **Rivalry history** (`e70d2b2`). Rivalry weeks name last card meeting's top duel winner against you and whether that player is still there.
+- **Hiring and film** (`74007fd`). OC/DC/HC candidates show the film-read band change (Low/Medium/High), not numbers, via Dynasty's own staff-confidence formula.
+- **Postseason film week** (`597a9d6`). Bowls, playoff rounds and the title game get +6 film confidence (cap 94); the conference title game gets nothing extra. This is a new, labeled mechanic, approved in the list.
+- **Season recap** (`543fd3f`). A season ledger (two seasons, validated) feeds "<year> in calls" in the Deck Room after 3 games: best call, worst habit, top duel winner, snaps you called.
+- **Breakout bar** (`d27cc9a`). Possible signatures state the exact bar from `SG.BREAKOUT`. Signing day posts a goal moment for up to two fitting signees, once per class, with no grant.
+
+**Open items:**
+- `card-deck-browser.js:100` (reopen checkpoint compare) still fails intermittently under machine load, about 1 in 3 runs while another browser run was active. Saving is synchronous, so something touches battle state between the last save and the compare. It deserves a real look; for now it is on the runner's retry list.
+- The install suggestion in Deck Room sits inside the collapsed "Training & roster connections" fold. This Week shows it only when one install completes an evolution.
