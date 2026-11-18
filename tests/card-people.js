@@ -229,3 +229,10 @@ test('a rivalry week says what is at stake before kickoff, using the same rivalr
   me.protectedRivalIds.push(opp.id);
   const st=cg.packStakes();assert.equal(cg.launch().rivalry,true);assert.equal(st.elevated,true);assert.equal(st.win.title,'Rivalry Pack');
 });
+
+test('the opponent identity line uses the staff report and their call sheet without writing to the save',async()=>{
+  const {cg,u}=await setup(949);const before=JSON.stringify(u.callSheet);
+  const id=cg.opponentIdentity();assert.ok(id,'identity for this week\'s opponent');
+  assert.ok(Number.isFinite(id.passEstimate),'staff pass estimate from the weekly report');assert.match(id.text,/staff expects/);
+  assert.ok(id.calls>0&&id.pressure>=0);assert.equal(JSON.stringify(u.callSheet),before,'reading it creates no AI playbook and changes nothing');
+});

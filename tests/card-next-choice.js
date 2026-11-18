@@ -102,3 +102,17 @@ test('pack stakes before kickoff match the pack the game actually opens',()=>{
   assert.match(P.packStakes({rivalry:true}).text,/Rivalry Pack if you win \(pick 1 of 5, last slot 35% legendary\) · Film Study Pack if not/);
   assert.doesNotMatch(P.packStakes({}).text,/legendary/);
 });
+
+test('opponent identity reads their call sheet and the staff estimate, and names an answer only from your deck',()=>{
+  const mine=P.newPlaybook(),def=w=>{const o=P.newPlaybook();o.def.wrinkles=w;return o};
+  let id=P.opponentIdentity(P.newPlaybook(),{passEstimate:60,mine,name:'PHI'});
+  assert.equal(id.lean,'mix');assert.match(id.text,/^PHI: staff expects about 60% passing; their defense mixes in pressure \(8 of 16 calls\)\./);
+  const blitz=def(['cover0','cover0','zone_pressure','zone_pressure','ghost_blitz','fire_zone','bear','bear']);
+  id=P.opponentIdentity(blitz,{passEstimate:50,mine,name:'LA'});assert.equal(id.lean,'blitz');assert.match(id.text,/balanced offense; their defense brings pressure on 8 of 12 calls\. RB Screen in your deck punishes pressure\./);
+  const noScreen=P.newPlaybook();noScreen.off.wrinkles=noScreen.off.wrinkles.filter(x=>x!=='screen');
+  assert.equal(P.opponentIdentity(blitz,{passEstimate:50,mine:noScreen}).answer,null,'no answer is invented when you do not own one');
+  const zone=def(['cover2_trap','cover2_trap','tampa2','tampa2']);id=P.opponentIdentity(zone,{passEstimate:38,mine,name:'NY'});
+  assert.equal(id.lean,'coverage');assert.match(id.text,/about 62% running; their defense sits in zone/);assert.match(id.answer||'',/counters the run/);
+  assert.match(P.opponentIdentity(zone,{mine}).text,/^They: their defense/,'no staff estimate, no offense claim');
+  assert.equal(P.opponentIdentity(null),null);
+});

@@ -72,6 +72,24 @@ function packStakes({rivalry=false,stage=null}={}){
   return{elevated:!!(post||rivalry),win,loss:{title:'Film Study Pack',picks:3},legendary,
     text:`At stake: ${win.title} if you win (pick 1 of ${win.picks}${legendary?`, last slot ${Math.round(legendary*100)}% legendary`:''}) · Film Study Pack if not (pick 1 of 3, counters to what beat you).`};
 }
+// One sentence on who the opponent is: their offense's lean (the dynasty staff's pass estimate, labeled as one) and how
+// often their defensive call sheet brings pressure, plus one card in YOUR deck that answers it, if you own one.
+function opponentIdentity(opp,{passEstimate=null,mine=null,name='They'}={}){
+  if(!opp?.def)return null;
+  const calls=[...(opp.def.base||[]),...(opp.def.wrinkles||[])].map(id=>D.CALLS[id]).filter(Boolean);if(!calls.length)return null;
+  const press=calls.filter(c=>c.family==='pressure').length,man=calls.filter(c=>c.family==='man').length,zone=calls.filter(c=>c.family==='zone').length;
+  const share=press/calls.length,lean=share>=.6?'blitz':share>=.35?'mix':'coverage'; // the default sheet is 50% pressure: a "mix"
+  const def=lean==='blitz'?`their defense brings pressure on ${press} of ${calls.length} calls`:lean==='mix'?`their defense mixes in pressure (${press} of ${calls.length} calls)`:`their defense sits in ${man>zone?'man':zone>man?'zone':'coverage'} (${press} of ${calls.length} calls bring pressure)`;
+  const pe=Number.isFinite(Number(passEstimate))&&passEstimate!==null?Math.round(Number(passEstimate)):null,offLean=pe===null?null:pe>=56?'pass':pe<=44?'run':'balanced';
+  const off=offLean==='pass'?`staff expects about ${pe}% passing`:offLean==='run'?`staff expects about ${100-pe}% running`:offLean?'staff expects a balanced offense':null;
+  // An answer from the coach's own deck: a play that punishes pressure, or a defensive call that counters their lean.
+  const owned=side=>[...new Set([...(mine?.[side]?.base||[]),...(mine?.[side]?.wrinkles||[])])];
+  let answer=null;
+  if(lean==='blitz'){const id=owned('off').find(x=>D.PLAYS[x]&&D.PLAYS[x].punishes==='pressure'&&!D.PLAYS[x].fourthOnly);if(id)answer=`${D.PLAYS[id].name} in your deck punishes pressure.`}
+  if(!answer&&(offLean==='run'||offLean==='pass')){const want=offLean==='run'?'run':'deep',id=owned('def').find(x=>D.CALLS[x]&&[].concat(D.CALLS[x].counters||[]).includes(want));if(id)answer=`${D.CALLS[id].name} in your deck counters ${offLean==='run'?'the run':'deep passes'}.`}
+  const lead=`${name}: ${[off,def].filter(Boolean).join('; ')}.`;
+  return{lean,offLean,pressure:press,calls:calls.length,passEstimate:pe,answer,text:answer?`${lead} ${answer}`:lead};
+}
 function openPack(pb,opts){
   const rng=DynastyRng.create(`pack:${opts.seed}:${pb.packsOpened}`);
   const rivalWin=opts.rivalry&&opts.won,post=opts.won&&STAGE_PACKS[opts.stage]||null,n=rivalWin||post?5:opts.won?4:3,cards=[],used=new Set();
@@ -304,5 +322,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{packStakes,lossSwap,lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{opponentIdentity,packStakes,lossSwap,lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });
