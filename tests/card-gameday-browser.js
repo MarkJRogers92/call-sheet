@@ -46,7 +46,8 @@ const shots=process.env.CARD_SHOTS||'';
     assert.ok(fog.length&&fog.every(r=>r.range.includes('–')&&r.bar===Number(r.range.split('–')[0])),'opponent bars use the displayed range, never the exact hidden trait');
     assert.ok(await frame.locator('#quickClue').isVisible(),'the visible look precedes the quick calls');
     await page.setViewportSize({width:390,height:844});
-    const fit=await frame.evaluate(()=>{const r=document.querySelector('#hand').getBoundingClientRect(),s=document.querySelector('#snapBtn').getBoundingClientRect();return r.right<=innerWidth+1 && s.bottom<=innerHeight && [...document.querySelectorAll('[data-quick-call]')].every(x=>x.getBoundingClientRect().width>=44&&x.getBoundingClientRect().height>=44)});
+    // The hand slides into place after a resize or a snap (CSS transition); judge the settled layout, not a mid-slide frame.
+    const fit=await frame.waitForFunction(()=>{const r=document.querySelector('#hand').getBoundingClientRect(),s=document.querySelector('#snapBtn').getBoundingClientRect();return r.right<=innerWidth+1 && s.bottom<=innerHeight && [...document.querySelectorAll('[data-quick-call]')].every(x=>x.getBoundingClientRect().width>=44&&x.getBoundingClientRect().height>=44)},null,{timeout:2000,polling:100}).then(()=>true,()=>false);
     assert.ok(fit,'all quick choices and snap control fit the phone');
     if(shots)await page.screenshot({path:`${shots}/c2-quick-phone.png`});
     await page.setViewportSize({width:1400,height:900});await frame.click('#sheetToggle');
