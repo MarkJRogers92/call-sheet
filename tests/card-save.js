@@ -11,6 +11,10 @@ const P=require('../forks/call-sheet/core/packs.js');
   u=JSON.parse(JSON.stringify(u));n(u);
   assert.deepEqual(u.callSheet.playbook.off.wrinkles,pb.off.wrinkles);assert.equal(u.callSheet.playbook.mastery.inside_zone,12);
   assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false,integrations:{},replays:'all',headset:{fourth:true,inside25:false,defendLead:false,restStarters:true,readOption:false}});assert.equal(u.callSheet.games,3);
+  for(const view of ['full','quick','bogus']){
+    const copy={callSheet:{settings:{sheetView:view}}};
+    n(copy);assert.equal(copy.callSheet.settings.sheetView,view==='bogus'?undefined:view);
+  }
   const headsetSave={callSheet:{settings:{headset:{fourth:false,inside25:true,defendLead:'true',extra:true}}}};
   n(headsetSave);assert.deepEqual(headsetSave.callSheet.settings.headset,{fourth:false,inside25:true,defendLead:false,restStarters:true,readOption:false});
   assert.equal(u.callSheet.playbook.off.openingScript,'draw');

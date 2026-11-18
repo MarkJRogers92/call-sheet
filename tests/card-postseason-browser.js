@@ -37,7 +37,6 @@ async function openFrame(page){
     await coach.click();
     let frame=await openFrame(page);
     await frame.waitForFunction(()=>window.__slice.req&&!window.__slice.busy,null,{timeout:60000});
-    if(await frame.locator('#sheetToggle').isVisible())await frame.click('#sheetToggle');
     const side=await frame.evaluate(()=>document.querySelector('#side')?.innerText||'');
     assert.ok(side.toLowerCase().includes(label.toLowerCase()),`the battle is labeled with the bowl: ${side.slice(0,120)}`);
     await frame.evaluate(()=>{document.getElementById('modal').classList.remove('on')});

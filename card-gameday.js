@@ -81,6 +81,7 @@ function normalizeCallSheet(u){
   if(cs.activeBattle&&(typeof cs.activeBattle.seed!=='string'||typeof cs.activeBattle.battle!=='string'||cs.activeBattle.battle.length>4000000))cs.activeBattle=null;
   if(globalThis.CallSheet?.battle)cs.settings.headset=globalThis.CallSheet.battle.headsetSettings(st.headset);
   if(['system','reduced','instant'].includes(st.motion))cs.settings.motion=st.motion;
+  if(['full','quick'].includes(st.sheetView))cs.settings.sheetView=st.sheetView;
   if(['auto','primary'].includes(st.readMode))cs.settings.readMode=st.readMode;
   for(const key of ['guidedDrivePending','guidedDriveDone'])if(Object.hasOwn(st,key))cs.settings[key]=st[key]===true;
   cs.games=Number.isFinite(Number(cs.games))?Math.max(0,Math.min(99999,Math.round(Number(cs.games)))):0;cs.seenHelp=!!cs.seenHelp;

@@ -43,7 +43,7 @@ registerSignatures();
 window.SliceCards.finishOf=id=>save.playbook?.finishes?.[id]||null;
 
 // ================================================================ state
-let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode=save.settings.readMode==='primary'?'primary':'auto',fullSheet=false;
+let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode=save.settings.readMode==='primary'?'primary':'auto',fullSheet=save.settings.sheetView!=='quick';
 const userSide=()=>b.user;
 const teamOf=s=>b.teams[s];
 const oppId=()=>W.opponentOf(save.world);
@@ -639,12 +639,14 @@ function renderQuickHand(h){
 function renderHand(){
   const h=$('#hand'),live=req?.kind==='snap';
   $('#root').classList.toggle('quick-snap',live&&!fullSheet);
+  $('#root').classList.toggle('full-snap',live&&fullSheet);
   h.inert=!live;$('#battleSettings').hidden=!live;
   const toggle=$('#sheetToggle');toggle.hidden=!live;toggle.textContent=fullSheet?'Quick calls':'Full call sheet';toggle.setAttribute('aria-expanded',String(live&&fullSheet));
   if(!live){h.classList.add('away');return}
   if(!fullSheet){renderQuickHand(h);return}
   const o=req.options,role=req.role,lean=role==='off'&&req.look.lean.confirmed?req.look.lean.value:null;
   const play=o.plays.find(p=>p.id===sel.play);
+  const previousScroll=h.querySelector('.sheet-cards')?.scrollTop||0;
   h.innerHTML='';
   const fanP=document.createElement('div');fanP.className='fan';fanP.style.position='relative';fanP.innerHTML='<span class="fanlab">CALL SHEET</span>';
   o.plays.forEach((p,i)=>{
@@ -670,8 +672,12 @@ function renderHand(){
     el.dataset.tacticSlot=t.slot;el.onclick=()=>tacticClick(t,why);fanT.appendChild(el);
   });
   if(!o.tactics.length)fanT.insertAdjacentHTML('beforeend','<div class="mini" style="padding:40px 10px">Hand empty this series</div>');
-  h.append(fanP,cmd,fanT);bindAssignment(h);bindTwoDown(h);
-  if(err)h.insertAdjacentHTML('beforeend',`<div class="err">${esc(err)}</div>`);
+  const cards=document.createElement('div');cards.className='sheet-cards';
+  cards.style.setProperty('--plays',Math.max(1,o.plays.length)+'fr');
+  cards.style.setProperty('--tactics',Math.max(1,o.tactics.length)+'fr');
+  cards.append(fanP,fanT);h.append(cards,cmd);cards.scrollTop=previousScroll;
+  bindAssignment(h);bindTwoDown(h);
+  if(err)cmd.insertAdjacentHTML('afterbegin',`<span class="sheet-error" role="status">${esc(err)}</span>`);
   $('#snapBtn').onclick=()=>snap();
   $('#autoBtn').onclick=()=>{S.whoosh();go({type:'auto'})};
   h.classList.remove('away');
@@ -717,7 +723,7 @@ function snap(){
   S.init();go({type:'call',...snapChoice(tactics)});
 }
 function refresh(){renderLook();renderHand();renderSide()}
-$('#sheetToggle').onclick=()=>{if(busy||req?.kind!=='snap')return;fullSheet=!fullSheet;refresh()};
+$('#sheetToggle').onclick=()=>{if(busy||req?.kind!=='snap')return;fullSheet=!fullSheet;save.settings.sheetView=fullSheet?'full':'quick';writeSave();refresh()};
 
 function headsetInputs(){
   return B.HEADSET_RULES.map(({id,label})=>`<label><input type="checkbox" data-headset="${id}" ${save.settings.headset[id]?'checked':''}> ${esc(label)}</label>`).join('');
@@ -1433,7 +1439,7 @@ function howToPlay(then){
   const m=$('#modal'),guided=!!then&&O.eligible(save);
   m.innerHTML=`<div class="mwrap"><p class="big gold" style="font-size:clamp(40px,7vw,80px)">HOW TO PLAY</p>
     <div class="howto"><div><b>1</b><span class="hi">🃏</span>Read the look</div><div><b>2</b><span class="hi">🪙</span>Choose your call</div><div><b>3</b><span class="hi">⚔️</span>Snap and watch the matchup</div></div>
-    <p class="statline">Compare the players and risks, then snap. Open Full call sheet for every card, tactic, personnel change and matchup.</p>
+    <p class="statline">Choose a play, add a tactic if it fits, then hit Snap It below the cards. Quick calls offers a shorter list of plays.</p>
     ${guided?'<p class="statline">Try a guided opening drive: call every offensive snap, with optional coaching tips. Then choose your pace.</p><button class="btn go" id="guideStart">COACH MY FIRST DRIVE</button>':''}
     <button class="btn" id="gotIt">${guided?'SKIP GUIDE · START GAME':'GOT IT'}</button></div>`;
   m.classList.add('on');
