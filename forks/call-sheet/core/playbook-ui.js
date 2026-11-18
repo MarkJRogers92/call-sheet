@@ -181,7 +181,7 @@ const EDITOR_CSS=`
 #deckEditor [data-more-options] section,#deckEditor [data-more-options] details{margin:15px 0}#deckEditor [data-more-options] p{margin:7px 0;color:#c4ceda;font-size:14px}#deckEditor [data-more-options] button{margin:5px 0}
 #deckEditor .de-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #354454;background:#171f2a}
 #deckEditor [data-deck-status]{font-size:13px;color:#b4dbce}#deckEditor [data-deck-status][data-error=true]{color:#ffcf9f}
-#deckEditor .de-save-actions{display:flex;gap:7px;flex-shrink:0}#deckEditor [data-save]{background:#ffdb72;color:#251e0e;border-color:#ffdb72}
+#deckEditor .de-suggest{margin:8px 0 0;padding:8px 11px;border:1px solid #ffdb7299;border-radius:9px;background:#2a2410;color:#f6ecd0;font-size:14px;line-height:1.4}#deckEditor .de-save-actions{display:flex;gap:7px;flex-shrink:0}#deckEditor [data-save]{background:#ffdb72;color:#251e0e;border-color:#ffdb72}
 @media(max-width:650px){#deckEditor{width:calc(100vw - 12px);height:94vh;height:94dvh;border-radius:12px}#deckEditor .de-head,#deckEditor .de-body,#deckEditor .de-foot{padding:12px}
 #deckEditor .de-side-nav button{font-size:13px;padding:6px 8px}#deckEditor .de-type-nav{gap:4px}
 #deckEditor [data-category]{display:grid;justify-content:center;justify-items:center;gap:4px;font-size:12px;padding:6px 2px;min-height:44px}
@@ -191,16 +191,20 @@ const EDITOR_CSS=`
 @media(max-width:720px){#deckEditor button,#deckEditor input,#deckEditor select,#deckEditor [data-side],#deckEditor [data-category]{min-height:44px}#deckEditor summary{display:list-item;min-height:44px;align-content:center}}
 @media(max-width:360px){#deckEditor h2{font-size:20px}#deckEditor .de-top{gap:5px}#deckEditor .de-side-nav{padding:1px}#deckEditor .de-side-nav button{padding:5px}#deckEditor .de-body{scrollbar-gutter:auto}}
 `;
-function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,maxUnusedSignatures=Infinity}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
   let side='off',category='wrinkles',planKey='';
+  // A suggested swap is staged in the draft only; Save keeps it, Cancel discards it with everything else.
+  let staged=null;
+  if(suggest?.remove&&suggest?.add){const deck=draft.off.wrinkles,res=draft.reserve.off.wrinkles,i=deck.indexOf(suggest.remove),j=res.indexOf(suggest.add);
+    if(i>=0&&j>=0){deck.splice(i,1);res.splice(j,1);deck.push(suggest.add);res.push(suggest.remove);staged=suggest}}
   const dialog=document.createElement('dialog');dialog.id='deckEditor';dialog.setAttribute('aria-labelledby','de-title');
   dialog.innerHTML=`<style>${EDITOR_CSS}</style><div class="de-head"><div class="de-top"><div><div class="de-kicker">DECK ROOM</div><h2 id="de-title">Choose your cards</h2></div>
     <div class="de-side-nav" role="group" aria-label="Choose a side"><button type="button" data-side="off">Offense</button><button type="button" data-side="def">Defense</button></div></div>
     <p class="de-intro">Keep 4 base calls on each side. All other slots are optional. Cards you remove stay in your collection.</p>
-    <p class="de-type-legend">IN DECK / LIMIT</p><div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div></div>
+    <p class="de-type-legend">IN DECK / LIMIT</p><div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div>${staged?`<p class="de-suggest" data-suggested-swap><b>Staged from last game:</b> −1 ${esc(staged.removeName||staged.remove)}, +1 ${esc(staged.addName||staged.add)}. ${esc(staged.why||'')} Save deck to keep it, or Cancel to change nothing.</p>`:''}</div>
     <div class="de-body"></div><div class="de-foot"><div data-deck-status role="status" aria-live="polite"></div>
     <div class="de-save-actions"><button type="button" data-cancel>Cancel</button><button type="button" data-save>Save deck</button></div></div>`;
   document.body.appendChild(dialog);

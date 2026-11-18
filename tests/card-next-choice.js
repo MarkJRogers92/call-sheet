@@ -76,3 +76,18 @@ test('postgame offers a useful earned card once; it persists on resume without c
   assert.equal(e.universe.callSheet.playbook.gamePacks.length,1);
   assert.equal(e.universe.callSheet.playbook.packsOpened,0);
 });
+
+test('after a loss, the swap removes one copy of the play that struggled and adds an owned play from another family',()=>{
+  const D=require('../forks/call-sheet/core/data'),pb=P.newPlaybook();P.ensureCollection(pb);
+  const weak=pb.off.wrinkles.find(id=>D.PLAYS[id]&&!D.PLAYS[id].trick);const fam=D.PLAYS[weak].family;
+  const other=Object.keys(D.PLAYS).find(id=>!D.PLAYS[id].trick&&!D.PLAYS[id].fourthOnly&&!D.PLAYS[id].signature&&D.PLAYS[id].side!=='def'&&D.PLAYS[id].family!==fam&&!pb.off.wrinkles.includes(id)&&!pb.off.base.includes(id)&&P.POOL.some(c=>c.id===id));
+  const same=Object.keys(D.PLAYS).find(id=>D.PLAYS[id].family===fam&&id!==weak&&!D.PLAYS[id].trick&&P.POOL.some(c=>c.id===id));
+  const note={weakId:weak,playId:'inside_zone',samples:4,avg:1.3};
+  assert.equal(P.lossSwap(pb,note),null,'nothing to add from an empty collection');
+  if(same)pb.reserve.off.wrinkles.push(same);assert.equal(P.lossSwap(pb,note),null,'same family is not a real change');
+  pb.reserve.off.wrinkles.push(other);
+  const before=JSON.stringify(pb),s=P.lossSwap(pb,note);assert.equal(JSON.stringify(pb),before,'advice does not edit the deck');
+  assert.deepEqual([s.remove,s.add],[weak,other]);assert.match(s.why,/averaged 1\.3 yards on 4 calls/);
+  assert.equal(P.lossSwap(pb,{...note,weakId:pb.off.base[0]}),null,'base calls are never removed');
+  assert.equal(P.lossSwap(pb,{...note,weakId:null}),null);
+});

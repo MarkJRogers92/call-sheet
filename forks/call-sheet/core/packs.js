@@ -199,6 +199,17 @@ function lastGameCard(pb){
   if(!inDeck&&!inCollection)return null;
   return{...base,status:inDeck&&inCollection?'split':inDeck?'deck':'collection',inDeck,inCollection};
 }
+// After a loss: one concrete swap backed by the game's takeaway. Remove one copy of the play that struggled (only an
+// optional play, never a base call) and add one owned collection play from a different family. Returns null when no
+// such swap exists. Advice only: the deck editor stages it as a draft that Cancel discards.
+function lossSwap(pb,note){
+  const weak=note?.weakId,D_=D.PLAYS;if(!weak||!D_[weak]||!pb?.off)return null;
+  if(!(pb.off.wrinkles||[]).includes(weak))return null;
+  const fam=D_[weak].family,pool=[...new Set(pb.reserve?.off?.wrinkles||[])].filter(id=>D_[id]&&!D_[id].trick&&!D_[id].fourthOnly&&!D_[id].signature&&D_[id].family!==fam);
+  const add=pool.find(id=>id===note.playId)||pool[0];if(!add)return null;
+  return{remove:weak,add,removeName:D_[weak].name,addName:D_[add].name,
+    why:`${D_[weak].name} averaged ${Number(note.avg??0).toFixed(1)} yards on ${note.samples} call${note.samples===1?'':'s'}. ${D_[add].name} (${D_[add].family}) is already in your collection.`};
+}
 function overCapacity(pb){
   for(const side of ['off','def']){
     if(pb[side].wrinkles.length>pb.capacity.wrinkles)return{side,pile:'wrinkles'};
@@ -285,5 +296,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{lossSwap,lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

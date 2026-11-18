@@ -366,9 +366,15 @@ function deciderHTML(){
   let t='';try{t=B.decidingMoments(b)[0]||''}catch(e){}
   return t?`<section class="box" id="decidingSnap" style="text-align:left"><h3>Deciding snap</h3><p>${esc(t)}</p></section>`:'';
 }
+// After a loss, one evidence-backed swap the coach can stage in the deck editor. Nothing changes until Save.
+function lossSwapFor(note){
+  const opp=b.user==='home'?'away':'home',lost=b.game?.score&&b.game.score[b.user]<b.game.score[opp];
+  return lost&&note?P.lossSwap(save.playbook,note):null;
+}
 function takeawayHTML(){
   const note=B.postgameTakeaway(b);if(!note)return'';
-  return`<section class="box" id="filmTakeaway" style="text-align:left"><h3>One takeaway</h3><p>${esc(note.summary)}</p><p class="mini">${esc(note.evidence)}</p><details><summary>Optional adjustment</summary><p class="mini">${esc(note.recommendation)}</p><button class="tbtn" data-film-deck>Review your deck</button><p class="mini">Nothing changes unless you choose and save an adjustment.</p></details></section>`;
+  const swap=lossSwapFor(note);
+  return`<section class="box" id="filmTakeaway" style="text-align:left"><h3>One takeaway</h3><p>${esc(note.summary)}</p><p class="mini">${esc(note.evidence)}</p><details><summary>Optional adjustment</summary><p class="mini">${esc(note.recommendation)}</p>${swap?`<button class="tbtn" data-film-swap>Stage swap: −1 ${esc(swap.removeName)}, +1 ${esc(swap.addName)}</button> `:''}<button class="tbtn" data-film-deck>Review your deck</button><p class="mini">Nothing changes unless you choose and save an adjustment.</p></details></section>`;
 }
 function renderSide(){
   if(req?.kind==='snap'&&!fullSheet){clearGlow();$('#side').replaceChildren();return}
@@ -858,6 +864,8 @@ function finalScreen(){
     <button class="btn go" id="openPack">${b._breakout&&!b._breakoutResolved?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>${bankButton()}</div>`;
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
+  const swapBtn=m.querySelector('[data-film-swap]');if(swapBtn)swapBtn.onclick=()=>{const swap=lossSwapFor(B.postgameTakeaway(b));if(!swap){swapBtn.remove();return}
+    window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
   const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
   bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }

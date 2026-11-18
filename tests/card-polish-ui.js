@@ -14,8 +14,11 @@ test('guided drive panel offers an explicit exit and optional help',()=>{
 });
 test('postgame takeaway is optional, escapes evidence and never silently edits the deck',()=>{
  const B={postgameTakeaway:()=>({summary:'<edge>',evidence:'3 plays',recommendation:'Try draw',playId:'draw'})};
- const html=run('takeawayHTML',{B,b:{},esc});assert.match(html,/&lt;edge&gt;/);assert.match(html,/3 plays/);assert.match(html,/Optional adjustment/);assert.match(html,/data-film-deck/);
- assert.equal(run('takeawayHTML',{B:{postgameTakeaway:()=>null},b:{},esc}), '');
+ const html=run('takeawayHTML',{B,b:{},esc,lossSwapFor:()=>null});assert.match(html,/&lt;edge&gt;/);assert.match(html,/3 plays/);assert.match(html,/Optional adjustment/);assert.match(html,/data-film-deck/);
+ assert.doesNotMatch(html,/data-film-swap/,'no swap offered without a loss-backed swap');
+ const swapped=run('takeawayHTML',{B,b:{},esc,lossSwapFor:()=>({removeName:'Deep <Cross>',addName:'Draw'})});
+ assert.match(swapped,/data-film-swap>Stage swap: −1 Deep &lt;Cross&gt;, \+1 Draw/);assert.match(swapped,/Nothing changes unless you choose and save/);
+ assert.equal(run('takeawayHTML',{B:{postgameTakeaway:()=>null},b:{},esc,lossSwapFor:()=>null}), '');
 });
 test('adaptation panel makes clues readable without declaring a guaranteed counter',()=>{
  const html=run('adaptationHTML',{B:{adaptationRead:()=>({summary:'They show <pressure>',detail:'A screen may punish it.',counterPlay:'screen'})},D:{PLAYS:{screen:{name:'HB Screen'}}},b:{},req:{},esc});

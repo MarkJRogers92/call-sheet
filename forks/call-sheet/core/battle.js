@@ -980,7 +980,7 @@ function postgameTakeaway(b,side=b?.user){
   return{summary:weak?`${subject} struggled to move the ball.`:`${subject} ${caller==='staff'?'were':'was'} a repeatable part of your offense.`,
     evidence:`${t.n} recorded calls (${who}) · ${(t.yards/t.n).toFixed(1)} yards per call · ${t.gateLoss} lost at the Gate. One game, not a permanent verdict.`,
     recommendation:(caller==='staff'?'Staff calls come from your deck. ':'')+(weak?(alternate?`Consider mixing in ${D.PLAYS[alternate].name} from your current deck, then compare the matchup.`:`Consider reviewing ${play.name}'s Gate matchup before calling it again.`):`Consider keeping ${play.name} in your plan, but read the next opponent before leaning on it.`),
-    playId:weak?(alternate||t.id):t.id,samples:t.n,caller,mine:t.mine};
+    playId:weak?(alternate||t.id):t.id,samples:t.n,caller,mine:t.mine,weakId:weak?t.id:null,avg:Math.round(t.yards/t.n*10)/10};
 }
 function adaptationRead(b,req=b?.pending){
   if(req?.kind!=='snap'||!['off','def'].includes(req.role))return null;
