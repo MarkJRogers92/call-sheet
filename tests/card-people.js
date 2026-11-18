@@ -249,3 +249,17 @@ test('a simulated card game stores film on that opponent, which survives a save 
   const id=globalThis.CallSheet.packs.opponentIdentity(globalThis.CallSheet.packs.newPlaybook(),{film,mine:u.callSheet.playbook,name:opp.name});
   assert.equal(id.fromFilm,true);assert.match(id.text,/when you last met/);
 });
+
+test('rivalry weeks name last meeting\'s top duel winner against you, and whether that player is still there',async()=>{
+  const {e,cg,u,me}=await setup(953);const g=e.findUserGame(),opp=e.T(g.home===me.name?g.away:g.home);
+  u.weeklyDecisions=[];e.simWeek();
+  const film=u.callSheet.oppFilm[String(opp.id)];const star=film[0].star;
+  assert.ok(star&&star.w>=4,'a real opponent duel winner was recorded');assert.ok(opp.roster.some(p=>String(p.id)===star.id));
+  // Treat the next opponent as that rival, carrying this film, to exercise the line on the matchup strip.
+  const next=e.findUserGame(),nextOpp=e.T(next.home===me.name?next.away:next.home);
+  u.callSheet.oppFilm[String(nextOpp.id)]=film;const p=opp.roster.find(x=>String(x.id)===star.id);nextOpp.roster.push(p);
+  assert.equal(cg.rivalryHistory(),null,'not a protected rival yet');
+  me.protectedRivalIds=[...(me.protectedRivalIds||[]),nextOpp.id];
+  let h=cg.rivalryHistory();assert.match(h.text,new RegExp(`Last card meeting \\(${u.year}, Week ${film[0].week}\\): ${star.name} won ${star.w} of ${star.w+star.l} duels against you and is still on their roster\\.`));
+  nextOpp.roster=nextOpp.roster.filter(x=>String(x.id)!==star.id);h=cg.rivalryHistory();assert.match(h.text,/has since left/);
+});
