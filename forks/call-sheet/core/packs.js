@@ -100,7 +100,7 @@ function rollFinish(pb,id,seed,serial=pb.packsOpened){
   if(f&&(FINISH_RANK[f]>(FINISH_RANK[pb.finishes?.[id]]||0)))(pb.finishes??={})[id]=f;
   return f;
 }
-function applyPick(pb,card,{serial=pb.packsOpened,stored=false}={}){
+function applyPick(pb,card,{serial=pb.packsOpened,stored=false,from=null}={}){
   card.finish=rollFinish(pb,card.id,card.uid||'pick',serial);
   pb.packsOpened++;
   const d=pb[card.side];
@@ -114,7 +114,9 @@ function applyPick(pb,card,{serial=pb.packsOpened,stored=false}={}){
     if(D.canScriptOpener(pb.off,card.id))pb.off.openingScript=card.id;else delete pb.off.openingScript;
   }
   if(card.rarity==='legendary')pb.legendaries.push(card.id);
-  pb.history.push({id:card.id,kind:card.kind,side:card.side,rarity:card.rarity});
+  // A game pack also notes which game it came from, so the dynasty can say where last game's card went.
+  const origin=from&&typeof from.pack==='string'?{pack:from.pack.slice(0,240),source:String(from.source||'Game day').slice(0,140),game:Math.max(0,Number(pb.gamesPlayed)|0),...(card.kind==='upgrade'?{replaces:card.replaces}:{})}:{};
+  pb.history.push({id:card.id,kind:card.kind,side:card.side,rarity:card.rarity,...origin});
   return{over:overCapacity(pb)};
 }
 // A coached game's unopened pack is a saved offer, not a signing-day pack of bare card IDs.
@@ -180,10 +182,23 @@ function claimGamePack(pb,key,id,taken=[],reserveLimit=Infinity,want='auto'){
   const destination=rewardDestination(pb,c,true,reserveLimit,want),stored=destination==='stored';
   if(destination==='invalid')return{ok:false,error:'That option is not available for this card.'};
   if(destination==='full')return{ok:false,error:'No room in that group. Choose another option or keep the pack for later.'};
-  applyPick(pb,c,{serial:pack.serial,stored});pb.gamePacks.splice(i,1);
+  applyPick(pb,c,{serial:pack.serial,stored,from:{pack:pack.key,source:pack.source}});pb.gamePacks.splice(i,1);
   return{ok:true,stored,upgrade:c.kind==='upgrade',finish:c.finish};
 }
 
+// Where last game's claimed card is NOW (cuts and deck edits can move it). Null once a newer game is played,
+// or when the last claim did not come from a game pack. Reads only; never changes the playbook.
+function lastGameCard(pb){
+  const e=[...(pb?.history||[])].reverse().find(x=>x&&typeof x.pack==='string');
+  if(!e||e.game!==(Number(pb.gamesPlayed)|0)||!cardDef(e.id))return null;
+  const base={id:e.id,name:cardDef(e.id).name,source:e.source||'Game day'};
+  if(e.kind==='upgrade')return{...base,status:'upgrade',replaced:cardDef(e.replaces)?.name||null,inDeck:[...(pb[e.side]?.base||[]),...(pb[e.side]?.wrinkles||[])].includes(e.id)};
+  const pile=D.TACTICS[e.id]?'tactics':'wrinkles',side=cardDef(e.id).side;
+  // Copies are interchangeable, so report counts rather than guess which copy is "the new one".
+  const inDeck=(pb[side]?.[pile]||[]).filter(x=>x===e.id).length,inCollection=(pb.reserve?.[side]?.[pile]||[]).filter(x=>x===e.id).length;
+  if(!inDeck&&!inCollection)return null;
+  return{...base,status:inDeck&&inCollection?'split':inDeck?'deck':'collection',inDeck,inCollection};
+}
 function overCapacity(pb){
   for(const side of ['off','def']){
     if(pb[side].wrinkles.length>pb.capacity.wrinkles)return{side,pile:'wrinkles'};
@@ -270,5 +285,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{lastGameCard,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
 });

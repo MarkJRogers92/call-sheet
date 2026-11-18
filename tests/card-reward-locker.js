@@ -137,3 +137,26 @@ test('an entirely full destination never consumes a game or program pack; anothe
   assert.equal(cg.takeGamePack(pack.key,'inside_zone_plus').ok,true);assert.equal(cg.takeRewardCard('album:test','press').ok,true);
   assert.equal(pb.reserve.def.wrinkles.length,500);assert.equal(pb.packsOpened,1);
 });
+
+test('last game card reports where the claimed card is now, and only until the next game',()=>{
+ const pb=P.newPlaybook();pb.gamesPlayed=3;
+ assert.equal(P.lastGameCard(pb),null,'no claim yet');
+ const pack=envelope(pb,['draw','motion']);(pb.gamePacks??=[]).push(pack);
+ const before=JSON.stringify(pb);P.lastGameCard(pb);assert.equal(JSON.stringify(pb),before,'reading does not mutate');
+ assert.ok(P.claimGamePack(pb,pack.key,'draw',[],500,'collection').ok);
+ assert.deepEqual(P.lastGameCard(pb),{id:'draw',name:P.cardDef('draw').name,source:'Week 1 vs West',status:'collection',inDeck:0,inCollection:1});
+ // Moving it into the deck is reflected live rather than repeating the claim-time destination.
+ P.moveCard(pb,'off','wrinkles',pb.reserve.off.wrinkles.indexOf('draw'),true);
+ assert.equal(P.lastGameCard(pb).status,'deck');
+ // A non-game pick does not replace the game's card.
+ P.applyPick(pb,{...P.POOL.find(c=>c.id==='pa_boot')},{stored:true});assert.equal(P.lastGameCard(pb).id,'draw');
+ pb.gamesPlayed++;assert.equal(P.lastGameCard(pb),null,'a newer game without a claim hides the old card');
+ // An extra copy of a card already in the deck is reported by count, not as simply "in your deck".
+ const dup=envelope(pb,['deep_cross'],2);pb.gamePacks.push(dup);
+ const active=pb.off.wrinkles.filter(x=>x==='deep_cross').length;assert.ok(active>0);
+ assert.ok(P.claimGamePack(pb,dup.key,'deep_cross',[],500,'collection').ok);
+ assert.deepEqual((({status,inDeck,inCollection})=>({status,inDeck,inCollection}))(P.lastGameCard(pb)),{status:'split',inDeck:active,inCollection:1});
+ pb.gamesPlayed++;const up=envelope(pb,['inside_zone_plus'],3);pb.gamePacks.push(up);
+ assert.ok(P.claimGamePack(pb,up.key,'inside_zone_plus',[],500).ok);
+ const u=P.lastGameCard(pb);assert.equal(u.status,'upgrade');assert.equal(u.replaced,P.cardDef('inside_zone').name);assert.equal(u.inDeck,true);
+});

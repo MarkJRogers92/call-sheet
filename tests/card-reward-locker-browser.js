@@ -37,6 +37,9 @@ const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/ch
     assert.deepEqual(meta.playbook.off,before.off);assert.deepEqual(meta.playbook.def,before.def);
     const stored=p=>['off','def'].flatMap(s=>['wrinkles','tactics'].flatMap(k=>p.reserve[s][k])).filter(id=>id===pick).length;
     assert.equal(stored(meta.playbook),stored(before)+1,'collecting adds exactly one owned copy without editing the active deck');
+    await page.evaluate(()=>window.__DL_TEST__.goToTab('dashboard'));const lastCard=page.locator('#cardDeskLink #lastGameCard');await lastCard.waitFor();
+    const pickName=await page.evaluate(id=>window.CallSheet.packs.cardDef(id).name,pick);
+    assert.match(await lastCard.innerText(),new RegExp(`From Week 1 vs .+: ${pickName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')} .*in your collection`),'This Week says where last game\'s card went');
     await page.evaluate(()=>window.__DL_TEST__.goToTab('deckroom'));await page.click('#deckroom [data-card-deck]');await page.click('#deckEditor [data-more-options] > summary');assert.match(await page.locator('#deckEditor').innerText(),/Ready to evolve · Inside Zone/);
     assert.deepEqual(errors,[]);console.log('ok  bank at final, advance, reload, dismiss, reopen, claim once, revisit permanent evolution on phone');
   }finally{await browser.close()}
