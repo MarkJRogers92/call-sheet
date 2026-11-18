@@ -52,6 +52,7 @@
     "longrun": "SEASONS=12 node tools/longrun.js",
     "test:storage": "node --test tests/storage.js tests/persistence.js tests/legacy-backup.js tests/promises.js tests/transfers.js tests/games.js tests/portraits.js tests/coaches.js tests/relationships.js",
     "test:browser-storage": "node tests/browser-storage.js",
+    "test:browser-all": "node tools/browser-run.js",
     "verify:release": "node tools/publish.js --verify",
     "publish": "node tools/publish.js",
     "publish:preview": "node tools/publish.js --preview",

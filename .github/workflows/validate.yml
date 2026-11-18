@@ -175,7 +175,8 @@ jobs:
           test -n "$browser"
           echo "path=$browser" >> "$GITHUB_OUTPUT"
       - name: Browser UI and visual regression tests
-        run: npm run test:browser
+        # One by one, so a failure lists every other result instead of stopping the chain.
+        run: node tools/browser-run.js test:browser --report browser-report.json
         env:
           CHROMIUM_PATH: ${{ steps.chromium.outputs.path }}
       - name: Browser IndexedDB regression check
@@ -187,7 +188,7 @@ jobs:
     needs: cadence
     if: needs.cadence.outputs.mode == 'full'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60 # 74 tests one by one, card browser suites included
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -211,8 +212,8 @@ jobs:
           fi
           test -n "$browser"
           echo "path=$browser" >> "$GITHUB_OUTPUT"
-      - name: Extended feature browser suites
-        run: npm run test:browser-extended
+      - name: Extended feature and card browser suites
+        run: node tools/browser-run.js test:browser-extended --cards --report browser-extended-report.json
         env:
           CHROMIUM_PATH: ${{ steps.chromium.outputs.path }}
 

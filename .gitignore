@@ -13,3 +13,4 @@ AGENTS.md
 # Blender render output (tools/blender/rivalry_trophies.py)
 tools/blender/out/
 .blender-venv/
+*-report.json
