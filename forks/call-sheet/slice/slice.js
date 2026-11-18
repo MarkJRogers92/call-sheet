@@ -270,12 +270,6 @@ function hotHTML(){
 const COMBOS=[...(D.COMBOS||[]).map(c=>({id:c.id,name:c.name,how:c.how,reward:c.reward})),{id:'chain_gang',name:'Chain Gang',how:'Three first downs in one drive',reward:'+1 Command next series'}];
 function comboHTML(){if(!save.combos.length)return'';return`<div class="box"><h3>Combo book</h3>${COMBOS.map(c=>{const f=save.combos.includes(c.id);return`<div class="combo ${f?'found':''}"><b>${f?esc(c.name):'? ? ?'}</b><br>${f?esc(c.how)+' · '+esc(c.reward):'Undiscovered'}</div>`}).join('')}</div>`}
 const fmtEdge=n=>`${n>0?'+':''}${Number(n.toFixed(1))}`;
-function duelMath(d,offense=true){
-  const traits=`${(d.offTraits||[]).join(' + ')} vs ${(d.defTraits||[]).join(' + ')}${d.qbTraits?' · Catch/throw blend: 70% receiver, 30% QB ('+d.qbTraits.join(' + ')+')':''}`;
-  if(fogSpread())return `<small class="duelmath">${esc(traits)} · Opponent ability uncertain</small>`;
-  const sign=offense?1:-1,talent=sign*(d.offGrade-d.defGrade),setup=sign*d.mods.reduce((n,m)=>n+m.v,0);
-  return `<small class="duelmath" title="${esc(traits)}">Ability ${fmtEdge(talent)} · Effects ${fmtEdge(setup)} · Edge ${fmtEdge(sign*d.raw)}<br>${Math.round((offense?d.p:1-d.p)*100)}% duel win chance${Math.abs(d.raw)>=3?' · at probability limit':''}</small>`;
-}
 function readHTML(){
   if(!req||req.kind!=='snap'){clearGlow();return''}
   if(!sel.play){clearGlow();return`<div class="box"><h3>The read</h3><div class="mini">Pick a play card. Drag it onto the field, or tap it and hit SNAP.</div></div>`}
@@ -291,11 +285,10 @@ function readHTML(){
   }
   if(req.role==='off'){
     fieldGlow(pv.snap.duels,true);
-    const bonus=pv.snap.duels.flatMap(d=>d.mods.filter(m=>m.src!=='Play design').map(m=>({...m,k:d.key})));
-    return`<div class="box"><h3>The read</h3><div class="mini">Estimate from the visible look; hidden adjustments can change it.</div>${DYN&&fogSpread()?`<div class="mini" style="color:#9fe3ff">Film confidence ${DYN.scouting.confidence}% (from your coordinators and head coach): their ratings are ranges.</div>`:''}<div class="exp">${pv.ev.yards.toFixed(1)}<small>yds estimated</small></div>
+    // Each duel as the same stacked sum the replay shows, projected from the visible look (fogged reads return above).
+    return`<div class="box"><h3>The read</h3><div class="mini">Projection from the visible look; hidden adjustments can change it.</div><div class="exp">${pv.ev.yards.toFixed(1)}<small>yds estimated</small></div>
       <div class="kpis"><span>1ST DOWN <b>${Math.round(pv.ev.first*100)}%</b></span><span>TURNOVER <b>${(pv.ev.turnover*100).toFixed(0)}%</b></span></div>
-      ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}${(()=>{const dside=req.side===b.user?(b.user==='home'?'away':'home'):b.user,fg=fogGrade(d.defGrade,d.defNames[0],dside);return fg.fog?` <span class="muted">(${fg.text})</span>`:''})()}${duelMath(d)}</span><span class="chip ${d.chip}${fogSpread()&&DYN?' fogchip':''}">${d.chip}${fogSpread()&&DYN?'?':''}</span></div>`).join('')}
-      ${bonus.length?`<div class="bonus">${bonus.map(m=>`<span class="${m.v<0?'neg':''}">${m.k} ${m.v>0?'+':''}${m.v} ${esc(m.src)}</span>`).join('')}</div>`:''}</div>`;
+      ${pv.snap.duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} <span class="muted">vs</span> ${esc(d.defNames.join(' & '))}</span><span class="chip ${d.chip}">${d.chip}</span></div><div class="read-sum">${duelSumHTML(d,{offSide:req.side,defSide:req.side==='home'?'away':'home'},true)}</div>`).join('')}</div>`;
   }
   const rows=pv.vs.sort((a,c)=>c.weight-a.weight);fieldGlow(rows[0]?.snap.duels,false);
   const avg=rows.reduce((s,v)=>s+v.weight*v.ev.yards,0);

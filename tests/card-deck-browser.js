@@ -63,7 +63,7 @@ async function showOptions(page){
   const checkpoint=await page.evaluate(()=>{const b=window.__slice.b;return{game:b.game,rng:b.rng,hands:b.hands,log:b.log,workload:b.workload}});
   await page.reload();assert.match(await page.textContent('#play'),/RESUME/);await page.click('#play');
   assert.deepEqual(await page.evaluate(()=>{const b=window.__slice.b;return{game:b.game,rng:b.rng,hands:b.hands,log:b.log,workload:b.workload}}),checkpoint);
-  if(!await page.locator('#side').isVisible())await page.click('#sheetToggle');await page.locator('#hand .card.k-play:not(.blocked)').first().click();assert.match(await page.textContent('#side'),/Ability.*Effects.*Edge/);
+  if(!await page.locator('#side').isVisible())await page.click('#sheetToggle');await page.locator('#hand .card.k-play:not(.blocked)').first().click();assert.match(await page.textContent("#side"),/Ability[\s\S]*Total[\s\S]*your edge/i);
   await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.__slice.title());assert.equal(await page.locator('#pbv').isDisabled(),true);
   await page.click('#play');if(!await page.locator('#bSim').isVisible())await page.click('#sheetToggle');await page.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true});await page.click('#bSim');await page.waitForSelector('#openPack');
   const earned=await page.evaluate(()=>({games:window.__slice.save().games,achievements:window.__slice.save().playbook.achievements}));assert.ok(earned.achievements.includes('first_game'));
