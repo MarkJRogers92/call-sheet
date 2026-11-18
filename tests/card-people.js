@@ -263,3 +263,16 @@ test('rivalry weeks name last meeting\'s top duel winner against you, and whethe
   let h=cg.rivalryHistory();assert.match(h.text,new RegExp(`Last card meeting \\(${u.year}, Week ${film[0].week}\\): ${star.name} won ${star.w} of ${star.w+star.l} duels against you and is still on their roster\\.`));
   nextOpp.roster=nextOpp.roster.filter(x=>String(x.id)!==star.id);h=cg.rivalryHistory();assert.match(h.text,/has since left/);
 });
+
+test('coordinator candidates show how hiring would change the card film read, as a band, for your own openings only',async()=>{
+  const {cg,me,u}=await setup(955);
+  for(const k of ['OC','DC'])me.staff[k].playCall=76;me.staff.HC.development=76; // Medium film read (76)
+  const o={slot:'OC',schoolName:me.name};
+  let fx=cg.hireFilmEffect(o,{playCall:99,development:60});assert.match(fx.text,/Medium \(one-point ranges\) → High \(exact grades\)/);assert.equal(fx.change,1);
+  fx=cg.hireFilmEffect(o,{playCall:20,development:60});assert.match(fx.text,/Medium .* → Low \(wide ranges\)|stays Medium.*blurrier/);
+  fx=cg.hireFilmEffect(o,{playCall:76,development:60});assert.match(fx.text,/stays Medium \(one-point ranges\)\./);
+  assert.equal(cg.hireFilmEffect({slot:'RC',schoolName:me.name},{playCall:99}),null,'recruiting coordinators do not change film');
+  const other=u.teams.find(t=>t.id!==me.id);assert.equal(cg.hireFilmEffect({slot:'OC',schoolName:other.name},{playCall:99}),null,'only your program');
+  assert.equal(me.staff.OC.playCall,76,'the preview does not change your staff');
+  cg.setIntegration('scouting-fog',false);assert.equal(cg.hireFilmEffect(o,{playCall:99}),null,'follows the scouting-fog switch');
+});

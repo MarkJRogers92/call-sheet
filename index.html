@@ -25846,6 +25846,24 @@ function normalizeCallSheet(u){
       ctx.cfg.scouting={confidence:filmConfidence(ctx.me,ctx.opp)};
     }}});
   function filmConfidence(me,opp){let confidence=70;try{const r=v0102WeeklyOpponentReport(me,opp);if(Number.isFinite(Number(r?.confidence)))confidence=Number(r.confidence)}catch(err){}return confidence}
+  // Coordinator and head coach hiring: show how a candidate would change the card battle's film read, as a band (the
+  // ratings themselves stay letter grades). Uses Dynasty's own staff-confidence formula on a copy of the staff.
+  const FILM_BAND=c=>{const f=CS.battle.filmFog(c);return f.exact?'High (exact grades)':f.spread===1?'Medium (one-point ranges)':'Low (wide ranges)'};
+  function hireFilmEffect(o,c){
+    if(!o||!c||!['OC','DC','HC'].includes(o.slot)||typeof v0102WeeklyStaffConfidence!=='function'||!integrationOn(FOG_LINK))return null;
+    const t=T(o.schoolName)||selected();if(!t||t.id!==selected()?.id)return null;
+    const now=v0102WeeklyStaffConfidence(t),staff={...t.staff,[o.slot]:{...(t.staff?.[o.slot]||{}),playCall:c.playCall,development:c.development}};
+    const after=v0102WeeklyStaffConfidence({...t,staff}),a=FILM_BAND(now),b=FILM_BAND(after);
+    return{now:a,after:b,change:Math.sign(after-now),text:a===b?`Card film read stays ${a}${after>now?', a little sharper':after<now?', a little blurrier':''}.`:`Card film read: ${a} → ${b}.`};
+  }
+  if(typeof candidateCardHTML==='function'){
+    const candidateBase=candidateCardHTML;
+    candidateCardHTML=function candidateCardWithFilm(o,c){
+      const html=candidateBase(o,c);let fx=null;try{fx=hireFilmEffect(o,c)}catch(err){console.error(err)}
+      // Right under the ratings row (Recruit · Develop · Evaluate · Call · Adapt).
+      return fx?html.replace(/(· Adapt [^<]*<\/div>)/,`$1<div class="small cs-hire-film" data-film-change="${fx.change}">${escH(fx.text)}</div>`):html;
+    };
+  }
   // Before kickoff: how sharply you will see their grades, and what actually changes that (staff, not recruiting).
   function filmNote(me,opp){
     if(!me||!opp||!integrationOn(FOG_LINK))return null;const f=CS.battle.filmFog(filmConfidence(me,opp));
@@ -27477,7 +27495,7 @@ function normalizeCallSheet(u){
   }
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
-  globalThis.DynastyCardGameDay={rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home)):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+  globalThis.DynastyCardGameDay={hireFilmEffect,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home)):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),
