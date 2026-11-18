@@ -911,6 +911,15 @@ function matchupStory(e){
   if(e.kind==='inc'&&reached.every(r=>r.won))detail+=' All reached duels went the offense’s way, but the pass still fell incomplete.';
   return{summary:`${d.label}: ${names.filter(Boolean).join(' & ')||'The winner'} beat ${losers.filter(Boolean).join(' & ')||'the matchup'}.`,detail,key:d.key,winnerSide,winnerRoles:offWon?d.offRoles:d.defRoles,loserRoles:offWon?d.defRoles:d.offRoles,offWon,ratingEdge,setupEdge};
 }
+// The call that set up this 4th down, if the coach made it. Only the immediately preceding snap counts: a staff
+// call, penalty or kick in between means the coach's own call is not what led here. Reads the log; never mutates.
+function lastCallRecap(b,side=b?.user){
+  const e=[...(b?.log||[])].reverse().find(x=>x.type==='snap'||x.type==='kick');
+  if(!e||e.type!=='snap'||!e.userCalled||e.offSide!==side||e.penalty||!D.PLAYS[e.play])return null;
+  const y=Number(e.yards)||0,story=matchupStory(e);
+  const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sacked, ${y} yd`:`${y>0?'+':''}${y} yd`;
+  return{play:e.play,name:D.PLAYS[e.play].name,down:e.sit?.down??null,result,summary:story?.summary||null,offWon:story?story.offWon:null};
+}
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
   const byPlay=new Map();
@@ -1064,5 +1073,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{VERSION,lastCallRecap,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

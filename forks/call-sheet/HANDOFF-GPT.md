@@ -433,3 +433,15 @@ retain the four recorded duel-career counters even if the rolling ledger expires
 save preserves counters still available there; counters already discarded cannot be reconstructed.
 No pack odds, card power or unlock conditions changed. See the new cases in `tests/card-people.js`
 and `npm run test:card-journey-browser` for the profile-to-binder flow.
+
+## Three-decision playtest and the 4th-down recap — November 18, 2026
+
+Scripted the handoff's loop (fresh Dynasty → recruit profile → coach a down → reward → deck room) in headless Chromium at 1400×900 and 390×844, then measured one question across games: when control comes back, can the coach still see what their own call did?
+
+- **Fixed (worst found):** in key-moment play the coach mostly calls 3rd downs, and 4–6 of every 6–7 such calls went straight into the 4th-down modal, which covered the matchup story for the call just made, exactly when it informs go/punt/kick. The modal now shows one line: "Your 3rd-down call · RB Screen · −1 yd · Sell it: X beat Y." Source is `B.lastCallRecap(b)` in `core/battle.js` (read-only; only the immediately preceding snap counts, and only if the coach called it on offense without a penalty; it reuses `matchupStory`). The ghost story behind the scrim is hidden while the modal is open. Test: `tests/card-snap-decisions.js`.
+- **Seen, not fixed yet:**
+  1. The recruiting page's prospect card strip (`#prospectCards`, the way into the signature preview) sits ~3 screens down on desktop and ~1.2 screens down on phone, below the full recruiting board.
+  2. After the game, This Week does not mention the card just earned or whether it went to the deck or the collection. You have to open Deck Room to find out.
+  3. The postgame takeaway can name a play the coach never called (staff calls count), e.g. "PA Boot struggled" after a game where the coach called RB Screen. This belongs to handoff step 3.
+  4. The ticker keeps three lines. A long run of staff snaps (one example: 8 after a fumble) pushes the coach's call out of it. The matchup story stays, but only until the next submission.
+- Probe scripts were exploratory and are not committed; the unit test and existing browser harnesses cover the change.

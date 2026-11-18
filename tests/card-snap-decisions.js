@@ -90,3 +90,28 @@ test('a clock spike names the real QB, not an imaginary target',()=>{
  const {b,req}=fixture();req.options.plays=[{id:'spike',cost:0}];
  const v=B.snapDecisions(b,req);assert.match(v.choices[0].detail,/clock/i);assert.ok(v.choices[0].detail.includes(b.teams.home.lineup.off.QB.name));
 });
+
+test('the 4th-down recap names only the coach call that set it up, with the duel that decided it',()=>{
+ let found=0,staff=0;
+ for(const seed of ['recap-1','recap-2','recap-3','recap-4','recap-5','recap-6']){
+  const b=B.create({home:Ro.preset('ground'),away:Ro.preset('aerial'),user:'home',mode:'snap',control:'offense',seed});
+  let req=B.advance(b);
+  for(let i=0;i<400&&req;i++){
+   if(req.kind==='fourth'&&req.side==='home'){
+    const before=JSON.stringify(b.log),r=B.lastCallRecap(b),prev=[...b.log].reverse().find(e=>e.type==='snap'||e.type==='kick');
+    assert.equal(JSON.stringify(b.log),before,'reading the recap never changes the battle');
+    if(prev.type==='snap'&&prev.userCalled&&!prev.penalty&&prev.offSide==='home'){
+     found++;assert.equal(r.name,D.PLAYS[prev.play].name);assert.equal(r.down,prev.sit.down);
+     assert.match(r.result,/yd|incomplete/);
+     if(prev.duelResults?.length){assert.match(r.summary,/ beat /);assert.equal(r.summary,B.matchupStory(prev).summary)}
+    }else assert.equal(r,null,'a staff call, penalty or kick is not presented as the coach call');
+   }
+   // Coach the offense on even snaps and hand odd ones to staff so both paths reach 4th down.
+   const coach=req.kind==='snap'&&req.role==='off'&&(i%2===0);if(req.kind==='snap'&&req.role==='off'&&!coach)staff++;
+   const play=coach&&req.options.plays.find(p=>!p.blocked&&p.cost<=req.options.command);
+   req=B.submit(b,req.kind==='fourth'?{choice:req.recommended}:req.kind==='plan'?{type:'plan',calls:[]}:play?{type:'call',play:play.id,tactics:[]}:{type:'auto'});
+  }
+ }
+ assert.ok(found>=3,`coach-called 4th-down setups exercised: ${found}`);assert.ok(staff>0);
+ assert.equal(B.lastCallRecap({log:[],user:'home'}),null);assert.equal(B.lastCallRecap(null),null);
+});
