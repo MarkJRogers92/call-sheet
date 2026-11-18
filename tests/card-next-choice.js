@@ -59,11 +59,18 @@ test('film notes require an actual defensive family counter, including old banke
 });
 
 test('postgame offers a useful earned card once; it persists on resume without claiming the pack',async()=>{
-  const e=loadEngine({seed:90451,fullRuntime:true});e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
-  const host=globalThis.__callSheetDynasty,CS=globalThis.CallSheet;globalThis.DynastyCardGameDay.enable();
-  e.universe.callSheet.cardStreak=2;
-  const cfg=host.launch(),make=s=>CS.adapter.battleTeam(cfg[s],s===cfg.userSide?P.decksOf(e.universe.callSheet.playbook):null,cfg.program?.[s]);
-  const battle=CS.battle.simulate({home:make('home'),away:make('away'),seed:cfg.seed});battle.user=cfg.userSide;
+  // The milestone requires a third win. Exercise a real winning game with its original Dynasty seed.
+  let fixture;
+  for(let seed=90451;seed<90461&&!fixture;seed++){
+    const e=loadEngine({seed,fullRuntime:true});e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
+    const host=globalThis.__callSheetDynasty,CS=globalThis.CallSheet;globalThis.DynastyCardGameDay.enable();
+    e.universe.callSheet.cardStreak=2;
+    const cfg=host.launch(),make=s=>CS.adapter.battleTeam(cfg[s],s===cfg.userSide?P.decksOf(e.universe.callSheet.playbook):null,cfg.program?.[s]);
+    const battle=CS.battle.simulate({home:make('home'),away:make('away'),seed:cfg.seed});
+    if(battle.final.winner===cfg.userSide){battle.user=cfg.userSide;fixture={e,host,CS,cfg,battle}}
+  }
+  assert.ok(fixture,'a third consecutive win was played');
+  const {e,host,CS,cfg,battle}=fixture;
   host.save({activeBattle:{seed:cfg.seed,battle:CS.battle.save(battle)}});
   const entry={...host,close(){}},frame=postgameFrame(entry),html=frame.get('#modal').innerHTML;
   assert.match(html,/id="equipMilestone"/);assert.match(html,/id="bankPack"/);

@@ -97,7 +97,14 @@ test('an archived final drive reopens with its historical players, hand and cloc
 
 test('a classic overtime drive starts on the final overtime possession',()=>{
   const B=require('../forks/call-sheet/core/battle'),Ro=require('../forks/call-sheet/core/roster');
-  const b=B.simulate({home:Ro.preset('ground'),away:Ro.preset('ground','rival'),seed:'replay9',classicSide:'away'});
+  const E=require('../game-engine-v2');
+  const b=B.create({home:Ro.preset('ground'),away:Ro.preset('ground','rival'),seed:'replay9',mode:'sim',classicSide:'away'});
+  E.startGame(b.game);
+  // Expire a tied regulation game on an ordinary run, then let the battle play overtime.
+  Object.assign(b.game,{period:4,clock:1,elapsed:4*E.QUARTER_SECONDS-1,fieldPosition:25,down:1,distance:10});
+  E.applyScrimmage(b.game,{kind:'rush',yards:1,clock:1});
+  B.advance(b);
+  assert.ok(b.game.ot&&B.archivedDrive(b));
   const record=B.archivedDrive(b),replay=B.replayDrive(record);
   assert.equal(replay.game.ot.possessions,b.game.ot.possessions-1);
   assert.equal(replay.game.fieldPosition,75);
