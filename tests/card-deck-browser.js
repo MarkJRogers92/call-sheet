@@ -56,7 +56,7 @@ async function showOptions(page){
   const preChoice=await page.evaluate(()=>window.CallSheet.battle.save(window.__slice.b));
   await quick.first().focus();await page.keyboard.press('Enter');assert.equal(await quick.first().getAttribute('aria-pressed'),'true');assert.ok(await quick.first().evaluate(el=>el===document.activeElement));
   const pair=await page.locator('.quick-board .call-tactic-note').innerText();assert.match(pair,/Pair with|Keep your Command/,'a selected call explains a pairing or why to save Command');
-  await page.click('#sheetToggle');assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true');assert.ok(await page.locator('#coachingRead .call-tactic-note').isVisible(),'same guidance in the full sheet');assert.match(await page.textContent('#look'),/Opening script: Screen/i);
+  await page.click('#sheetToggle');assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true');assert.ok(await page.locator('#coachingRead .call-tactic-note').isVisible(),'same guidance in the full sheet');assert.match(await page.textContent('#look'),/Opening script: RB Screen\b/);
   assert.equal(await page.evaluate(()=>window.CallSheet.battle.save(window.__slice.b)),preChoice,'picking and inspecting cannot advance a snap');
   await page.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true;window.__slice.go({type:'call',play:'outside_zone',tactics:[]})});
   await page.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);
@@ -92,7 +92,7 @@ async function showOptions(page){
   await dynasty.locator('#clientRail [data-client-tab="dashboard"]').click();await dynasty.locator('#broadcastFeature [data-coach-cards]').click();let frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();
   await frame.waitForFunction(()=>window.__slice&&(document.querySelector('#gotIt')||window.__slice.req));if(await frame.$('#gotIt'))await frame.click('#gotIt');await frame.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);
   assert.equal(await frame.evaluate(()=>window.__slice.b.decks[window.__slice.b.user].off.base[0]),'pa_boot');
-  await frame.click('#sheetToggle');assert.match(await frame.textContent('#look'),/Opening script: Screen/i);
+  await frame.click('#sheetToggle');assert.match(await frame.textContent('#look'),/Opening script: RB Screen\b/);
   const saved=await frame.evaluate(()=>({game:window.__slice.b.game,rng:window.__slice.b.rng}));
   assert.ok(await dynasty.evaluate(()=>window.DynastyCardGameDay.meta().activeBattle));
   // Reopening the iframe reconstructs the screen from the host save, not a fresh kickoff.
