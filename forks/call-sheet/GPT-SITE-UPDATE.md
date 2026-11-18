@@ -72,7 +72,7 @@ Add a README entry in the hosting repo. It must name the game build commit `19e4
 
 - Card regression suites, battle engine (18/18), adapter, game recording, save and integrations: all pass.
 - The full `npm test` passed on the previous round's code (`2d6f13a`). The browser run there: 85 of 89 passed. Three of the four failures were old test bugs that also failed on untouched V15, and they are now fixed. The fourth is a known flake (below).
-- Final full run at `20d60fe` (`npm test` plus all 89 browser tests via `npm run test:browser-all`): **in progress when this was written. See the update at the bottom.**
+- Final full run: see the update at the bottom.
 - **Known flake:** `tests/card-deck-browser.js:100` (does a reopened battle match its save) fails roughly 1 in 3 runs under machine load. It is not a release blocker, but it's open.
 
 ## 6. Release notes (what players will notice)
@@ -98,5 +98,15 @@ Add a README entry in the hosting repo. It must name the game build commit `19e4
 
 Full details: `forks/call-sheet/HANDOFF-GPT.md` (dated Nov 18 sections).
 
-## Update: final verification
-_Pending. Claude will fill this in when the run finishes._
+## Update: final verification (18 November 2026)
+- **`npm test`** at `d27cc9a`, the last build before the layout fix: **passed** (exit 0).
+- **All 89 browser tests, one by one** (`node tools/browser-run.js`) at `d27cc9a`: **88 passed, 1 failed.**
+  - The failure was real: `weekly-desk-browser`. Cards & Deck, as the desk's first row, pushed the week's required action below the first phone screen.
+  - Fixed in `19e450e`, the build commit above: the strip now follows that action.
+- **Re-verified at `19e450e`:**
+  - Browser tests: weekly-desk, first-season-flow, client-shell (20/20), guidance-system, weekly-coaching-loop, card-default, card-played-week and card-reward-locker all pass.
+  - All `tests/card-*.js` run together: 256 passed, 0 failed.
+  - The fix only moves the strip's position in the DOM, so I did not repeat the 25-minute `npm test`.
+- **The known flake** (`card-deck-browser.js:100`) passed in this run.
+
+**Ready to deploy** the build commit above.
