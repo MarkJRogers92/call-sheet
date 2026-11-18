@@ -343,16 +343,12 @@ function holdLook(e){
   const keep=sel.play;
   try{req=B.setGrouping(b,req.side,pair.hold.grouping)||b.pending}catch(err2){err=err2.message;renderHand();return}
   const still=req.options.plays.find(p=>p.id===keep&&!p.blocked);
-  sel={play:still?keep:null,tac:[]};err='';writeSave();setFormation(sitNow(),0);refresh();
+  err='';
+  if(still)retainCallTactics(still);else sel={play:null,tac:[]};
+  writeSave();setFormation(sitNow(),0);refresh();$('#snapBtn')?.focus({preventScroll:true});
 }
 document.addEventListener('click',holdLook);
-function switchSameLook(e){
-  const el=e.target.closest?.('[data-same-look]');
-  if(!el||busy||req?.kind!=='snap')return;
-  const mate=B.sameLookPair(b,req,sel.play)?.mate;
-  if(!mate||mate.reason||mate.id!==el.dataset.sameLook)return;
-  const play=req.options.plays.find(p=>p.id===mate.id);
-  choosePlay(mate.id);
+function retainCallTactics(play){
   let remaining=req.options.command-play.cost;
   const removed=[];
   sel.tac=sel.tac.filter(slot=>{
@@ -362,6 +358,15 @@ function switchSameLook(e){
     remaining-=t.cost;return true;
   });
   if(removed.length)err='Removed from this call: '+removed.join(', ')+'.';
+}
+function switchSameLook(e){
+  const el=e.target.closest?.('[data-same-look]');
+  if(!el||busy||req?.kind!=='snap')return;
+  const mate=B.sameLookPair(b,req,sel.play)?.mate;
+  if(!mate||mate.reason||mate.id!==el.dataset.sameLook)return;
+  const play=req.options.plays.find(p=>p.id===mate.id);
+  choosePlay(mate.id);
+  retainCallTactics(play);
   S.tick(6);refresh();
   document.querySelector('[data-same-look]')?.focus({preventScroll:true});
 }
@@ -437,7 +442,7 @@ function bindAssignment(root){
 }
 function tacticNoteHTML(quick=false){
   if(!sel.play||req?.kind!=='snap')return '';
-  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac,sel.target,b,!!fogSpread());
+  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac,sel.target,b,!!fogSpread(),readMode);
   if(!note)return '<p class="call-tactic-note">Hold Command for the next call.</p>';
   const hand=req.options.tactics,slot=note.selected?sel.tac[0]:hand.find(t=>t.id===note.id)?.slot;
   const rest=sel.tac.slice(1).map(i=>hand.find(t=>t.slot===i)?.card.name).filter(Boolean);
@@ -537,7 +542,7 @@ function renderSide(){
   $('#bFast').onclick=()=>{save.settings.fast=!save.settings.fast;FX.speed=save.settings.fast?.45:1;writeSave();renderSide()};
   $('#bSound').onclick=()=>{save.settings.sound=!save.settings.sound;S.on=save.settings.sound;writeSave();renderSide()};
   $('#bReplay').onclick=()=>{save.settings.replays=save.settings.replays==='all'?'moments':'all';writeSave();renderSide()};
-  $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';save.settings.readMode=readMode;writeSave();renderSide()};
+  $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';save.settings.readMode=readMode;writeSave();refresh()};
   $('#bSim').onclick=()=>{if(busy)return;if(b.guidedDrive?.active){O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false}b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
 }
 
@@ -586,7 +591,7 @@ function blockedSelection(play){
 // Once staff snaps have run since the coach's last call, the ticker no longer shows it: pin one line on the board.
 function pinnedCallHTML(){
   const c=B.lastUserCall(b);if(!c||c.since<1)return'';
-  return`<p class="pinned-call" id="pinnedCall"><span>Your last call${c.since?` · ${c.since} snap${c.since===1?'':'s'} ago`:''}</span> <b>${esc(c.name)} · ${esc(c.result)}</b>${c.summary?` <em class="${c.won?'won':'lost'}">${esc(c.summary)}</em>`:''}</p>`;
+  return`<p class="pinned-call" id="pinnedCall"><span>Your last call${c.since?` · ${c.since} snap${c.since===1?'':'s'} ago`:''}</span> <b>${esc(c.name)} · ${esc(c.result)}</b>${c.summary?` <em class="${c.won?'won':'lost'}">${esc(c.summary)}</em>`:''}</p>${c.defense?`<details class="pinned-call"><summary>Defensive call</summary>${esc(c.defense)}</details>`:''}`;
 }
 function twoDownButton(){
   const on=!!b.snap?.twoDown;
@@ -618,7 +623,7 @@ function quickSheetHTML(view){
     ${guidedDriveHTML()}${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
 }
 function renderQuickHand(h){
-  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req,sel,DYN?.scouting?.confidence));
+  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req,{...sel,read:readMode},DYN?.scouting?.confidence));
   {const story=$('#matchupStory');if(story&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
   for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
     if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
@@ -1050,7 +1055,7 @@ function fourthModal(){
   const last=B.lastCallRecap(b),nth=['','1st','2nd','3rd','4th'][last?.down]||'Last';
   // Keep the coach's own call in view: this modal opens right after it and would otherwise cover the matchup story.
   const story=$('#matchupStory');if(story&&last)story.hidden=true; // the recap now carries it; avoid a ghost behind the scrim
-  const recap=last?`<p class="fourth-last" id="lastCall"><span class="eyebrow">Your ${nth}-down call</span><b>${esc(last.name)} · ${esc(last.result)}</b>${last.summary?`<span class="${last.offWon?'won':'lost'}">${esc(last.summary)}</span>`:''}</p>`:'';
+  const recap=last?`<p class="fourth-last" id="lastCall"><span class="eyebrow">Your ${nth}-down call</span><b>${esc(last.name)} · ${esc(last.result)}</b>${last.summary?`<span class="${last.offWon?'won':'lost'}">${esc(last.summary)}</span>`:''}</p>${last.defense?`<details><summary>Defensive call</summary>${esc(last.defense)}</details>`:''}`:'';
   m.innerHTML=`<div class="mwrap"><p class="big gold">4TH DOWN</p>${recap}<p class="statline">${r.twoDown?'Two-down territory · ':''}${r.situation.distance} to go · staff says <b>${esc(lab[r.recommended]||r.recommended)}</b></p>
     <div>${r.options.map(o=>`<button class="btn ${o===r.recommended?'go':''}" data-o="${o}">${esc(lab[o])}</button>`).join('')}</div></div>`;
   m.classList.add('on');
@@ -1174,8 +1179,8 @@ function finalScreen(){
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
   const swapBtn=m.querySelector('[data-film-swap]');if(swapBtn)swapBtn.onclick=()=>{const swap=lossSwapFor(B.postgameTakeaway(b));if(!swap){swapBtn.remove();return}
-    window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
-  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
+    window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
+  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
   bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
 async function packScreen(won){
@@ -1463,7 +1468,7 @@ function title(){
   m.querySelectorAll('[data-headset]').forEach(input=>input.onchange=()=>updateHeadset(input));
   const p=$('#play');if(p)p.onclick=()=>{S.init();if(save.activeBattle){resumeBattle();return}if(save.world.offseason?.stage==='signing')signingDayScreen();else if(save.world.offseason)seasonEndScreen();else scoutingReport()};
   const ro=$('#rost');if(ro)ro.onclick=rosterView;
-  const v=$('#pbv');if(v)v.onclick=()=>{if(save.activeBattle){resumeBattle();return}window.CallSheet.playbookUI.open(save.playbook,{lineup:save.world?.userLineup,onSave:pb=>{save.playbook=pb;writeSave()}})};
+  const v=$('#pbv');if(v)v.onclick=()=>{if(save.activeBattle){resumeBattle();return}window.CallSheet.playbookUI.open(save.playbook,{team:W.teamFor(save.team,save.playbook,save.world?.userLineup),onSave:pb=>{save.playbook=pb;writeSave()}})};
   const r=$('#reset');if(r)r.onclick=()=>{if(r.dataset.armed!=='1'){r.dataset.armed='1';r.textContent='TAP AGAIN: ERASE THIS DYNASTY';r.style.borderColor='var(--lose)';S.error();return}save={team:null,playbook:P.newPlaybook(),settings:st,combos:[],games:0};writeSave();title()};
 }
 function playbookView(pb,name,progId){

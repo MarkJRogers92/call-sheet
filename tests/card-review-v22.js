@@ -100,3 +100,31 @@ test('deciding moments credit only duels that happened, on the side that won the
   }
   assert.ok(checked>10);
 });
+
+test('a game-winning kick or return never credits the neighboring scrimmage duel',()=>{
+  const score=(home,away)=>({home,away});
+  const scoreEvent=(type,points,after,extra={})=>({type,team:'home',points,state:{score:after},...extra});
+  const snap=(before,after,extras={})=>({
+    type:'snap',offSide:'home',defSide:'away',play:'inside_zone',yards:4,sit:{period:4,down:1,distance:10,score:before},score:after,
+    duels:[{label:'Line surge',offNames:['Guard'],defNames:['Tackle']}],duelResults:[{won:true}],...extras
+  });
+  const tie=score(14,14),ahead=score(17,14);
+  const afterKick={game:{score:ahead,events:[scoreEvent('field_goal',3,ahead)]},log:[snap(tie,tie),snap(ahead,ahead)]};
+  assert.ok(B.decidingMoments(afterKick).every(m=>!m.startsWith('Deciding duel')));
+  const returned=score(21,20);
+  const afterReturn={game:{score:returned,events:[scoreEvent('touchdown',6,score(20,20),{kind:'return'}),scoreEvent('extra_point',1,returned)]},
+    log:[snap(tie,returned,{offSide:'away',defSide:'home',duelResults:[{won:false}]})]};
+  assert.ok(B.decidingMoments(afterReturn).every(m=>!m.startsWith('Deciding duel')));
+  const safety=score(16,14),stop=snap(tie,safety,{offSide:'away',defSide:'home',duelResults:[{won:false}]});
+  const defensive={game:{score:safety,events:[scoreEvent('safety',2,safety)]},log:[stop]};
+  assert.match(B.decidingMoments(defensive)[0],/^Deciding duel: Tackle beat Guard/);
+});
+
+test('film identifies the favored loser and marks canceled defensive adjustments',()=>{
+  const film=B.matchupStory({kind:'run',call:'cover3',offSide:'home',defSide:'away',offTactics:['hurry_up'],defTactics:['spy'],
+    duels:[{key:'G',label:'Gate',offGrade:8,defGrade:7,mods:[{src:'Loaded box',v:-2}],p:.35,
+      offRoles:['RB'],defRoles:['WILL'],offNames:['Runner'],defNames:['Linebacker']}],duelResults:[{won:true}]});
+  assert.match(film.detail,/Linebacker was favored \(65%\)/);
+  assert.match(film.defense,/Hurry-Up canceled/);
+  assert.ok(film.defense.includes(D.TACTICS.spy.name));
+});

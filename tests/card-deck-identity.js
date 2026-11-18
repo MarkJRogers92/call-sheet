@@ -129,3 +129,16 @@ test('third-and-seven draws pair physical copies and use game-day costs and pers
   const withQB=U.thirdDownHands(saved,saved,lineup);
   assert.ok(withQB.every(h=>h.saved.calls.some(c=>c.id==='read_option'&&c.cost===0)));
 });
+
+test('deck comparison uses the next fresh series when postgame personnel still reflect the last snap',()=>{
+  global.DynastyRng=require('../rng');global.CallSheet.battle=require('../forks/call-sheet/core/battle');
+  const team=Ro.preset('ground'),book=P.newPlaybook(),normal=copy(team.lineup);
+  team.packageDepth=team.packageDepth.filter(p=>p.pos!=='WR');
+  team.packageStarters={...team.lineup.off};
+  team.backfield=[normal.off.RB,team.packageDepth.find(p=>p.pos==='RB')];
+  team.lineup.off.SLOT=team.packageDepth.find(p=>p.pos==='TE');
+  team.lineup.off.RB=team.backfield[1];
+  const before=copy(team),fresh=U.thirdDownHands(book,book,normal);
+  assert.deepEqual(U.thirdDownHands(book,book,team.lineup,team),fresh);
+  assert.deepEqual(team,before);
+});

@@ -943,8 +943,8 @@ function comboFor(b,play,call=null){
   return hit?{id:hit.id,name:hit.name,duel:hit.duel,v:hit.v,side:hit.side,reward:hit.reward}:null;
 }
 // Count positive primary completions against this corner, out of the last eight offensive snaps.
-function boundaryOuts(b,side,grouping=b.snap?.grouping||groupingFor(b,side)){
-  const corner=b.teams[other(side)].lineup.def.BCB?.id,wide=b.teams[side].lineup.off.X?.id;
+function boundaryOuts(b,side,grouping=b.snap?.grouping||groupingFor(b,side),wide=b.teams[side].lineup.off.X?.id){
+  const corner=b.teams[other(side)].lineup.def.BCB?.id;
   if(corner==null||wide==null)return 0;
   let count=0,snaps=0;
   for(let i=(b.log?.length||0)-1;i>=0&&snaps<8;i--){
@@ -970,7 +970,8 @@ function setupLook(b,side){
   let elsewhere=null;
   for(const g of Object.keys(GROUPINGS)){
     if(g==='auto'||g===current)continue;
-    const n=boundaryOuts(b,side,g);if(n>outs&&(!elsewhere||n>elsewhere.outs))elsewhere={grouping:g,outs:n,name:GROUPINGS[g]};
+    const lineup=packageLineup(b,side,g);if(!lineup?.X)continue;
+    const n=boundaryOuts(b,side,g,lineup.X.id);if(n>outs&&(!elsewhere||n>elsewhere.outs))elsewhere={grouping:g,outs:n,name:GROUPINGS[g]};
   }
   return{current,name:GROUPINGS[current],outs,elsewhere};
 }
@@ -1387,7 +1388,7 @@ function callReason(req,c){
   return '';
 }
 // Suggest at most one affordable, useful card. A selected card is explained even if a later play change made it a bad fit.
-function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=false){
+function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=false,read='auto'){
   const o=req?.options,p=o?.plays?.find(x=>x.id===playId);
   if(req?.kind!=='snap'||!p||p.blocked)return null;
   const off=req.role==='off',card=p.card||(off?D.PLAYS:D.CALLS)[p.id];
@@ -1395,20 +1396,24 @@ function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=fa
   const play=off?R.targetedPlay(card,primaryTarget,lineup):card;
   // On a live battle without scouting fog, suggest the affordable tactic that moves the public projection most.
   // Hand order is only the fallback, so an information card no longer outranks a tactic that changes the duel.
-  if(b?.game&&off&&!fog&&!selected.length){
-    try{
-      const base=publicRead(b,req,p.id,false,primaryTarget,[]);let best=null;
-      for(const t of o.tactics||[]){
-        const tc=t.card||D.TACTICS[t.id];if(!tc||tc.info||p.cost+t.cost>o.command)continue;
-        if(R.signatureBlocked(tc,lineup)||R.tacticBlocked(tc,play,lineup))continue;
-        const r=publicRead(b,req,p.id,false,primaryTarget,[t.id]);if(!r||!base)continue;
-        const gain=r.u-base.u;if(gain>.25&&(!best||gain>best.gain))best={t,tc,gain,r};
-      }
-      if(best){
-        const pct=x=>Math.round(x*100)+'%',why={seal_block:'An extra block helps win the Gate before the runner cuts.',max_protect:'Extra protection buys the passer time, but leaves one fewer route to finish.'}[best.t.id]||best.tc.text;
-        return{id:best.t.id,name:best.tc.name,cost:best.t.cost,reason:`${why} Projected first down ${pct(base.first)} → ${pct(best.r.first)}.`,selected:false};
-      }
-    }catch(e){}
+  const base=b?.game&&off&&!fog&&!selected.length?publicRead(b,req,p.id,false,primaryTarget,[],read):null;
+  if(base){
+    let best=null;
+    for(const t of o.tactics||[]){
+      const tc=t.card||D.TACTICS[t.id];
+      if(!tc||tc.info||p.cost+t.cost>o.command||R.tacticBlocked(tc,play,lineup))continue;
+      const r=publicRead(b,req,p.id,false,primaryTarget,[t.id],read);
+      const gain=r.u-base.u;
+      if(gain>.25&&(!best||gain>best.gain))best={t,tc,gain,r};
+    }
+    if(best){
+      const pct=x=>Math.round(x*100)+'%',before=base.ev,after=best.r.ev;
+      const why={seal_block:'An extra block helps win the Gate before the runner cuts.',max_protect:'Extra protection buys the passer time, but leaves one fewer route to finish.'}[best.t.id]||best.tc.text;
+      let effect=`Projected yards ${before.yards.toFixed(1)} → ${after.yards.toFixed(1)}.`;
+      if(Math.round(after.first*100)>Math.round(before.first*100))effect=`Projected first down ${pct(before.first)} → ${pct(after.first)}.`;
+      else if(Math.round(after.turnover*100)<Math.round(before.turnover*100))effect=`Projected turnover risk ${pct(before.turnover)} → ${pct(after.turnover)}.`;
+      return{id:best.t.id,name:best.tc.name,cost:best.t.cost,reason:why+' '+effect,selected:false};
+    }
   }
   const l=req.look||{},family=req.offLook?.family,duels=Object.values(play.duels||{});
   const target=duels.find(d=>(d.release||d.separation)&&d.off.includes(play.target));
@@ -1472,9 +1477,9 @@ function sameLookPair(b,req,id){
   const reason=!option?'Outside this hand.':option.blocked||(option.cost>hand.command?'Insufficient Command.':'');
   if(base==='quick_out'||base==='out_and_up'){
     const receiver=line.X?.name||'X',corner=def.BCB?.name||'the boundary corner',look=setupLook(b,side),away=look.elsewhere;
-    const canHold=!!away&&b.pending===req&&!b.snap?.off&&!!packageLineup(b,side,away.grouping);
-    const setup=away?`${corner} saw ${away.outs}/2 quick outs from ${away.name}. This down you are in ${look.name}, so his read of the out starts over. Stay in ${away.name} to keep the setup.`
-      :`Quick outs completed against ${corner} from ${look.name} in your last eight snaps: ${look.outs}/2. ${look.outs===2?'He has seen it twice and may jump it.':'A personnel change resets his read; Quick Out keeps the double move in hand.'}`;
+    const canHold=!!away&&b.pending===req&&!b.snap?.off;
+    const setup=away?`${corner} saw ${away.outs}/2 quick outs from ${away.name}. ${look.outs?`He has seen ${look.outs}/2 from your current ${look.name}.`:`This down you are in ${look.name}, so his read of the out starts over.`}`
+      :`Quick outs completed against ${corner} from ${look.name} in your last eight snaps: ${look.outs}/2. ${look.outs===2?'He has seen it twice and may jump it.':'Counts are separate for each grouping. Quick Out keeps the double move in hand.'}`;
     return {title:'Quick Out / Out-and-Up',read:`${receiver} breaks toward the sideline on both calls. On the double move he plants and goes deep. Watch whether ${corner} drives on his break.`,
       setup,diagrams:['quick_out','out_and_up'],mate:{id:option?.id||mate,name,cost:option?.cost,reason},
       ...(canHold?{hold:{grouping:away.grouping,name:away.name,outs:away.outs}}:{})};
@@ -1548,12 +1553,12 @@ function matchupStory(e){
   const setupEdge=(d.mods||[]).reduce((n,m)=>n+(Number(m.v)||0),0),sign=offWon?1:-1;
   let detail='A favorable matchup improves the odds; it never guarantees the duel.';
   if(ratingEdge!==null){
-    if(sign*ratingEdge>0&&sign*setupEdge<0)detail='The winner’s player-rating advantage overcame an unfavorable setup and situational edges.';
-    else if(sign*(ratingEdge+setupEdge)<0){
+    if(sign*(ratingEdge+setupEdge)<0){
       // Name the favored side: "the other side" read as the opponent to the coach whose player lost.
       const lp=Number.isFinite(d.p)?Math.round(100*(offWon?1-d.p:d.p)):null,who=losers.filter(Boolean)[0]||'The other side';
       detail=`${who} was favored${lp!=null?` (${lp}%)`:''}, but winning it was not guaranteed.`;
     }
+    else if(sign*ratingEdge>0&&sign*setupEdge<0)detail='The winner’s player-rating advantage overcame an unfavorable setup and situational edges.';
     else if(sign*ratingEdge<0&&sign*setupEdge>0)detail='Setup and situational edges helped the lower-rated matchup win.';
     else if(sign*ratingEdge>0)detail='The winner had the player-rating edge in the traits this duel tested.';
   }
@@ -1568,7 +1573,8 @@ function defenseNote(e,d,offWon){
   const tactics=(e.defTactics||[]).map(id=>D.TACTICS[id]?.name).filter(Boolean);
   const swing=(d.mods||[]).filter(m=>(offWon?m.v>0:m.v<0)&&m.src!=='Play design'&&!/[(:]/.test(m.src))
     .sort((a,c)=>Math.abs(c.v)-Math.abs(a.v)).slice(0,2).map(m=>`${m.src} ${m.v>0?'+':'−'}${Math.abs(m.v)}`);
-  return`Defense: ${call.name}${tactics.length?' + '+tactics.join(' + '):''}.${swing.length?` At ${String(d.label).toLowerCase()}: ${swing.join(', ')}.`:''}`;
+  const adjustments=tactics.length&&e.offTactics?.includes('hurry_up')?`. Hurry-Up canceled ${tactics.join(' + ')}`:tactics.length?' + '+tactics.join(' + '):'';
+  return`Defense: ${call.name}${adjustments}.${swing.length?` At ${String(d.label).toLowerCase()}: ${swing.join(', ')}.`:''}`;
 }
 // The call that set up this 4th down, if the coach made it. Only the immediately preceding snap counts: a staff
 // call, penalty or kick in between means the coach's own call is not what led here. Reads the log; never mutates.
@@ -1577,7 +1583,7 @@ function lastCallRecap(b,side=b?.user){
   if(!e||e.type!=='snap'||!e.userCalled||e.offSide!==side||e.penalty||!D.PLAYS[e.play])return null;
   const y=Number(e.yards)||0,story=matchupStory(e);
   const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sacked, ${y} yd`:`${y>0?'+':''}${y} yd`;
-  return{play:e.play,name:D.PLAYS[e.play].name,down:e.sit?.down??null,result,summary:story?.summary||null,offWon:story?story.offWon:null};
+  return{play:e.play,name:D.PLAYS[e.play].name,down:e.sit?.down??null,result,summary:story?.summary||null,defense:story?.defense||null,offWon:story?story.offWon:null};
 }
 // The coach's most recent own call on either side of the ball, and how many snaps have run since. The call board
 // pins it once staff snaps have pushed it out of the ticker. Reads the log; never mutates.
@@ -1589,7 +1595,7 @@ function lastUserCall(b,side=b?.user){
     const off=e.offSide===side,def=off?null:D.CALLS[e.call];if(off?!D.PLAYS[e.play]:!def)return null;
     const y=Number(e.yards)||0,story=matchupStory(e);
     const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sack, ${y} yd`:`${y>0?'+':''}${y} yd`;
-    return{role:off?'off':'def',id:off?e.play:e.call,name:off?D.PLAYS[e.play].name:def.name,result,summary:story?.summary||null,won:story?(off?story.offWon:!story.offWon):null,since};
+    return{role:off?'off':'def',id:off?e.play:e.call,name:off?D.PLAYS[e.play].name:def.name,result,summary:story?.summary||null,defense:story?.defense||null,won:story?(off?story.offWon:!story.offWon):null,since};
   }
   return null;
 }
@@ -1732,7 +1738,7 @@ function adaptationRead(b,req=b?.pending){
 
 // What a call looks like on public information only: the Look the offense sees (confirmed lean only), the players on
 // the field and labeled edges. The same inputs the full-sheet preview uses; the defense's committed call never enters.
-function publicRead(b,req,id,fog,target,tactics=[]){
+function publicRead(b,req,id,fog,target,tactics=[],read='auto'){
   const side=req.side,printed=D.PLAYS[id],def=b?.teams?.[other(side)]?.lineup?.def;
   if(!printed||printed.quickKick||id==='spike'||!def||!b.game||!req.look?.box)return null;
   const off=b.teams[side].lineup.off,play=R.targetedPlay(printed,target,off);
@@ -1743,9 +1749,9 @@ function publicRead(b,req,id,fog,target,tactics=[]){
   }
   const sit=req.situation,lean=req.look.lean?.confirmed?req.look.lean.value:null,call=presumedCall(req.look,true);
   const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off,def,play,...knownEffects(b,play,call),call,
-    offTactics:activeTactics(b,'off',tactics),read:'auto',situation:sit,lean,heat:!!req.look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
+    offTactics:activeTactics(b,'off',tactics),read,situation:sit,lean,heat:!!req.look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
   const ev=R.evaluate(snap,sit);
-  return{u:utility(ev,sit),first:ev.first,gate:snap.duels[0]};
+  return{u:utility(ev,sit),ev,gate:snap.duels[0]};
 }
 // A compact, public-information call sheet. Never evaluate hidden opponent ability or committed cards.
 // It contrasts one call per approach. On a live battle, the representative of each approach and the order follow
@@ -1780,7 +1786,7 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
   const counters=c=>offense&&((lean&&c.punishes===lean&&!(blitz&&needsTime(c)))||(lean==='quick'&&c.id==='vertical_shot'&&!blitz)||((heat||blitz)&&origin(c)==='screen'));
   // Public evaluation, when a live battle is available. Sorting is stable, so hand order breaks ties.
   const fog=!!filmFog(confidence).spread,reads=new Map();
-  if(offense&&b?.game)for(const o of legal){const r=publicRead(b,req,o.id,fog);if(r)reads.set(o.id,r)}
+  if(offense&&b?.game)for(const o of legal){const r=publicRead(b,req,o.id,fog,undefined,[],selection.read);if(r)reads.set(o.id,r)}
   const best=!fog&&reads.size?Math.max(...[...reads.values()].map(r=>r.u)):null;
   const ranked=best!==null?[...legal].sort((x,y)=>(reads.get(y.id)?.u??-99)-(reads.get(x.id)?.u??-99)):legal;
   // A combo set-up must still suit the down: no run set-up on long yardage, and nothing far below the best option.
@@ -1790,6 +1796,10 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
   const chosen=[],families=new Set(),pick=o=>{if(o&&!chosen.includes(o)){chosen.push(o);families.add(catalog[o.id].family)}};
   const setup=c=>offense&&b?.game?comboFor(b,c):null;
   const aims=new Map();
+  const qo=offense&&legal.find(o=>origin(catalog[o.id])==='quick_out');
+  const ou=offense&&legal.find(o=>origin(catalog[o.id])==='out_and_up');
+  const outLook=(qo||ou)&&b?.teams?.[other(req.side)]&&b.game?setupLook(b,req.side):null;
+  const readyShot=ou&&(outLook?.outs===2||outLook?.elsewhere?.outs===2)?ou:null;
   if(twoDown){
     const distance=req.situation.distance,target=Math.max(1,distance-2);
     clue=`Two-down territory. ${distance>2?'Gain '+target+' to leave fourth-and-two or better.':'A short gain can keep fourth down manageable.'} ${clue}`;
@@ -1804,17 +1814,12 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
     const setupOptions=rushScreen?[rushScreen]:available.filter(o=>['run','quick'].includes(catalog[o.id].family));
     add(setupOptions,c=>-Math.abs(gains(c,'success')-target),'Set up fourth down');
     add(available.filter(o=>gains(catalog[o.id],'success')>=distance),c=>-Math.abs(gains(c,'success')-distance),'Go for the sticks');
-    add(available.filter(o=>catalog[o.id].family==='deep'),c=>gains(c,'explosive'),'Take a shot');
+    if(readyShot&&!aims.has(readyShot.id)){pick(readyShot);aims.set(readyShot.id,'Take a shot')}
+    else add(available.filter(o=>catalog[o.id].family==='deep'),c=>gains(c,'explosive'),'Take a shot');
   }
   if(chosen.length<3)pick(ranked.find(o=>counters(catalog[o.id]))||ranked.find(o=>setup(catalog[o.id])&&fits(o)));
   // Quick Out / Out-and-Up: the setup and the payoff stay in reach, with the corner's count in the detail.
-  let outLook=null;
-  if(offense&&b?.game&&b.teams?.[other(req.side)]){
-    const qo=legal.find(o=>origin(catalog[o.id])==='quick_out'),ou=legal.find(o=>origin(catalog[o.id])==='out_and_up');
-    if(ou){try{outLook=setupLook(b,req.side)}catch(e){outLook=null}}
-    // The payoff stays in reach whenever the corner has seen two, here or in the personnel the coach can return to.
-    if(outLook&&chosen.length<3){if(outLook.outs>=2||outLook.elsewhere?.outs>=2)pick(ou);else if(qo)pick(qo)}
-  }
+  if(outLook&&chosen.length<3)pick(readyShot||qo);
   if(chosen.length<3)pick(legal.find(o=>o.id===req.options?.openingScript));
   // Prefer one call per family; do not turn a hand full of one family into nonexistent alternatives.
   for(const o of ranked)if(chosen.length<3&&!families.has(catalog[o.id].family))pick(o);
@@ -1843,7 +1848,7 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
         const corner=b.teams[other(req.side)].lineup.def.BCB?.name||'The corner',away=outLook.elsewhere;
         detail=origin(c)==='quick_out'?`Setup: ${corner} has seen ${outLook.outs}/2 quick outs from ${outLook.name}.${away?` He saw ${away.outs} from ${away.name}.`:''}`
           :outLook.outs>=2?`${corner} has seen two quick outs from ${outLook.name}; he may jump the break.`
-          :away?`${corner} saw ${away.outs}/2 from ${away.name}; in ${outLook.name} his read starts over.`:`${corner} has seen ${outLook.outs}/2 quick outs; the double move works best after two.`;
+          :away?`${corner} saw ${away.outs}/2 from ${away.name}; ${outLook.outs?`he has seen ${outLook.outs}/2 from your current ${outLook.name}.`:`in ${outLook.name} his read starts over.`}`:`${corner} has seen ${outLook.outs}/2 quick outs; the double move works best after two.`;
       }
       else if(combo)detail=`${combo.name} ready: ${names(c.duels?.[combo.duel]?.off?.slice(0,1),actor)} gets help on ${String(c.duels?.[combo.duel]?.label||'the matchup').toLowerCase()}.`;
     }else if(c.pressure>0)detail=`Send ${names(['RUSH'],'your edge rusher')}; if they pass, rush the pocket. A screen can slip behind it.`;
@@ -1853,7 +1858,7 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
     // The duel the call has to win first, with both named players and the public chip.
     const paired=(req.options.tactics||[]).filter(t=>selection.tac?.includes(t.slot)).map(t=>t.id);
     const customized=selection.play===o.id&&(selection.target||paired.length)&&reads.has(o.id);
-    const g=(customized?publicRead(b,req,o.id,fog,selection.target,paired):reads.get(o.id))?.gate;
+    const g=(customized?publicRead(b,req,o.id,fog,selection.target,paired,selection.read):reads.get(o.id))?.gate;
     const o1=g?.offNames?.find(Boolean),d1=g?.defNames?.find(Boolean);
     const matchup=g&&o1&&d1?{label:g.label,offense:o1,defense:d1,chip:g.chip}:null;
     return{id:o.id,label:c.name,detail:aims.has(o.id)?aims.get(o.id)+'. '+detail:detail,...(matchup?{matchup}:{})};
@@ -1865,8 +1870,8 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
 // Duel moments for the box score: the duel that decided the game (the snap where the winner took the lead for good) and
 // up to two more swings (takeaways and the longest plays). Plain sentences, named players, no hidden numbers.
 function decidingMoments(b){
-  const snaps=b.log.filter(e=>e.type==='snap'&&e.duels&&e.duelResults&&e.score),fs=b.game.score;if(!snaps.length||fs.home===fs.away)return[];
-  const winner=fs.home>fs.away?'home':'away',lead=sc=>Math.sign((sc?.home||0)-(sc?.away||0))*(winner==='home'?1:-1);
+  const snaps=b.log.filter(e=>e.type==='snap'&&e.category!=='kick'&&e.duels&&e.duelResults&&e.score),fs=b.game.score;if(!snaps.length||fs.home===fs.away)return[];
+  const winner=fs.home>fs.away?'home':'away',opponent=other(winner);
   const q=p=>p>4?'OT':`Q${p}`,dd=s=>s.sit?.down?`${s.sit.down}${['th','st','nd','rd'][s.sit.down]||'th'} & ${s.sit.distance}`:'';
   // Credit the side that won the snap: a takeaway, or any snap the defense won for the eventual winner (a safety,
   // a stop), credits a defender's won duel; otherwise the offense's. Only reached duels count: every duel is rolled,
@@ -1878,11 +1883,20 @@ function decidingMoments(b){
     if(!w||!l)return null;
     return`${why}: ${w} beat ${l} on ${best.d.label.toLowerCase()} (${q(s.sit.period)}${dd(s)?`, ${dd(s)}`:''}, ${D.PLAYS[s.play]?.name||s.play}).`;
   };
-  let decider=null;for(let i=0;i<snaps.length;i++){const before=i?snaps[i-1].score:{home:0,away:0};if(lead(snaps[i].score)>0&&lead(before)<=0)decider=snaps[i]}
+  // A between-snap kick, kickoff return or OT shootout can take the lead for good.
+  // Only credit a scrimmage duel when that score actually came from scrimmage.
+  const goAhead=b.game.events?.findLast(e=>{
+    if(e.team!==winner||!(e.points>0)||!e.state?.score)return false;
+    const lead=e.state.score[winner]-e.state.score[opponent];
+    return lead>0&&lead<=e.points;
+  });
+  const scrimmageScore=goAhead?.type==='safety'||(goAhead?.type==='touchdown'&&goAhead.kind!=='return');
+  const decisivePoints=goAhead?.state.score[winner];
+  const decider=scrimmageScore&&snaps.find(s=>s.sit?.score?.[winner]<decisivePoints&&s.score[winner]>=decisivePoints);
   const out=[],used=new Set();
   if(decider){const t=line(decider,'Deciding duel',!!decider.turnover||decider.offSide!==winner);if(t){out.push(t);used.add(decider)}}
   // The lead can change on a field goal or a return, which is not a snap: then the winner's biggest play turned it.
-  if(!out.length){const big=snaps.filter(x=>x.offSide===winner&&!x.turnover).sort((a,c)=>(c.yards||0)-(a.yards||0))[0];const t=big&&line(big,'Turning point');if(t){out.push(t);used.add(big)}}
+  if(!out.length){const big=snaps.filter(x=>x.offSide===winner&&!x.turnover&&x.yards>0).sort((a,c)=>(c.yards||0)-(a.yards||0))[0];const t=big&&line(big,'Turning point');if(t){out.push(t);used.add(big)}}
   const swings=snaps.filter(s=>!used.has(s)&&(s.turnover||Math.abs(s.yards||0)>=25)).sort((a,c)=>(c.turnover?100:0)+Math.abs(c.yards||0)-((a.turnover?100:0)+Math.abs(a.yards||0))).slice(0,2);
   for(const s of swings){const t=line(s,s.turnover==='interception'?'Interception':s.turnover==='fumble'?'Fumble':s.turnover?'Fourth-down stop':'Big play');if(t)out.push(t)}
   return out.slice(0,3);
@@ -1937,5 +1951,5 @@ function duelTally(b){
   }
   return out;
 }
-return{setupLook,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

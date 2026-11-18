@@ -9,7 +9,13 @@ module.exports=async function exerciseCoachingChoices(){
     const until=Date.now()+12000;
     while(!check()){if(Date.now()>until)throw new Error('Timed out: '+check);await new Promise(r=>setTimeout(r,30))}
   };
-  click('[data-team]');click('#pbv');click('[data-hand-test]');
+  click('[data-team]');
+  click('.headset-options summary');
+  const readOption='[data-headset="readOption"]';
+  ensure(!find(readOption).checked,'QB handles reads by default');
+  click(readOption);
+  ensure(slice.save().settings.headset.readOption,'Coach opts in before resuming the saved drive');
+  click('#pbv');click('[data-hand-test]');
   const summaries=()=>[...document.querySelectorAll('#de-hand-report details')];
   ensure(summaries().length===10,'Ten hands before editing');
   const before=summaries().map(el=>el.textContent);
@@ -23,7 +29,7 @@ module.exports=async function exerciseCoachingChoices(){
   const start=(down,distance)=>{
     const home=R.preset('ground');home.decks=P.decksOf(P.newPlaybook());
     home.decks.off.openingScript='out_and_up';home.decks.off.base[0]='read_option';
-    const b=B.create({home,away:R.preset('tempo'),user:'home',mode:'snap',control:'both',seed:'v21:1',headset:{readOption:true}});
+    const b=B.create({home,away:R.preset('tempo'),user:'home',mode:'snap',control:'both',seed:'v21:1'});
     window.DynastyGameEngineV2.startGame(b.game);
     Object.assign(b.game,{down,distance,fieldPosition:25,possession:'home'});B.advance(b);
     slice.save().activeBattle={seed:b.seed,battle:B.save(b)};
@@ -49,6 +55,10 @@ module.exports=async function exerciseCoachingChoices(){
   select('quick_out');ensure(find('.same-look')?.textContent.includes('2/2'),'Both completed outs visible');
   click('[data-same-look="out_and_up"]');await finishCall();
   const film=slice.b.log.find(e=>e.play==='out_and_up');
-  ensure(film?.cornerStep?.outs===2&&/drove on the out|stayed over the top/.test(film.text),'Film records the corner’s first step');
+  ensure(film?.cornerStep?.outs===2,'Film preserves both completed outs');
+  const protectedQB=film.duelResults[0].won;
+  ensure(film.cornerStep.reached===protectedQB,'Film respects the protection duel');
+  const cornerRead=/drove on the out|stayed over the top/.test(film.text);
+  ensure(protectedQB?cornerRead:!cornerRead&&/before the route developed/i.test(film.text),'Film describes the route only if the pocket holds');
   return film.text;
 };

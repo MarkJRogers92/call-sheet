@@ -258,3 +258,33 @@ test('earlier books receive one stored Out-and-Up without changing a customized 
   assert.equal(JSON.stringify(pb.off),before);
   assert.ok(P.POOL.some(c=>c.id==='out_and_up'));
 });
+
+test('Quick Calls retain a prepared double move in two-down territory and show each grouping’s own count',()=>{
+  const P=require('../forks/call-sheet/core/packs'),book=P.newPlaybook();
+  P.setOpeningScript(book,'out_and_up');
+  const b=B.create({home:{...Ro.preset('aerial'),decks:P.decksOf(book)},away:Ro.preset('tempo'),user:'home',control:'both',mode:'snap',seed:'route-57'});
+  B.advance(b);B.setGrouping(b,'home','11');
+  for(let i=0;i<2;i++)B.submit(b,{type:'call',play:'quick_out',read:'primary',tactics:[]});
+  const catches=b.log.filter(e=>e.play==='quick_out'&&e.completed);
+  assert.equal(catches.length,2);
+  // One completion registered in the spread as well. The two looks have independent counts.
+  b.log.push({...catches[1],grouping:'10'});
+  Object.assign(b.game,{down:3,distance:8});B.setGrouping(b,'home','auto');
+  B.submit(b,{type:'two_down',active:true});
+  assert.ok(B.snapDecisions(b).choices.some(c=>c.id==='out_and_up'));
+  const pair=B.sameLookPair(b,b.pending,'out_and_up');
+  assert.equal(pair.hold.grouping,'11');assert.match(pair.setup,/1\/2 from your current 10/);
+  B.setGrouping(b,'home',pair.hold.grouping);
+  B.submit(b,{type:'call',play:'out_and_up',read:'primary',tactics:[]});
+  assert.equal(b.log.find(e=>e.play==='out_and_up').cornerStep.outs,2);
+});
+
+test('Quick Calls never recommend holding a grouping that cannot be fielded',()=>{
+  const b=opening(),side='home',line=b.teams.home.lineup.off;
+  const catchInTwelve={type:'snap',offSide:side,grouping:'12',play:'quick_out',sit:{period:1},
+    lineups:{off:{X:line.X.id},def:{BCB:b.teams.away.lineup.def.BCB.id}},completed:true,yards:5,participants:{target:'X'}};
+  b.log.push(catchInTwelve,catchInTwelve);
+  b.teams.home.packageDepth=[];
+  assert.equal(B.packageLineup(b,side,'12'),null);
+  assert.equal(B.setupLook(b,side).elsewhere,null);
+});

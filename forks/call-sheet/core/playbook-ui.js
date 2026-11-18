@@ -160,11 +160,12 @@ function thirdDownHands(saved,draft,lineup,team=null){
   const call=D.CALLS.cover3,command=2,projections=new Map();
   // Dress the personnel Auto uses on this down in a real game (four wide on 3rd & 7 when depth allows), so plays the
   // game would block there are not counted and the package's own edges apply. Without depth, the game stays in 11 too.
-  let grouping='11',dressed=lineup;
-  if(team&&(team.packageDepth?.length||team.backfield?.length)&&B.groupingFor&&B.packageLineup){
-    const t={...team,lineup:{off:lineup.off,def:lineup.def}},mini={grouping:{home:'auto'},game:{down:3,distance:7,fieldPosition:45},teams:{home:t}};
-    const mode=B.groupingFor(mini,'home'),pk=mode!=='11'&&B.packageLineup(mini,'home',mode);
-    if(pk){const off={...lineup.off};for(const r of ['X','Z','TE','SLOT']){if(pk[r])off[r]=pk[r];else delete off[r]}dressed={off,def:lineup.def};grouping=mode}
+  const dressed={off:{...lineup.off},def:lineup.def};
+  let grouping='11';
+  if(team){
+    const practiceTeam={...team,lineup:dressed};
+    if(team.packageStarters)practiceTeam.packageStarters={...team.packageStarters};
+    grouping=B.dressPackage({game:{...situation,fieldPosition:situation.field},teams:{home:practiceTeam},box:{home:{plays:2}}},'home');
   }
   function project(play,tactic){
     const key=JSON.stringify([play.id,tactic?.id]);
@@ -213,9 +214,9 @@ function thirdDownHTML(hands){
     return (best?`<b>${name(best.id)}${best.tactic?' + '+name(best.tactic):''}</b> · ${pct(best.chance)} to convert · ${best.cost} Command`:'No affordable call')+
       `<small>Play draws · ${h.wrinkles.map(name).join(', ')||'None'}<br>Tactic draws · ${h.tactics.map(name).join(', ')||'None'}<br>Calls at 30% or better · ${h.calls.filter(c=>c.chance>=.3).map(c=>name(c.id)).join(', ')||'None'}</small>`;
   }
-  const groups={'10':'10 · four wide','12':'12 · two tight ends','21':'21 · two backs'};
+  const personnel=root.CallSheet.battle.GROUPINGS[hands.grouping];
   return `<p>Your offense faces your defense in Cover 3 at your 45. Each sample gives you a fresh hand, two Command left, and up to one tactic per call. Base calls and available player discounts apply.</p>
-    ${groups[hands.grouping]?`<p>Auto personnel on this down: <b>${groups[hands.grouping]}</b>. Plays that need an inline tight end are left out, as in a game.</p>`:''}
+    <p>Auto personnel on this down: <b>${escF(personnel)}</b>.${hands.grouping==='10'?' Plays that need an inline tight end are left out, as in a game.':''}</p>
     <p><b>Hands with two or more calls at 30% or better to convert</b><br>Saved ${count('saved')}/10 · Draft ${count('draft')}/10</p>
     <p>Change a card to replay these draws before saving.</p>
     ${hands.map((h,i)=>`<details><summary>Hand ${i+1} · best conversion ${pct(h.saved.calls[0]?.chance||0)} → ${pct(h.draft.calls[0]?.chance||0)}</summary><p>Saved · ${report(h.saved)}</p><p>Draft · ${report(h.draft)}</p></details>`).join('')}`;
@@ -325,7 +326,7 @@ const EDITOR_CSS=`
 @media(max-width:720px){#deckEditor button,#deckEditor input,#deckEditor select,#deckEditor [data-side],#deckEditor [data-category]{min-height:44px}#deckEditor summary{display:list-item;min-height:44px;align-content:center}}
 @media(max-width:360px){#deckEditor h2{font-size:20px}#deckEditor .de-top{gap:5px}#deckEditor .de-side-nav{padding:1px}#deckEditor .de-side-nav button{padding:5px}#deckEditor .de-body{scrollbar-gutter:auto}}
 `;
-function open(pb,{onSave=()=>{},onClose=()=>{},lineup=null,team=null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);

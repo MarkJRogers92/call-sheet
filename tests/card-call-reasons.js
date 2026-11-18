@@ -134,3 +134,18 @@ test('quick Heat still helps a screen’s Key after a hard count, but does not i
  const v=B.snapDecisions(b,req);assert.match(v.clue,/no extra rush/i);assert.match(v.choices[0].detail,/Key/i);
  assert.doesNotMatch(v.clue+' '+v.choices[0].detail,/rush is (not confirmed|unknown)/i);
 });
+
+test('live tactic projections honor the QB read policy and never inspect the committed defense',t=>{
+ const qHome=Ro.preset('ground');
+ qHome.decks={...D.DEFAULT_DECKS,off:{base:['stick'],wrinkles:[],tactics:['route_adjust','max_protect']}};
+ const game=B.create({home:qHome,away:Ro.preset('tempo'),user:'home',mode:'snap',control:'offense',seed:'tactic-read-policy'});
+ const engine=require('../game-engine-v2');engine.startGame(game.game);game.game.possession='home';
+ const req=B.advance(game),resolver=require('../forks/call-sheet/core/resolver'),build=resolver.buildSnap,inputs=[];
+ t.mock.method(resolver,'buildSnap',ctx=>{inputs.push([ctx.read,ctx.call.id]);return build(ctx)});
+ B.tacticRead(req,'stick',game.teams.home.lineup.off,[],undefined,game,false,'primary');
+ assert.ok(inputs.length>=1);
+ assert.ok(inputs.every(([read,call])=>read==='primary'&&call==='presumed'));
+ inputs.length=0;
+ B.tacticRead(req,'stick',game.teams.home.lineup.off,[],undefined,game,true,'primary');
+ assert.equal(inputs.length,0);
+});
