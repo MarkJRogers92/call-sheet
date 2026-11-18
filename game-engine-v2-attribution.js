@@ -114,12 +114,19 @@ function addTackle(result,defSide,evt,rng,{sack=false}={}){
   }
   return p;
 }
-function addProtectionBlame(result,offSide,rng){
-  const p=weightedPick(result.contexts[offSide].offensiveLine,rng,'protect');
-  if(!p)return;
-  const line=ensureLine(result.lines[offSide],p);
-  line.stats.sacksAllowed++;
-  line.stats.pressuresAllowed++;
+function addProtectionBlame(result,offSide,e,rng){
+  const ctx=result.contexts[offSide],ids=e?.card?.actors?.blockers;
+  // A card protection duel can be shared, or belong to a TE/RB. Split its one
+  // sack allowed rather than inventing an individual loss elsewhere on the line.
+  // Trust the on-field assignment, not nominal position (a WR may be playing TE).
+  const candidates=[...ctx.offensiveLine,...ctx.receivers,...ctx.rushers].map(x=>x.player);
+  const blockers=Array.isArray(ids)?[...new Set(ids.map(String))].map(id=>candidates.find(p=>String(p.id)===id)).filter(Boolean):[];
+  if(!blockers.length){const p=weightedPick(ctx.offensiveLine,rng,'protect');if(p)blockers.push(p)}
+  for(const p of blockers){
+    const line=ensureLine(result.lines[offSide],p);
+    line.stats.sacksAllowed+=1/blockers.length;
+    line.stats.pressuresAllowed+=1/blockers.length;
+  }
 }
 function addSnapToLine(result,offSide){
   for(const x of result.contexts[offSide].offensiveLine){
@@ -225,7 +232,7 @@ function attributeScrimmage(result,e,rng,side,def,team,ctx){
       team.rushAtt++;
       team.rushYds+=yards;
       const sacker=addTackle(result,def,e,rng,{sack:true});
-      addProtectionBlame(result,side,rng);
+      addProtectionBlame(result,side,e,rng);
       result.lastPlay[side]={type:'sack',rusher:qb,qb};
       noteActors(result,e,{qb,sb:sacker});
       return;
@@ -291,7 +298,7 @@ function attributeFumble(result,e,rng,side,def,team,ctx){
   if(isPass&&e.sack){
     r.stats.sacksTaken++;
     team.sacksTaken++;
-    addProtectionBlame(result,side,rng);
+    addProtectionBlame(result,side,e,rng);
   }
   const tackler=addTackle(result,def,e,rng,{sack:!!e.sack});
   if(tackler)ensureLine(result.lines[def],tackler).stats.forcedFumbles++;

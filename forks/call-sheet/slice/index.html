@@ -318,13 +318,14 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .recruit canvas{width:56px;height:56px;border-radius:50%;background:#111;border:2px solid var(--brass)}
 .rs{color:var(--gold);letter-spacing:2px;font-size:15px}.rn{font-family:var(--cond);font-weight:800;font-size:16px}
 .rt{display:flex;gap:3px;flex-wrap:wrap;justify-content:center}.rt i{font-style:normal;font-size:10.5px;padding:1px 6px;border-radius:8px;background:rgba(255,255,255,.08);text-transform:capitalize}
+.recruit-signature{font-size:12px;line-height:1.3;color:var(--ink);border-top:1px solid var(--line);padding-top:5px;margin-top:4px;overflow-wrap:anywhere}
 .rimp{font-size:10.5px;line-height:1.2;color:#9fe3ff;margin-top:3px}
 .signed{position:absolute;top:36%;left:50%;transform:translateX(-50%) rotate(-10deg);font-family:var(--cond);font-weight:800;font-size:28px;color:var(--win);border:4px solid var(--win);border-radius:8px;padding:0 8px;background:rgba(0,0,0,.7);animation:tagflip .3s}
 .howto{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:20px 0}
 .howto div{width:200px;padding:16px;border-radius:16px;background:var(--panel);border:2px solid var(--line);font-family:var(--cond);font-weight:800;font-size:20px;line-height:1.15;display:flex;flex-direction:column;align-items:center;gap:8px}
 .howto b{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;background:var(--gold);color:#1a1200}
 .howto .hi{font-size:44px}
-@media (max-width:600px){.spotLab{width:100%;text-align:center}.recruit{width:30%;min-width:100px}}
+@media (max-width:600px){.spotLab{width:100%;text-align:center}.classRow .recruit{width:calc(50% - 6px);min-width:0;max-width:180px}}
 #fx{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:30}
 #skip{position:absolute;right:12px;bottom:12px;z-index:9;display:none}
 #skip.on{display:block}
@@ -348,11 +349,40 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important;animation-iteration-count:1!important}}
 .duelmath{display:block;font:12px/1.5 system-ui;color:#c9d8e0;margin-top:5px}.cl{height:auto;min-height:280px;padding-top:180px}.cl .mods{position:static;margin-top:8px}.clashmath{position:relative;text-align:center;background:#0b121de8;border-radius:9px;padding:6px}.setup-ready{position:absolute;top:2px;left:3px;right:3px;text-align:center;background:#ffe066;color:#171300;border-radius:5px;font:700 10px system-ui;padding:3px;z-index:5}
 #matchupStory{position:absolute;left:8px;right:8px;bottom:7px;z-index:9;max-width:680px;margin:auto;padding:9px 13px;border:1px solid #dfc365;border-radius:9px;background:#101722ed;color:#f4edda;pointer-events:none;font:14px/1.35 system-ui;text-align:left}#matchupStory strong,#matchupStory span{display:block}#matchupStory span{font-size:12px;color:#d0d7e1;margin-top:3px}#matchupStory[hidden]{display:none}@media(max-width:600px){#matchupStory{font-size:12px;padding:6px 8px}#matchupStory span{font-size:12px}}
+/* The sideline has one decision surface. The full diagrammed sheet remains a view, not a separate hand. */
+#scorebar{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;min-width:0}
+#sheetToggle{border:1px solid #5c6372;border-radius:8px;min-height:44px;padding:6px 12px;font:700 15px var(--cond);color:#e6ebee;background:#17202d}
+#root.quick-snap{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(105px,1fr) auto}
+.quick-snap #side,.quick-snap #look{display:none}
+.quick-snap #stage,.quick-snap #hand{grid-column:1}
+.quick-snap #stage{grid-row:2}
+.quick-snap #hand{grid-row:3;display:block;min-height:0;max-height:63vh;overflow:auto;padding:10px 16px 14px;scrollbar-gutter:auto}
+.quick-board{width:min(980px,100%);margin:auto;padding:14px 18px;border:1px solid #454334;border-radius:14px;background:linear-gradient(135deg,#161e2c,#111720);box-shadow:0 6px 32px #0005}
+.quick-heading,.quick-choice>span:first-child,.quick-actions{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.quick-heading .eyebrow,.quick-choice small{font:800 13px/1.1 var(--cond);letter-spacing:.08em;color:#efcd68;text-transform:uppercase}
+.quick-heading small{font-size:12px;color:#cac6b8}
+#quickClue{font:600 clamp(15px,2vw,20px)/1.3 system-ui;margin:6px 0 12px}
+.quick-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:8px}
+.quick-choice{padding:10px 12px;border:1px solid #505b6d;border-radius:8px;background:#1c2735;min-width:0;text-align:left;align-self:stretch}
+.quick-choice b{font:800 19px/1.1 var(--cond);color:white}.quick-choice small{white-space:nowrap;color:#d2ccbb}
+.quick-choice .trade{display:block;color:#c9d3db;font:13px/1.35 system-ui;margin-top:6px}
+.quick-choice[aria-pressed="true"]{background:#352f20;border-color:#f2c74f;box-shadow:inset 3px 0 #f2c74f}
+.quick-actions{justify-content:flex-start;margin-top:12px}
+.quick-actions .snap{font-size:18px!important;border:1px solid #ffe38b;border-radius:7px;padding:6px 16px!important;min-height:44px;letter-spacing:.035em;box-shadow:none;animation:none}
+.quick-actions .auto{min-height:44px;color:#ced6e0}
+.call-tactic-note{margin:7px 0 0;color:#ced8e1;font:13px/1.35 system-ui;overflow-wrap:anywhere}.call-tactic-note b{color:#f5d783}.call-tactic-note small{font:inherit;color:#afc0d1}
+.quick-error{color:#ffc6ad}.quick-choice:focus-visible,#sheetToggle:focus-visible,.quick-actions button:focus-visible{outline:3px solid #8edaff;outline-offset:2px}
+@media(max-width:600px){
+ #scorebar{flex-wrap:wrap;gap:0 4px;padding:4px}#bug{padding:0}#sheetToggle{font-size:14px;padding:4px 7px}
+ .quick-snap #hand{padding:4px 8px 8px;max-height:67vh}.quick-board{padding:10px}.quick-choices{grid-template-columns:1fr;gap:5px}
+ .quick-choice{padding:7px 9px}.quick-choice b{font-size:17px}.quick-choice .trade{margin-top:2px}.quick-actions{margin-top:6px}#quickClue{margin:5px 0 8px}
+}
+@media(max-height:520px){#root.quick-snap{grid-template-rows:auto minmax(0,1fr) auto}.quick-snap #hand{max-height:65vh}}
 </style>
 </head>
 <body>
 <div id="root">
-  <div id="bug"></div>
+  <header id="scorebar"><div id="bug"></div><button id="sheetToggle" type="button" aria-expanded="false" aria-controls="side hand" hidden>Full call sheet</button></header>
   <aside id="side"></aside>
   <main id="stage">
     <div class="rays" id="rays"></div>
@@ -378,6 +408,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 <script src="../../../game-engine-v2.js"></script>
 <script src="../core/data.js"></script>
 <script src="../core/resolver.js"></script>
+<script src="../../../jersey-numbers.js"></script>
 <script src="../core/roster.js"></script>
 <script src="../core/battle.js"></script>
 <script src="../core/onboarding.js"></script>

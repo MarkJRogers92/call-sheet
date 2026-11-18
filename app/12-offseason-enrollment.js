@@ -12,7 +12,7 @@ function takeLatePlayer(pool,t,pos,controlled){
  cand.sort((a,b)=>((mine&&b.targeted?1:0)-(mine&&a.targeted?1:0))||b.scout-a.scout);
  const r=mine&&cand[0].targeted?cand[0]:pick(cand.slice(0,3));pool.splice(pool.indexOf(r),1);
  const p=playerFromRecruit(r,t,`Unsigned ${r.stars}-star prospect from ${r.highSchool||r.homeRegion} (${r.homeCity||r.homeRegion}, ${r.homeState||''}) · late addition`);
- p.year='FR';p.jerseyNumber=jerseyFor(p.pos,p.portraitSeed);p.redshirtSeason=null;p.lateAddition=true;
+ p.year='FR';p.redshirtSeason=null;p.lateAddition=true;
  return p;
 }
 function offseasonEnrollment(){
@@ -24,12 +24,13 @@ function offseasonEnrollment(){
   signed.forEach(r=>{
    if(t.name===controlled){firstRecruitEvaluation(r,t);snapshotScouting(r,t,'SIGNING_DAY','RECRUITING',true)}
    const p=playerFromRecruit(r,t);
-   p.jerseyNumber=jerseyFor(p.pos,p.portraitSeed);signPlayerPromise(p,r,t);const developmentPromise=(p.promises||[]).find(q=>q.type==='DEVELOPMENT_PLAN'&&q.status==='ACTIVE');if(developmentPromise)p.trainingFocus=developmentPromise.expectedFocus;p.recruitingMemory=r.recruitingMemory;p.primaryRecruiterCoachId=r.primaryRecruiterCoachId||r.recruitingMemory?.primaryRecruiterCoachId||r.recruitingMemory?.recruiterCoachId||null;p.coachRelationships={...(r.coachRelationships||r.recruitingMemory?.coachRelationships||{})};p.coachDeparturePressure=r.coachDeparturePressure?{...r.coachDeparturePressure}:null;p.transferHistory=[];ensurePlayerDevelopment(p,t);t.roster.push(p);
+   signPlayerPromise(p,r,t);const developmentPromise=(p.promises||[]).find(q=>q.type==='DEVELOPMENT_PLAN'&&q.status==='ACTIVE');if(developmentPromise)p.trainingFocus=developmentPromise.expectedFocus;p.recruitingMemory=r.recruitingMemory;p.primaryRecruiterCoachId=r.primaryRecruiterCoachId||r.recruitingMemory?.primaryRecruiterCoachId||r.recruitingMemory?.recruiterCoachId||null;p.coachRelationships={...(r.coachRelationships||r.recruitingMemory?.coachRelationships||{})};p.coachDeparturePressure=r.coachDeparturePressure?{...r.coachDeparturePressure}:null;p.transferHistory=[];ensurePlayerDevelopment(p,t);delete p.jerseyNumber;t.roster.push(p);
    recordRosterMove(t,p,'signees');
    const hs=(universe.highSchools||[]).find(h=>h.id===r.highSchoolId);if(hs)hs.d1Signees=(hs.d1Signees||0)+1;
    t.pipelines[r.homeRegion]=clamp(pipelineStrength(t,r.homeRegion)+gi(1,3),0,100);
   });
   for(const c of Object.keys(t.pipelines))if(!signed.some(r=>r.homeRegion===c))t.pipelines[c]=clamp(t.pipelines[c]-1,5,100);
+  if(signed.length)assignTeamJerseys(t);
   teams[t.id]={signed:signed.length};
  }
  const movement=[];
@@ -51,7 +52,7 @@ function resolveUnplacedPortal(entry){
  if(!from)return null;
  const alreadyHome=from.roster.some(player=>player.id===p.id);
  if(gameplayRandom()<PORTAL_RETURN_CHANCE&&(alreadyHome||from.roster.length<105)){
-  if(!alreadyHome){from.roster.push(p);recordRosterMove(from,p,'portalIn')}
+  if(!alreadyHome){if(from.roster.some(q=>q.jerseyNumber===p.jerseyNumber))delete p.jerseyNumber;from.roster.push(p);assignTeamJerseys(from);recordRosterMove(from,p,'portalIn')}
   p.morale=clamp((p.morale??70)-8,20,99);p.staffTrust=clamp((p.staffTrust??70)-5,0,99);
   return {outcome:'returned',team:from};
  }
@@ -251,8 +252,11 @@ runSpringCamp=calendarSpringCamp;
 runFallCamp=calendarFallCamp;
 // v0.9.1: move the same player object; preserve the reasons and relationships.
 function captureRecruitment(r,t){
- const topFive=universe.teams.map(team=>({id:team.id,score:recruitPitch(team,r)})).sort((a,b)=>b.score-a.score).slice(0,5).map(x=>x.id);
- const recruiter=assignPrimaryRecruiter(r,t,r.coachRelationships?.[r.primaryRecruiterCoachId]),recruiterId=recruiter?.id||t.staff.RC.id;return {season:universe.year,schoolId:t.id,topFiveSchoolIds:topFive,offerSchoolIds:[...new Set([t.id,r.promiseOffer?.schoolId].filter(x=>x!=null))],recruiterCoachId:recruiterId,primaryRecruiterCoachId:recruiterId,relationship:coachRelationshipValue(r,recruiterId,50),coachRelationships:{...(r.coachRelationships||{})},stars:r.stars,homeRegion:r.homeRegion,lat:r.lat,lon:r.lon};
+ const published=r.funnel?.season===universe.year&&Array.isArray(r.funnel.top5)?r.funnel.top5:[];
+ const finalistIds=published.map(name=>universe.teams.find(team=>team.name===name)?.id).filter(id=>id!=null);
+ const topFive=finalistIds.length?[...new Set(finalistIds)].slice(0,5):universe.teams.map(team=>({id:team.id,score:recruitPitch(team,r)})).sort((a,b)=>b.score-a.score).slice(0,5).map(x=>x.id);
+ const actualOffers=universe.teams.filter(team=>{const rec=r.recruitingActions?.[team.id];return rec?.offered&&rec.season===universe.year}).map(team=>team.id);
+ const recruiter=assignPrimaryRecruiter(r,t,r.coachRelationships?.[r.primaryRecruiterCoachId]),recruiterId=recruiter?.id||t.staff.RC.id;return {recruitId:r.id,season:universe.year,schoolId:t.id,topFiveSchoolIds:topFive,offerSchoolIds:[...new Set([t.id,r.promiseOffer?.schoolId,...actualOffers].filter(x=>x!=null))],recruiterCoachId:recruiterId,primaryRecruiterCoachId:recruiterId,relationship:coachRelationshipValue(r,recruiterId,50),coachRelationships:{...(r.coachRelationships||{})},stars:r.stars,homeRegion:r.homeRegion,lat:r.lat,lon:r.lon};
 }
 function transferReason(p){return promisePenalty(p)>0?'BROKEN_PROMISE':(p.stats?.starts||0)<4?'PLAYING_TIME':'FRESH_START'}
 function transferReasonLabel(reason){return {BROKEN_PROMISE:'Broken promise',PLAYING_TIME:'Playing opportunity',FRESH_START:'Fresh start',ROSTER_RELEASE:'Roster release'}[reason]||reason}

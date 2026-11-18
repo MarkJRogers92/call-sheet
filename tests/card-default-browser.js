@@ -1,5 +1,5 @@
 'use strict';
-// In the Call Sheet fork the card game is the game: a new dynasty has a Card Program at the top of This Week, and
+// In the Call Sheet fork the card game is the game: a new dynasty has a deck shortcut at the top of This Week, and
 // Next and Game Day coach this week's game as a card battle, and the classic versions are hidden until card mode is off.
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/chromium-path'),{startNewDynasty}=require('./helpers/start-new-dynasty');
@@ -11,10 +11,10 @@ const shots=process.env.CARD_SHOTS||'';
     const page=await browser.newPage({viewport:{width:1400,height:900}}),errors=[];
     page.on('pageerror',e=>errors.push(String(e)));
     await page.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(page,{cardGame:true});
-    // The matchup and the Card Program lead This Week.
-    // Order: masthead, view tabs, the briefing (with Next), then the matchup and the Card Program, before anything else.
-    const order=await page.evaluate(()=>{const kids=[...document.querySelector('#dashboard').children],i=id=>kids.findIndex(n=>n.id===id);return{brief:kids.findIndex(n=>n.classList.contains('command-center')),feature:i('broadcastFeature'),panel:i('cardProgram'),tour:i('tourOffer')}});
-    assert.ok(order.feature<=order.brief+1&&order.panel===order.feature+1&&(order.tour<0||order.tour>order.panel),`matchup and Card Program lead This Week: ${JSON.stringify(order)}`);
+    // The matchup and the deck shortcut lead This Week.
+    // Order: masthead, view tabs, the briefing (with Next), then the matchup and the deck shortcut, before anything else.
+    const order=await page.evaluate(()=>{const kids=[...document.querySelector('#dashboard').children],i=id=>kids.findIndex(n=>n.id===id);return{brief:kids.findIndex(n=>n.classList.contains('command-center')),feature:i('broadcastFeature'),panel:i('cardDeskLink'),tour:i('tourOffer')}});
+    assert.ok(order.feature<=order.brief+1&&order.panel===order.feature+1&&(order.tour<0||order.tour>order.panel),`matchup and deck shortcut lead This Week: ${JSON.stringify(order)}`);
     while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
     const next=page.locator('#hubAdvance');
     await page.waitForFunction(()=>/^Next: Coach Week 1 (vs|at) /.test(document.querySelector('#hubAdvance')?.textContent||''),null,{timeout:10000});

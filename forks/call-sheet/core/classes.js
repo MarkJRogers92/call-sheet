@@ -68,7 +68,7 @@ function develop(lineup,seed){
   }
   return n?total/n:0;
 }
-function sign(lineup,side,role,recruit){lineup[side][role]=recruit;return recruit}
+function sign(lineup,side,role,recruit){lineup[side][role]=recruit;Ro.assignLineup(lineup,recruit);return recruit}
 // Open spots after graduation, with their prospects.
 function openSpots(lineup,programId,season,winPct){
   const spots=[];

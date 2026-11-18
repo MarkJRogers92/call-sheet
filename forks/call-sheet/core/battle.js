@@ -43,6 +43,8 @@ function create(opts){
   {const fr=DynastyRng.create(`${seed}:form`);b.form={};for(const side of ['home','away'])b.form[side]=Math.round(Math.max(-2*FORM_SIGMA,Math.min(2*FORM_SIGMA,fr.gauss()*FORM_SIGMA))*100)/100}
   for(const side of ['home','away']){
     b.piles[side]={off:freshPiles(b,b.decks[side].off),def:freshPiles(b,b.decks[side].def)};
+    const deck=b.decks[side].off;
+    if(D.canScriptOpener(deck,deck.openingScript))(b.pendingOpeners??={})[side]=deck.openingScript;
     const t=b.teams[side];
     for(const p of [...Object.values(t.lineup.off),...Object.values(t.lineup.def),...(t.backfield||[])])b.personnel[p.id]=p;
   }
@@ -145,9 +147,24 @@ function dealHand(b,side,role){
   const old=b.hands[side];
   if(old){const p=b.piles[side][old.role];p.wrinkle.discard.push(...old.wrinkles);p.tactic.discard.push(...old.tactics)}
   const p=b.piles[side][role];
+  // Pin one existing copy for this team's first offensive series only. A normal draw is byte-for-byte
+  // unchanged if no opener is set, the personnel no longer fit it, or the card would be drawn already.
+  const script={},id=role==='off'&&b.pendingOpeners?.[side];
+  if(id)delete b.pendingOpeners[side];
+  if(id&&D.canScriptOpener(b.decks[side].off,id)){
+    const play=D.PLAYS[id],reason=R.playBlocked(play,b.teams[side].lineup.off,situation(b));
+    if(reason)script.openingScriptMiss=play.name+': '+reason;
+    else{
+      const pile=p.wrinkle.draw,i=pile.lastIndexOf(id),top=pile.length-1;
+      if(i>=0){
+        if(i<pile.length-D.RULES.wrinkleRow)[pile[i],pile[top]]=[pile[top],pile[i]];
+        script.openingScript=id;
+      }
+    }
+  }
   const bonus=role==='off'?(b.bonusCommand?.[side]||0):0;if(bonus)b.bonusCommand[side]=0;
   const staffBonus=b.teams[side]?.coach?.commandBonus?.[role]||0;
-  b.hands[side]={role,wrinkles:drawFrom(b,p.wrinkle,D.RULES.wrinkleRow),tactics:drawFrom(b,p.tactic,D.RULES.tacticHand),command:D.RULES.seriesCommand+bonus+staffBonus,onceUsed:[]};
+  b.hands[side]={role,...script,wrinkles:drawFrom(b,p.wrinkle,D.RULES.wrinkleRow),tactics:drawFrom(b,p.tactic,D.RULES.tacticHand),command:D.RULES.seriesCommand+bonus+staffBonus,onceUsed:[]};
 }
 function halftime(b){
   for(const id of Object.keys(b.workload||{}))b.workload[id]=Math.max(0,b.workload[id]-10);
@@ -185,11 +202,11 @@ function blindLook(b){
   return{box:{value:'normal',confirmed:false},shell:{value:1,confirmed:false},pressure:{value:heatFor(b),confirmed:false},coverage:{value:null,confirmed:false},lean:{value:leanFor(b),confirmed:true},heat:heatFor(b)};
 }
 // What the offense believes the call is: a pseudo-call built only from the Look.
-function presumedCall(look){
+function presumedCall(look,confirmedLeanOnly=false){
   const shell=look.shell.value===0?0:look.shell.value;
   const coverage=look.coverage.confirmed?look.coverage.value:(shell===2?'zone':'man');
   const pressure=look.pressure.confirmed?look.pressure.realLevel:(look.pressure.value?1:0);
-  return{id:'presumed',box:look.box.value,shell,coverage,pressure,counters:look.lean.value?[look.lean.value]:[],look:{}};
+  return{id:'presumed',box:look.box.value,shell,coverage,pressure,counters:look.lean.value&&(!confirmedLeanOnly||look.lean.confirmed)?[look.lean.value]:[],look:{}};
 }
 // What the defense knows of the offense: family if Film Tell confirmed it, else its tendency.
 function offFamilyWeights(b,revealedFamily){
@@ -249,7 +266,7 @@ function offOptions(b,side){
   const plays=[...b.decks[side].off.base.map(id=>({id,base:true})),...(drillOn(b)?(D.DRILL_CARDS||[]).map(id=>({id,base:true,drill:true})):[]),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
     .map(o=>({...o,card:D.PLAYS[o.id],cost:costOf(b,side,D.PLAYS[o.id]),blocked:R.playBlocked(D.PLAYS[o.id],lineup,situation(b))}));
   const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])})).filter(t=>!TIMEOUT_CARDS.includes(t.id)||timeoutsLeft(b,side)>0);
-  return{plays,tactics,command:hand.command};
+  return{plays,tactics,command:hand.command,...(hand.openingScript?{openingScript:hand.openingScript}:{}),...(hand.openingScriptMiss?{openingScriptMiss:hand.openingScriptMiss}:{})};
 }
 function defOptions(b,side){
   const hand=b.hands[side];
@@ -341,7 +358,7 @@ function payAndRemove(b,side,kind,id){
   if(kind==='tactic'){const i=hand.tactics.indexOf(id);if(i<0)throw new Error(`${card.name} is not in hand.`);hand.tactics.splice(i,1);b.piles[side][hand.role].tactic.discard.push(id)}
   else{
     const base=freeCard(b,side,hand.role,id);
-    if(!base){const i=hand.wrinkles.indexOf(id);if(i<0)throw new Error(`${card.name} is not on your call sheet.`);hand.wrinkles.splice(i,1);
+    if(!base){const i=hand.wrinkles.indexOf(id);if(i<0)throw new Error(`${card.name} is not on your call sheet.`);hand.wrinkles.splice(i,1);if(hand.openingScript===id)delete hand.openingScript;
       // Trick plays are exhausted: once per game.
       if(card.trick)(b.exhausted[side]??=[]).push(id);else b.piles[side][hand.role].wrinkle.discard.push(id)}
   }
@@ -625,7 +642,7 @@ function resolveSnap(b){
       ev.kind=out.engineKind;if(typeof out.completed==='boolean')ev.completed=out.completed;if(out.kind==='sack')ev.sack=true;
       const P=out.participants,O=b.teams[off].lineup.off,Df=b.teams[def].lineup.def,id=(lu,r)=>r&&lu[r]?String(lu[r].id):null;
       ev.card={play:play.id,call:call.id,category:out.category,actors:{qb:play.pass?id(O,'QB'):null,carrier:id(O,P.carrier),target:id(O,P.target),
-        sacker:id(Df,P.sacker),tackler:out.kind==='sack'||out.turnover==='interception'?null:id(Df,P.defender),interceptor:out.turnover==='interception'?id(Df,P.defender):null}};break}
+        sacker:id(Df,P.sacker),...(out.kind==='sack'?{blockers:play.duels.G.protect?[...new Set(snap.duels[0].offRoles.map(r=>id(O,r)).filter(Boolean))]:[]}:{}),tackler:out.kind==='sack'||out.turnover==='interception'?null:id(Df,P.defender),interceptor:out.turnover==='interception'?id(Df,P.defender):null}};break}
     b.workload??={};for(const p of [...Object.values(b.teams[off].lineup.off),...Object.values(b.teams[def].lineup.def)])b.workload[p.id]=(b.workload[p.id]||0)+1;
     recordStats(b,off,def,out,before,play);
     result.text=storyLine(b,off,def,play,out,before)+(specialNotes.length?` ${specialNotes.join('. ')}.`:'')+timeoutNote;
@@ -719,8 +736,8 @@ function preview(b,side,choice){
   const role=b.hands[side].role,sit=situation(b);
   if(role==='off'){
     const play=D.PLAYS[choice.play];if(!play)return null;
-    const call=presumedCall(b.snap.look);
-    const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off:b.teams[side].lineup.off,def:b.teams[other(side)].lineup.def,play,...knownEffects(b,play,call),call,offTactics:choice.tactics||[],situation:sit,lean:leanFor(b),heat:heatFor(b),motionConfirmed:b.snap.motionConfirmed});
+    const call=presumedCall(b.snap.look,true);
+    const snap=R.buildSnap({weather:b.weather,...edgesFor(b,side),off:b.teams[side].lineup.off,def:b.teams[other(side)].lineup.def,play,...knownEffects(b,play,call),call,offTactics:choice.tactics||[],situation:sit,lean:req.look?.lean?.confirmed?req.look.lean.value:null,heat:!!req.look?.heat,motionConfirmed:b.snap.motionConfirmed});
     return{snap,ev:R.evaluate(snap,sit),against:call};
   }
   const call=D.CALLS[choice.play];if(!call)return null;
@@ -730,19 +747,127 @@ function preview(b,side,choice){
     out.push({family:f,weight:w[f],play:id,snap,ev:R.evaluate(snap,sit)})}
   return{vs:out};
 }
+// Check the printed card rule against public facts only. Unknown does not mean false (notably a hidden spy).
+function signatureRead(req,card,play){
+  const m=card.signatureMatchup;if(!m)return null;
+  const facts={},off=req.role==='off';
+  if(off){
+    for(const k of ['box','shell','coverage','pressure'])if(req.look?.[k]?.confirmed)facts[k]=req.look[k].value;
+    facts.origin=play.evolvedFrom||play.upgradeOf||play.id;facts.family=play.family;facts.qbRead=!!play.duels?.[m.duel]?.qbRead;
+  }else if(req.offLook?.family?.confirmed)facts.family=req.offLook.family.value;
+  const matches=when=>{
+    let result=true;
+    for(const [k,v] of Object.entries(when)){
+      if(k==='origin'&&!off&&facts.family&&D.PLAYS[v]?.family!==facts.family)return false;
+      if(!(k in facts))result=null;else if(facts[k]!==v)return false;
+    }
+    return result;
+  };
+  const scope=matches(m.scope),counter=matches(m.counter.when),edge=matches(m.edge.when);
+  if(scope===false)return null;
+  if(scope===true&&counter===true)return{bad:true,text:`${m.label}: ${m.counter.label} gives you −1 here.`};
+  if(scope===true&&edge===true&&counter===false)return{text:`${m.label}: ${m.edge.label} gives you +${m.gain} here.`};
+  return (edge!==false||counter!==false)?{conditional:true,text:'If the matchup fits: '+card.matchupText}:null;
+}
+// One reason tied to this card and public evidence. Never inspect the opponent's committed card or ratings.
+function callReason(req,c){
+  if(req?.kind!=='snap'||!c)return '';
+  const sig=signatureRead(req,c,c);if(sig)return sig.text;
+  const known=k=>req.look?.[k]?.confirmed?req.look[k].value:null;
+  const fam=req.offLook?.family?.confirmed?req.offLook.family.value:null;
+  if(req.role==='def'){
+    if(!fam)return '';
+    if(fam==='run'&&c.box==='loaded')return 'Film shows run. The loaded box makes their first block harder.';
+    if(fam==='run'&&c.box==='light')return 'Film shows run. The light box gives their blockers a head start.';
+    if(c.counters?.includes(fam))return `Film shows ${fam}. This call is built to disrupt their Key duel.`;
+    if(fam==='deep'&&c.shell===2)return 'Film shows a deep pass. Two deep safeties make separation harder.';
+    return '';
+  }
+  if(c.quickKick||c.id==='spike')return '';
+  const box=known('box'),shell=known('shell'),rush=known('pressure'),coverage=known('coverage'),lean=known('lean');
+  const origin=c.evolvedFrom||c.upgradeOf||c.id;
+  if(lean&&c.punishes===lean)return `The ${lean} lean helps this counter at the Key.`;
+  const match=(c.matchups||[]).find(m=>({pressure:rush===true,shell1:shell===1,shell2:shell===2,man:coverage==='man',zone:coverage==='zone',loaded:box==='loaded',light:box==='light'})[m.when]);
+  if(match){
+    const tell={pressure:'rush',shell1:'single-high shell',shell2:'two-high shell',man:'man coverage',zone:'zone coverage',loaded:'loaded box',light:'light box'}[match.when];
+    return `The confirmed ${tell} gives this design ${match.v>0?'help':'trouble'} on ${c.duels[match.duel].label.toLowerCase()}.`;
+  }
+  if(c.family==='run'&&box==='light')return 'The light box helps your blockers at the Gate.';
+  if(c.family==='run'&&box==='loaded')return 'The loaded box gives your blockers a tougher Gate.';
+  if(c.family==='deep'&&shell===2)return 'Two deep safeties make the Key matchup harder.';
+  if(c.family==='deep'&&shell===0)return 'No deep safety helps your receiver at the Key.';
+  if(origin==='pa_boot'&&box==='loaded')return 'Crowded linebackers give the run fake help at the Key.';
+  if(origin==='screen'&&rush===true)return 'The confirmed rush helps the screen at the Gate.';
+  if(c.family==='quick'&&coverage==='man')return 'Tight man coverage makes the release harder at the Gate.';
+  if(rush===true&&Object.values(c.duels||{}).some(d=>d.protect))return 'Confirmed pressure gives your blockers less time to protect the passer.';
+  if(c.family==='deep'&&req.situation?.field>=80)return 'Inside the 20, there is less room to get open deep.';
+  return '';
+}
+// Suggest at most one affordable, useful card. A selected card is explained even if a later play change made it a bad fit.
+function tacticRead(req,playId,lineup={},selected=[]){
+  const o=req?.options,p=o?.plays?.find(x=>x.id===playId);
+  if(req?.kind!=='snap'||!p||p.blocked)return null;
+  const off=req.role==='off',play=p.card||(off?D.PLAYS:D.CALLS)[p.id];
+  if(!play)return null;
+  const l=req.look||{},family=req.offLook?.family,duels=Object.values(play.duels||{});
+  const target=duels.find(d=>(d.release||d.separation)&&d.off.includes(play.target));
+  function reason(t){
+    switch(t.id){
+      case 'seal_block':return 'An extra block helps win the Gate before the runner cuts.';
+      case 'max_protect':return duels.some(d=>d.protect)?'Extra protection buys the passer time, but leaves one fewer route to finish.':'';
+      case 'route_adjust':return target?`Adjust the route for ${target.label.toLowerCase()}${req.info?.includes('motion')?'; Motion has already read the coverage':''}.`:'';
+      case 'motion':return !l.coverage?.confirmed&&(target||play.matchups?.some(m=>['man','zone'].includes(m.when)))?'Send a man across to find out if they follow him.':'';
+      case 'hard_count':return l.pressure?.value&&!l.pressure.confirmed?'Test whether the shown rush is real before committing.':'';
+      case 'check_with_me':case 'audible':return !l.shell?.confirmed&&play.family==='deep'?'Confirm the safeties before taking the deep shot.':'';
+      case 'film_tell':return !family?.confirmed?'Find out whether to defend a run, quick pass, deep shot or counter.':'';
+      case 'identify_protection':return play.pressure&&!req.offLook?.protection?.confirmed?'Check for extra blockers before sending pressure.':'';
+      case 'press':case 'lock':return family?.confirmed&&family.value==='quick'?'Crowd their receivers if the quick throw starts with a release duel.':'';
+      case 'stunt':return family?.confirmed&&family.value==='deep'?'Twist the rushers if the deep route needs protection.':'';
+      case 'timeout_settle':case 'timeout_ice':return req.situation?.down>=3?'Spend a timeout for help on the Key duel this down.':'';
+      default:return '';
+    }
+  }
+  const hand=o.tactics||[],isSelected=selected.length>0;
+  for(const t of (isSelected?selected.map(i=>hand.find(t=>t.slot===i)).filter(Boolean):hand)){
+    const card=t.card||D.TACTICS[t.id];if(!card)continue;
+    const blocked=R.signatureBlocked(card,lineup)||(off&&!card.info&&R.tacticBlocked(card,play,lineup));
+    if(!isSelected&&(blocked||p.cost+t.cost>o.command||play.quickKick||play.id==='spike'))continue;
+    const sig=signatureRead(req,card,play);
+    if(!isSelected&&sig?.bad)continue;
+    let why=blocked||(!sig?.conditional&&sig?.text)||reason(t);
+    if(!why&&card.signature&&off){
+      // Only name a base effect when its actual flag and phase belong to this play.
+      const duel=Object.entries(play.duels||{}).find(([k,d])=>card.effects?.some(e=>e.v>0&&(!e.duel||e.duel===k)&&(e.flag==='run'?play.family==='run':!!d[e.flag])));
+      if(duel)why=`${card.signature.name} gives you help on ${duel[1].label.toLowerCase()}.`;
+    }
+    if(!why&&sig?.conditional&&isSelected)why=sig.text;
+    if(!why&&!isSelected)continue;
+    if(!why&&t.id==='max_protect')why='No protection duel to help. You still lose a receiver: one fewer route at the Finish.';
+    if(!why&&TIMEOUT_CARDS.includes(t.id))why='Spends a timeout but gives no Key bonus on this down.';
+    if(!why)why=t.id==='route_adjust'?'This play has no target release or separation to adjust.':card.text;
+    return{id:t.id,name:card.name,cost:t.cost,reason:why,selected:isSelected};
+  }
+  return null;
+}
 // Coaching cues deliberately accept only the public request, never the hidden call or opponent traits.
 function coachingRead(req,playId){
   if(req?.kind!=='snap')return[];
-  const cues=[],play=D.PLAYS[playId];
+  const cues=[],play=(req.role==='off'?D.PLAYS:D.CALLS)[playId];
+  const fit=callReason(req,play);if(fit)return [play.name+': '+fit];
+  if(play&&req.role==='off'){
+    if(play.quickKick||play.id==='spike')return [play.name+': '+play.text];
+    cues.push(`${play.name}: start with ${play.duels.G.label.toLowerCase()} at the Gate.`);
+  }else if(play)cues.push(`${play.name}: ${play.text}`);
   if(req.role==='off'){
     const l=req.look;
     if(l.lean.confirmed&&l.lean.value)cues.push(`They are leaning on ${l.lean.value}. Look for a play that punishes that lean.`);
     if(l.box.confirmed&&l.box.value==='loaded')cues.push(play?.family==='run'?'Loaded box: your run has a tougher Gate. Consider changing the picture.':'Loaded box: fewer defenders are available behind the front.');
     if(l.box.confirmed&&l.box.value==='light')cues.push('Light box: a run gets help at the Gate.');
-    if(l.pressure.value||l.heat)cues.push(`${l.pressure.confirmed?'Confirmed pressure':l.heat?'Repeated pressure on film':'Pressure shown, not confirmed'}: protection or a screen may help.`);
+    if(l.heat&&l.pressure.confirmed&&!l.pressure.value)cues.push('They rushed often on film, but the current read confirms no extra rush.');
+    else if(l.pressure.value||l.heat)cues.push(`${l.pressure.confirmed?'Confirmed pressure':l.heat?'Repeated pressure on film':'Pressure shown, not confirmed'}: protection or a screen may help.`);
     if(l.shell.confirmed&&l.shell.value===2)cues.push('Two deep safeties: deep routes face a tougher Key duel.');
     if(l.shell.confirmed&&l.shell.value===0)cues.push('No deep safety: a deep shot has help at the Key, if protection holds.');
-    if(!cues.length)cues.push('No clear tell yet. Motion can confirm coverage; an unconfirmed shell may be a disguise.');
+    if(cues.length===(play?1:0))cues.push('No clear tell yet. Motion can confirm coverage; an unconfirmed shell may be a disguise.');
   }else{
     const f=req.offLook?.family;
     if(f?.confirmed)cues.push(`Film confirms ${f.value}. Match your call to that family.`);
@@ -819,6 +944,65 @@ function adaptationRead(b,req=b?.pending){
     detail:lean?`${count>=3&&family===lean?`The last ${count} calls repeated that family. `:''}${req.role==='off'?'A counter can punish the lean, but it still has to win its player matchups.':'A counter may punish your lean. The next call is still unknown.'}`:`That pattern may invite an adjustment. It is film, not confirmation of the next call.`,family:named,confirmed:!!lean,count,counterPlay:counter?.id||null};
 }
 
+// A compact, public-information call sheet. Never evaluate hidden opponent ability or committed cards.
+// The shortlist is a contrast of available approaches, not a ranked prediction of snap outcomes.
+function snapDecisions(b,req=b?.pending){
+  if(req?.kind!=='snap'||!['off','def'].includes(req.role))return null;
+  const offense=req.role==='off',catalog=offense?D.PLAYS:D.CALLS,look=req.look||{};
+  const lean=offense?(look.lean?.confirmed?look.lean.value:null):req.lean;
+  const heat=offense&&!!look.heat,adapt=adaptationRead(b||{},req);
+  const leanLabel={run:'the run',quick:'quick passes',deep:'deep passes'}[lean]||lean;
+  let clue;
+  if(!offense&&req.offLook?.family?.confirmed)clue=`Film confirms ${req.offLook.family.value}. Choose how to defend it.`;
+  else if(lean)clue=offense?`They are leaning on ${leanLabel}. Stay with it or make them play the counter.`:`You are leaning on ${leanLabel}. Watch for a counter; their next call is unknown.`;
+  else if(heat)clue=look.pressure?.confirmed?(look.pressure.value?'Repeated pressure on film, and the rush is confirmed this time.':'They rushed often on film, but this read confirms no extra rush.'):'Repeated pressure on film. The next rush is not confirmed.';
+  else if(adapt)clue=adapt.summary+' '+adapt.detail;
+  else if(offense&&look.box?.confirmed&&look.box.value==='loaded')clue='They’ve loaded the box. Running inside is tougher; a fake can draw the linebackers in.';
+  else if(offense&&look.box?.confirmed&&look.box.value==='light')clue='Light box. There’s room up front if your blockers can clear it.';
+  else if(offense&&look.pressure?.value)clue=look.pressure.confirmed?'Pressure confirmed: protect the quarterback or invite the rush with a screen.':'Pressure shown, not confirmed. A screen risks calling into a bluff.';
+  else if(offense&&look.shell?.confirmed&&look.shell.value===2)clue='Two safeties back. It’s harder to get a receiver behind them.';
+  else if(offense&&look.shell?.confirmed&&look.shell.value===0)clue='No deep safety. A receiver can get behind them if protection holds.';
+  else clue=offense?'No clear tell. An unconfirmed shell may be a disguise.':'No confirmed play family. Use down and distance; their next call is unknown.';
+  const seen=new Set(),legal=(req.options?.plays||[]).filter(o=>{
+    if(!Object.hasOwn(catalog,o.id)||seen.has(o.id)||o.blocked||!Number.isFinite(o.cost)||o.cost>(req.options?.command??0))return false;
+    seen.add(o.id);return true;
+  });
+  const origin=c=>c.evolvedFrom||c.upgradeOf||c.id;
+  const counters=c=>offense&&((lean&&c.punishes===lean)||(lean==='quick'&&c.id==='vertical_shot')||(heat&&origin(c)==='screen'));
+  const chosen=[],families=new Set(),pick=o=>{if(o&&!chosen.includes(o)){chosen.push(o);families.add(catalog[o.id].family)}};
+  const setup=c=>offense&&b?.game?comboFor(b,c):null;
+  pick(legal.find(o=>counters(catalog[o.id]))||legal.find(o=>setup(catalog[o.id])));
+  pick(legal.find(o=>o.id===req.options?.openingScript));
+  // Prefer one call per family; do not turn a hand full of one family into nonexistent alternatives.
+  for(const o of legal)if(chosen.length<3&&!families.has(catalog[o.id].family))pick(o);
+  for(const o of legal)if(chosen.length<2)pick(o);
+  const lineup=b?.teams?.[req.side]?.lineup?.[req.role]||{};
+  const names=(roles,fallback)=>[...new Set((roles||[]).map(r=>lineup[r]?.name).filter(Boolean))].join(' & ')||fallback;
+  const choices=chosen.map(o=>{
+    const c=catalog[o.id],combo=setup(c);let detail;
+    if(offense){
+      const actor=names([c.target||c.carrier],c.pass?'Your receiver':'Your runner');
+      if(c.quickKick)detail=`${b?.teams?.[req.side]?.specialists?.P?.name||'Your punter'} punts; give up possession for field position.`;
+      else if(c.id==='spike')detail=`${names(['QB'],'Your QB')} spikes it to stop the clock. It costs a down.`;
+      else if(c.family==='run')detail=`${actor} carries it. Repeating the run can make them lean in and open up play action.`;
+      else if(c.family==='quick')detail=`Find ${actor} quickly; tight man coverage makes the release harder.`;
+      else if(c.family==='deep')detail=`Look deep for ${actor}; protection must hold, and two safeties limit the shot.`;
+      else if(origin(c)==='screen')detail=`Screen to ${actor}; invite the rush, but risk calling into a bluff.`;
+      else detail=`Use ${actor} off the fake; the setup still needs winning player matchups.`;
+      const fit=callReason(req,c);if(fit)detail=`${actor}: ${fit}`;
+      if(!c.quickKick&&lean&&c.punishes===lean)detail=`Use ${actor} to punish the ${lean} lean; player matchups still decide it.`;
+      else if(lean==='quick'&&c.id==='vertical_shot')detail=`Take a shot to ${actor} against the quick lean; protection must hold.`;
+      else if(heat&&origin(c)==='screen')detail=`Screen to ${actor}: repeated pressure helps at the Key${look.pressure?.confirmed?(look.pressure.value?' and this rush helps at the Gate.':', even with no extra rush now.'):'; the next rush is unknown.'}`;
+      else if(combo)detail=`${combo.name} ready: ${names(c.duels?.[combo.duel]?.off?.slice(0,1),actor)} gets help on ${String(c.duels?.[combo.duel]?.label||'the matchup').toLowerCase()}.`;
+    }else if(c.pressure>0)detail=`Send ${names(['RUSH'],'your edge rusher')}; if they pass, rush the pocket. A screen can slip behind it.`;
+    else if(c.shell===2)detail=`Keep ${names(['FS'],'your safety')} deep; limit deep throws, ${c.box==='light'?'but leave fewer bodies against the run':'but give the passer time'}.`;
+    else detail=`Trust ${names(c.coverage==='man'?['FCB']:['MIKE'],'your coverage unit')} in ${c.coverage}; ${c.coverage==='man'?'if they throw quick, contest the release':'keep coverage numbers'}, but give the passer time.`;
+    if(!offense){const fit=callReason(req,c);if(fit)detail=`${names([c.pressure?'RUSH':c.shell===2?'FS':'MIKE'],'Your defense')}: ${fit}`}
+    return{id:o.id,label:c.name,detail};
+  });
+  return{clue,choices};
+}
+
 // Save/resume: the whole battle is plain data except nothing — it serializes as-is.
 // Duel moments for the box score: the duel that decided the game (the snap where the winner took the lead for good) and
 // up to two more swings (takeaways and the longest plays). Plain sentences, named players, no hidden numbers.
@@ -846,6 +1030,11 @@ function decidingMoments(b){
 function save(b){return JSON.stringify(b)}
 function load(text){
   const b=JSON.parse(text);if(b.version!==VERSION)throw new Error('Unsupported battle version.');
+  // Older mid-snap saves hold a copy of the printed card. Keep the dealt slots and prices, but use
+  // the registered definition the resolver will actually play. Do not deal again or reveal the opponent.
+  const req=b.pending;
+  if(req?.kind==='snap')for(const [pile,catalog] of [['plays',req.role==='off'?D.PLAYS:D.CALLS],['tactics',D.TACTICS]])
+    for(const o of req.options?.[pile]||[])if(Object.hasOwn(catalog,o.id)&&catalog[o.id].signature)o.card=catalog[o.id];
   b.workload??={};b.personnel??={};b.backfieldMode??={home:'auto',away:'auto'};
   for(const t of Object.values(b.teams))for(const p of [...Object.values(t.lineup.off),...Object.values(t.lineup.def),...(t.backfield||[])])b.personnel[p.id]??=p;
   return b;
@@ -875,5 +1064,5 @@ function duelTally(b){
   }
   return out;
 }
-return{VERSION,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead};
+return{VERSION,GROUPINGS,setGrouping,groupingFor,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

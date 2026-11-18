@@ -277,7 +277,8 @@ function placeTransfer(entry,forced=null){
  const history={season:universe.year,fromSchoolId:from.id,toSchoolId:dest.id,fromSchool:from.name,toSchool:dest.name,reason,priorRelationship:match.relationship,coachId:match.coachId,recruiterCoachId:p.recruitingMemory?.recruiterCoachId||null,wasStarter:entry.wasStarter||false};
  p.transferHistory.push(history);p.currentSchoolId=dest.id;p.origin=`Transfer from ${from.name}`;p.morale=clamp(70+gi(-5,12),30,95);p.staffTrust=70;p.promise=null;p.stats=newStats();p.campGrade=null;p.year=CLASS_NAMES[Math.min(3,eligibilityBase(p))]||'SR';
  if(from.roster.some(x=>x.id===p.id))recordRosterMove(from,p,'portalOut');
- from.roster=from.roster.filter(x=>x.id!==p.id);dest.roster.push(p);recordRosterMove(dest,p,'portalIn');
+ from.roster=from.roster.filter(x=>x.id!==p.id);if(dest.roster.some(q=>q.jerseyNumber===p.jerseyNumber)||(dest.retiredNumbers||[]).some(x=>Number(x.number)===p.jerseyNumber))delete p.jerseyNumber;
+ dest.roster.push(p);assignTeamJerseys(dest);recordRosterMove(dest,p,'portalIn');
  promiseState();const order=universe.nextEventId++;
  universe.events.push({id:`EVT_${order}`,season:universe.year,week:universe.week,timestampOrder:order,type:'TRANSFER_COMPLETED',importance:reason==='BROKEN_PROMISE'?65:50,schoolIds:[from.id,dest.id],playerIds:[p.id],coachIds:[history.coachId,history.recruiterCoachId].filter(Boolean),recruitIds:[],gameIds:[],summary:`${p.name}: ${from.name} → ${dest.name}.`,metadata:history});
  return dest;
@@ -356,13 +357,14 @@ function renderStaff(){runRender('staff',renderStaffBoard)}
 const TAB_RENDERERS={dashboard:()=>runRender('dashboard',()=>{}),roster:renderRoster,depth:renderDepth,staff:renderStaff,gamelab:renderGameLab,season:renderSeason,newsletter:renderNewsletter,stats:renderStats,recruiting:renderRecruiting,program:renderProgram,development:renderDevelopment,offseason:renderOffseason,records:renderRecords,history:()=>{renderHistory();if(($('#archiveSearch')?.value||'').length>=2)renderArchiveSearch()}};
 let activeTab='dashboard';
 function renderActiveTab(){(TAB_RENDERERS[activeTab]||(()=>{}))()}
-// One map of the game: these five groups are the sidebar sections and the phone bar, in that order.
+// One map of the game: the groups drive tab visibility and keyboard group shortcuts.
 const TAB_GROUPS=[
  {id:'home',label:'Home',tabs:['dashboard','newsletter']},
  {id:'program',label:'Program',tabs:['program','roster','depth','development','staff','offseason']},
  {id:'recruiting',label:'Recruiting',tabs:['recruiting']},
  {id:'season',label:'Season',tabs:['gamelab','season','stats']},
- {id:'world',label:'World',tabs:['history','records','legacy']}];
+ {id:'world',label:'World',tabs:['history','records','legacy']},
+ {id:'cards',label:'Cards & Deck',tabs:['deckroom','collection']}];
 function groupOf(tab){return TAB_GROUPS.find(g=>g.tabs.includes(tab))||TAB_GROUPS[0]}
 // Selecting a group reveals its tabs and nothing else. A single-tab group is just that tab.
 function showTabGroup(id,{activate=true}={}){

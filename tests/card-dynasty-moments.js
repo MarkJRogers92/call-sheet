@@ -41,11 +41,13 @@ test('a held rivalry trophy plays in that game only',async()=>{
 });
 
 test('a coaching-tree card leaves with its coordinator for his new program',async()=>{
-  const {cg,u,me}=await setup(984),pb=u.callSheet.playbook;
+  const {cg,u,me,CS}=await setup(984),pb=u.callSheet.playbook;
   me.staff.OC.preferredScheme='Ground Pressure';cg.rewards.scheme();cg.coachDepartures();assert.ok(owns(pb,'counter_trey'));
+  CS.packs.moveCard(pb,'off','wrinkles',pb.reserve.off.wrinkles.indexOf('counter_trey'),true);CS.packs.setOpeningScript(pb,'counter_trey');
   const coach=me.staff.OC,dest=u.teams.find(t=>t.id!==me.id&&t.staff?.OC);
   me.staff.OC={...dest.staff.OC,id:'replacement-oc',preferredScheme:'Multiple'};dest.staff.OC=coach;
   cg.coachDepartures();
+  assert.equal(pb.off.openingScript,undefined,'the departed card cannot silently reactivate when reacquired');
   assert.equal(owns(pb,'counter_trey'),false,'it left the collection');
   assert.ok(u.callSheet.ai[dest.id].off.wrinkles.includes('counter_trey'),'and joined his new program');
   assert.ok(u.callSheet.moments.some(m=>m.text.includes(dest.name)&&/Counter Trey/.test(m.text)));
@@ -59,4 +61,13 @@ test('milestones fill Program History; walk-ons are recognized; the spring game 
   u.offseason={...(u.offseason||{}),phase:'spring'};const before=pb.mastery.inside_zone||0;
   cg.springGame();cg.springGame();
   assert.equal(pb.mastery.inside_zone,before+3,'reps once');assert.equal(u.callSheet.moments.filter(m=>/Spring game/.test(m.text)).length,1);
+});
+
+test('returning a rival card keeps a scripted duplicate, but clears the last copy and base promotions',async()=>{
+  const {cg,u,CS}=await setup(986),pb=u.callSheet.playbook;
+  const returnOne=id=>{pb.borrowed=[{id,year:u.year-1,from:'Rival'}];cg.returnBorrowed()};
+  CS.packs.setOpeningScript(pb,'screen');returnOne('screen');assert.equal(pb.off.openingScript,'screen');
+  returnOne('screen');assert.equal(pb.off.openingScript,undefined);
+  const promoted=pb.off.wrinkles[0];CS.packs.setOpeningScript(pb,promoted);returnOne(pb.off.base[0]);
+  assert.ok(pb.off.base.includes(promoted));assert.equal(pb.off.openingScript,undefined);
 });

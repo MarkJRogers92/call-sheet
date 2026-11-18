@@ -29,13 +29,18 @@ if(save.world&&!save.world.rival){save.world.rival=save.world.order[0];save.worl
 // Signature cards are generated per player, so they're re-registered on load.
 // Saves from before rosters persisted get class years now.
 if(save.world&&!save.world.userLineup){save.world.userLineup=W.freshLineup(save.team);save.world.userRecord={w:0,l:0};save.world.history=[];for(const [id,p] of Object.entries(save.world.programs))p.lineup??=W.freshLineup(id)}
+if(save.world){
+  Ro.refreshUniforms(save.world.userLineup,save.playbook);
+  for(const p of Object.values(save.world.programs))Ro.refreshUniforms(p.lineup,p.playbook);
+  for(const spot of save.world.offseason?.spots||[])for(const p of spot.prospects||[])if(!window.DynastyJerseys.legal(p.pos,p.number))p.number=window.DynastyJerseys.first(p.pos,p.id);
+}
 function registerSignatures(){SG.registerAll(save.playbook);for(const r of save.playbook.ringOfHonor||[])SG.register(r);if(save.world)for(const p of Object.values(save.world.programs))SG.registerAll(p.playbook)}
 registerSignatures();
 // Your collection's print finishes (foil, gold) show on your cards wherever they appear.
 window.SliceCards.finishOf=id=>save.playbook?.finishes?.[id]||null;
 
 // ================================================================ state
-let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode='auto';
+let b=null,req=null,seen=0,busy=false,err='',sel={play:null,tac:[]},readMode='auto',fullSheet=false;
 const userSide=()=>b.user;
 const teamOf=s=>b.teams[s];
 const oppId=()=>W.opponentOf(save.world);
@@ -164,6 +169,11 @@ function gameLine(st){
   if(dfn.length)out.push(dfn.join(' · '));
   return out.join('<br>')||'No stats yet';
 }
+function equippedSignatureHTML(side,role,id){
+  if(side!==b.user)return '';
+  const spec=save.playbook?.signatures?.find(s=>String(s.playerId)===String(id)&&s.role===role),d=spec&&P.cardDef(spec.id);
+  return d?.matchupText?`<div class="tt-notes">When you play <b>${esc(d.name)}</b>: ${esc(d.matchupText)}</div>`:'';
+}
 function showTip(el,ev){
   const team=teamOf(el.dataset.side),p=b.personnel?.[el.dataset.pid]||team.lineup[el.dataset.lineup]?.[el.dataset.role];if(!p)return;
   tipFor=el;let tip=$('#ptip');
@@ -179,6 +189,7 @@ function showTip(el,ev){
     <div class="tt-traits">${traits.map(([t,v])=>`<div class="${strong.has(t)?'key':''}"><span>${t==='iq'?'IQ':esc(t)}</span><i style="--v:${Math.max(0,Math.min(100,fog?v-(v%(fog*5+1)):v))}%"></i><b>${g(v)}</b></div>`).join('')}</div>
     ${(p.cond||[]).length?`<div class="tt-cond">${p.cond.map(c=>`<span class="${c.v>0?'up':'down'}">${c.v>0?'+1':'−1'} ${esc(fog?c.src.replace(/ \(health \d+\)/,''):c.src)}<small>${c.when==='late'?'4th quarter':c.when==='money'?'3rd & 4th down':'every snap'}</small></span>`).join('')}</div>`:''}
     ${D.SIGNATURES[p.archetype]?`<div class="tt-notes">${esc(D.SIGNATURES[p.archetype].text)}</div>`:''}
+    ${equippedSignatureHTML(el.dataset.side,el.dataset.role,p.id)}
     ${notes.length?`<div class="tt-notes">${notes.map(n=>`<div>${esc(n)}</div>`).join('')}</div>`:''}
     ${b.fire[p.id]?'<div class="tt-fire">ON FIRE</div>':''}${el.classList.contains('sig')?'<div class="tt-sig">SIGNATURE CARD</div>':''}
     <div class="tt-line"><span>This game</span>${gameLine(b.players?.[p.id])}</div>${fog?`<div class="tt-fog">Film confidence ${DYN.scouting.confidence}%: grades are ranges</div>`:''}`;
@@ -291,9 +302,16 @@ function readHTML(){
   return`<div class="box"><h3>The read</h3><div class="exp">${avg.toFixed(1)}<small>yds allowed</small></div>
     ${rows.map(v=>`<div class="drow"><span class="k">${Math.round(v.weight*100)}</span><span class="n"><b>If ${esc(v.family)}</b><br>${v.snap.duels.map(d=>`${d.key} <span class="chip ${D.chip(Math.max(-3,Math.min(3,-d.margin)))}" style="font-size:10px;padding:1px 5px">${D.chip(Math.max(-3,Math.min(3,-d.margin)))}</span>`).join(' ')}</span><span class="cond">${v.ev.yards.toFixed(1)}</span></div>`).join('')}</div>`;
 }
+function tacticNoteHTML(quick=false){
+  if(!sel.play||req?.kind!=='snap')return '';
+  const note=B.tacticRead(req,sel.play,teamOf(req.side).lineup[req.role],sel.tac);
+  if(!note)return '<p class="call-tactic-note">No clear pairing. Keep your Command for the next call.</p>';
+  const rest=sel.tac.slice(1).map(i=>req.options.tactics.find(t=>t.slot===i)?.card.name).filter(Boolean);
+  return `<p class="call-tactic-note"><b>${note.selected?'Selected':'Pair with'}: ${esc(note.name)} · ${note.cost} CMD</b> · ${esc(note.reason)}${rest.length?' Also selected: '+rest.map(esc).join(', ')+'.':''}${quick?' <small>Tactics: Full call sheet.</small>':''}</p>`;
+}
 function coachingHTML(){
   const cues=B.coachingRead(req,sel.play);
-  return cues.length?`<div class="box" id="coachingRead"><h3>Coach's read</h3>${cues.map(c=>`<p class="mini">${esc(c)}</p>`).join('')}</div>`:'';
+  return cues.length?`<div class="box" id="coachingRead"><h3>Coach's read</h3>${cues.map(c=>`<p class="mini">${esc(c)}</p>`).join('')}${tacticNoteHTML()}</div>`:'';
 }
 function backfieldHTML(){
   if(req?.kind!=='snap'||req.role!=='off')return'';
@@ -312,9 +330,21 @@ function lastSnapHTML(){
   const outcome=e.penalty?e.penalty.label:e.turnover?e.turnover:e.kind==='inc'?'Incomplete':`${e.yards>0?'+':''}${e.yards} yards`;
   return`<div class="box" id="lastSnap"><h3>Last snap · ${esc(teamOf(e.offSide).short)} offense</h3><div class="mini">${esc(D.PLAYS[e.play]?.name||'')} · ${esc(outcome)}</div><p class="mini">${esc(note.summary)}</p><details><summary>Full breakdown</summary><div class="mini muted">${esc(note.detail)}</div></details></div>`;
 }
+// A setup is evidence only when its modifier affected a duel that was actually played.
+function setupReceipt(e){
+  if(!e||e.penalty||e.category==='kick'||!e.duelResults?.length)return '';
+  for(let i=0;i<(e.duelResults[0].won?e.duelResults.length:1);i++){
+    const d=e.duels?.[i],m=d?.mods?.find(m=>m.src==='Punish the lean'||m.src==='Sitting on it'||m.src==='Blitz-happy defense'||m.src?.startsWith('COMBO: '));
+    if(!m)continue;
+    const setup=m.src==='Punish the lean'?`Counter to the ${e.lean} lean`:m.src==='Sitting on it'?`Defense read the ${e.lean}`:m.src==='Blitz-happy defense'?'Repeated pressure helped the screen':m.src.slice(7);
+    const us=(d.offNames||[]).join(' & '),them=(d.defNames||[]).join(' & ');
+    return `${setup}: ${us||'Offense'} vs ${them||'defense'} · offense ${e.duelResults[i].won?'won':'lost'} the ${String(d.label||'matchup').toLowerCase()}.`;
+  }
+  return '';
+}
 function matchupStoryHTML(e){
   const note=B.matchupStory(e);if(!note)return'';
-  return`<strong>${esc(note.summary)}</strong><span>${esc(fogSpread()?'The duel is the result, not a guarantee of the whole play. Scout them to sharpen your matchup read.':note.detail)}</span>`;
+  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Scout them to sharpen your matchup read.':note.detail))}</span>`;
 }
 function showMatchupStory(e){
   let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
@@ -335,6 +365,7 @@ function takeawayHTML(){
   return`<section class="box" id="filmTakeaway" style="text-align:left"><h3>One takeaway</h3><p>${esc(note.summary)}</p><p class="mini">${esc(note.evidence)}</p><details><summary>Optional adjustment</summary><p class="mini">${esc(note.recommendation)}</p><button class="tbtn" data-film-deck>Review your deck</button><p class="mini">Nothing changes unless you choose and save an adjustment.</p></details></section>`;
 }
 function renderSide(){
+  if(req?.kind==='snap'&&!fullSheet){clearGlow();$('#side').replaceChildren();return}
   const pb=save.playbook;
   const ur=DYN?DYN.record:(save.world.userRecord||pb.record);
   $('#side').innerHTML=guidedDriveHTML()+adaptationHTML()+backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">RECORD <b>${ur.w}-${ur.l}</b>${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
@@ -360,11 +391,13 @@ function renderLook(){
   const el=$('#look');if(!req||req.kind!=='snap'){el.innerHTML='';return}
   const tags=[];
   if(req.role==='off'){
+    const o=req.options,opener=D.PLAYS[o.openingScript];if(opener?.name&&Object.hasOwn(D.PLAYS,o.openingScript))tags.push(['script',`Opening script: ${opener.name}`,true]);
+    if(o.openingScriptMiss)tags.push(['script','Normal draw · '+o.openingScriptMiss,true]);
     const l=req.look,shell=v=>v===0?'NO SAFETY':v===1?'ONE-HIGH':'TWO-HIGH';
     tags.push(['box',`BOX: ${l.box.value}`,l.box.confirmed]);tags.push(['shell',`SHELL: ${shell(l.shell.value)}`,l.shell.confirmed]);
     tags.push(['pressure',`PRESSURE: ${l.pressure.value?'SHOWN':'NONE SHOWN'}`,l.pressure.confirmed]);
     if(l.coverage.confirmed)tags.push(['coverage',`COVERAGE: ${l.coverage.value}`,true]);
-    if(l.lean.value)tags.push(['lean',`LEAN: CHEATING ON THE ${l.lean.value}`,l.lean.confirmed,'lean']);
+    if(l.lean.value&&l.lean.confirmed)tags.push(['lean',`LEAN: ${l.lean.value}`,true,'lean']);
     if(l.heat)tags.push(['heat','🔥 BLITZ-HAPPY',true,'lean']);
   }else{
     const t=req.offTendency,f=req.offLook.family;
@@ -378,9 +411,45 @@ function renderLook(){
 
 // ================================================================ hand
 function selCost(){const o=req.options,p=o.plays.find(x=>x.id===sel.play);return(p?p.cost:0)+sel.tac.reduce((s,i)=>s+(o.tactics.find(t=>t.slot===i)?.cost||0),0)}
+function tacticBlock(t,play){
+  const lineup=teamOf(req.side).lineup[req.role];
+  return R.signatureBlocked(t.card,lineup)||(req.role==='off'&&!t.card.info&&play?R.tacticBlocked(t.card,play.card,lineup):null);
+}
+function blockedSelection(play){
+  return req.options.tactics.find(t=>sel.tac.includes(t.slot)&&tacticBlock(t,play));
+}
+function quickSheetHTML(view){
+  const opt=req.options,selected=opt.plays.find(p=>p.id===sel.play),cost=selCost();
+  const cards=view.choices.map(c=>{
+    const p=opt.plays.find(p=>p.id===c.id);
+    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span><span class="trade">${esc(c.detail)}</span></button>`;
+  }).join('');
+  const opener=opt.plays.find(p=>p.id===opt.openingScript);
+  return `<div class="quick-board">
+    <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
+    <p id="quickClue">${esc(view.clue)}</p>
+    <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
+    ${tacticNoteHTML(true)}
+    <div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
+    ${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
+}
+function renderQuickHand(h){
+  h.innerHTML=quickSheetHTML(B.snapDecisions(b,req));
+  for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
+    if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
+    S.init();sel.play=id;err='';S.tick(6);renderQuickHand(h);
+    if(wasFocused)[...h.querySelectorAll('[data-quick-call]')].find(c=>c.dataset.quickCall===id)?.focus({preventScroll:true});
+  };
+  $('#snapBtn').onclick=snap;
+  $('#autoBtn').onclick=()=>{if(!busy){S.whoosh();go({type:'auto'})}};
+  h.classList.remove('away');
+}
 function renderHand(){
-  const h=$('#hand');
-  if(!req||req.kind!=='snap'){h.classList.add('away');return}
+  const h=$('#hand'),live=req?.kind==='snap';
+  $('#root').classList.toggle('quick-snap',live&&!fullSheet);
+  const toggle=$('#sheetToggle');toggle.hidden=!live;toggle.textContent=fullSheet?'Quick calls':'Full call sheet';toggle.setAttribute('aria-expanded',String(live&&fullSheet));
+  if(!live){h.classList.add('away');return}
+  if(!fullSheet){renderQuickHand(h);return}
   const o=req.options,role=req.role,lean=role==='off'&&req.look.lean.confirmed?req.look.lean.value:null;
   const play=o.plays.find(p=>p.id===sel.play);
   h.innerHTML='';
@@ -396,13 +465,14 @@ function renderHand(){
   const cmd=document.createElement('div');cmd.className='cmd';
   const cost=selCost(),total=Math.max(D.RULES.seriesCommand,o.command);
   let coins='';for(let i=0;i<total;i++){const gone=i>=o.command,spend=!gone&&i>=o.command-cost;coins+=`<span class="coin ${gone?'gone':''} ${spend?'spend':''}"></span>`}
-  const over=cost>o.command,why=play&&play.blocked;
+  const over=cost>o.command,why=play&&(play.blocked||blockedSelection(play));
   cmd.innerHTML=`<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
     <button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
-    const why=R.signatureBlocked(t.card,teamOf(req.side).lineup[role])||(!t.card.info&&role==='off'&&play?R.tacticBlocked(t.card,play.card,teamOf(req.side).lineup.off):null);
-    const el=card(t.id,{cost:t.cost,selected:sel.tac.includes(t.slot),blocked:!!why,why});
+    const why=tacticBlock(t,play),selected=sel.tac.includes(t.slot);
+    const el=card(t.id,{cost:t.cost,selected,blocked:!!why&&!selected,why:selected&&why?'Remove: '+why:why});
+    if(!t.card.info)el.setAttribute('aria-pressed',String(selected));
     const n=o.tactics.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*5}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);
     el.onclick=()=>tacticClick(t,why);fanT.appendChild(el);
   });
@@ -421,8 +491,9 @@ function tacticClick(t,why){
     if(req&&req.kind==='snap'){refresh();return}
     go(undefined);return;
   }
-  if(why){err=why;S.error();renderHand();return}
-  const i=sel.tac.indexOf(t.slot);if(i>=0)sel.tac.splice(i,1);else sel.tac.push(t.slot);err='';S.tick(sel.tac.length*3);refresh();
+  const i=sel.tac.indexOf(t.slot);
+  if(i<0&&why){err=why;S.error();renderHand();return}
+  if(i>=0)sel.tac.splice(i,1);else sel.tac.push(t.slot);err='';S.tick(sel.tac.length*3);refresh();
 }
 function wirePlayCard(el,p){
   let start=null,ghost=null;
@@ -438,20 +509,24 @@ function wirePlayCard(el,p){
     if(wasDrag){if(overStage(e)){sel.play=p.id;snap()}return}
     S.init();sel.play=sel.play===p.id?null:p.id;err='';S.tick(6);refresh();
   });
+  el.addEventListener('click',e=>{if(e.detail!==0||busy||p.blocked)return;sel.play=p.id;err='';refresh();[...$('#hand').querySelectorAll('.card')].find(c=>c.dataset.id===p.id)?.focus({preventScroll:true})});
   el.addEventListener('pointercancel',()=>{if(ghost){ghost.remove();ghost=null;el.style.opacity='';$('#drop').classList.remove('on','hover')}start=null});
 }
 function overStage(e){const r=$('#stage').getBoundingClientRect();return e.clientX>r.left&&e.clientX<r.right&&e.clientY>r.top&&e.clientY<r.bottom-40}
 function snap(){
   if(busy||!sel.play)return;
   const tactics=sel.tac.map(i=>req.options.tactics.find(t=>t.slot===i).id);
+  const blocked=blockedSelection(req.options.plays.find(p=>p.id===sel.play));
+  if(blocked){err='Remove '+blocked.card.name+' in the full sheet or choose a compatible play.';S.error();renderHand();return}
   if(selCost()>req.options.command){err='Not enough Command.';S.error();renderHand();return}
   S.init();go({type:'call',play:sel.play,tactics,...(readMode==='primary'?{read:'primary'}:{})});
 }
 function refresh(){renderLook();renderHand();renderSide()}
+$('#sheetToggle').onclick=()=>{if(busy||req?.kind!=='snap')return;fullSheet=!fullSheet;refresh()};
 
 // ================================================================ flow
 async function go(action){
-  if(busy&&action!==null)return;busy=true;$('#hand').classList.add('away');err='';
+  if(busy&&action!==null)return;busy=true;$('#sheetToggle').hidden=true;$('#hand').classList.add('away');err='';
   try{req=action===undefined||action===null?B.advance(b):B.submit(b,action)}
   catch(e){err=e.message;busy=false;S.error();refresh();return}
   const story=$('#matchupStory');if(story)story.hidden=true;
@@ -634,9 +709,78 @@ function fourthModal(){
 }
 
 // ================================================================ final + pack
+function drawGamePack(won){
+  const opp=b.user==='home'?'away':'home';
+  return P.openPack(save.playbook,{won,rivalry:b.rivalry,stage:DYN?.stage||null,favor:won?DYN?.packFavor:null,favorWhy:DYN?.packFavorWhy,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?HOST.rewardContext().worldTaken:W.takenLegendaries(save.world,save.playbook,'user')});
+}
+function freezeReward(won){
+  const opponent=teamOf(b.user==='home'?'away':'home');
+  return P.freezeGamePack(save.playbook,drawGamePack(won),{key:DYN.seed,year:DYN.season,source:`${DYN.stage?DYN.label:'Week '+DYN.week} vs ${opponent.name}`});
+}
+function breakoutSpec(){
+  const c=b._breakout;return SG.specFor(c.p,{season:DYN?DYN.season:save.world.season,colors:teamOf(b.user).colors,earned:`${c.wins} of ${c.duels} duels won${c.fire?`, caught fire ${c.fire}×`:''} vs ${teamOf(b.user==='home'?'away':'home').short}`});
+}
+// Close the battle and bank the offer in the SAME host save. No currency, automatic pick or week gate.
+function bankAndReturn(){
+  if(!DYN||!b._recorded||b._packPicked||b._closed||!b._gamePack)return;
+  const pb=save.playbook,pack=b._gamePack,locker=pb.gamePacks??=[];
+  if(!locker.some(p=>p.key===pack.key))locker.push(pack);
+  if(b._breakout&&!b._breakoutResolved){
+    const spec=breakoutSpec();
+    if(SG.add(pb,spec).full){
+      (pb.reserveSignatures??=[]).push(spec);SG.register(spec);pb.lastSignatureGame=pb.gamesPlayed;
+      (pb.history??=[]).push({id:spec.id,kind:'signature',side:spec.side});
+    }
+    b._breakoutResolved=true;
+  }
+  b._closed=true;save.activeBattle=null;writeSave();
+  HOST.close(pack.title+' saved. Open it from Collection whenever you like.');
+}
+function bankButton(){
+  return DYN?`<button class="btn" id="bankPack">SAVE PACK FOR LATER &amp; RETURN</button>${b._breakout&&!b._breakoutResolved?`<p class="mini">${esc(b._breakout.p.name)}’s breakout signature will be kept too. No active signature is replaced.</p>`:''}`:'';
+}
+function bindBank(){const button=$('#bankPack');if(button)button.onclick=bankAndReturn}
+
+// Put one earned card to work without sending the coach through the deck builder.
+const gameMilestones=()=>[...(b._programMilestones||[]),...(b._achievements||[])];
+function milestoneOption(){
+  if(b._installedMilestone)return null;
+  const pb=save.playbook;
+  for(const a of gameMilestones()){
+    const d=P.cardDef(a.reward);if(!d)continue;
+    const deck=pb[d.side],pile=D.TACTICS[d.id]?'tactics':'wrinkles';
+    const index=pb.reserve?.[d.side]?.[pile]?.indexOf(d.id)??-1;
+    if(index>=0&&!deck.base.includes(d.id)&&!deck[pile].includes(d.id)&&deck[pile].length<pb.capacity[pile])return{a,d,pile,index};
+  }
+  return null;
+}
+function milestoneHTML(){
+  const awards=gameMilestones();if(!awards.length)return '';
+  const picked=P.cardDef(b._installedMilestone),option=milestoneOption();
+  const featured=option?.a||awards.find(a=>a.reward===picked?.id)||awards[0];
+  const d=P.cardDef(featured.reward);if(!d)return '';
+  const others=awards.filter(a=>a!==featured);
+  return `<section class="box" id="milestoneReward" style="text-align:left"><h3>${esc(featured.name)} · ${esc(d.name)}</h3><p class="mini">${esc(featured.how)}. ${esc(d.text||'')}</p>
+    ${option?`<button type="button" class="tbtn" id="equipMilestone">Add ${esc(d.name)} to next game's deck</button><p class="mini">Leave it in your collection by continuing below.</p>`:`<p class="mini">${[...save.playbook[d.side].base,...save.playbook[d.side].wrinkles,...save.playbook[d.side].tactics].includes(d.id)?'In your deck for next game.':'Earned for your collection.'}</p>`}
+    ${others.length?`<details><summary>Other milestones (${others.length})</summary>${others.map(a=>`<p class="mini">${esc(a.name)} · ${esc(P.cardDef(a.reward)?.name||a.reward)} earned</p>`).join('')}</details>`:''}</section>`;
+}
+function bindMilestone(){
+  const el=$('#equipMilestone');if(!el)return;
+  const offered=milestoneOption();if(!offered)return;
+  el.onclick=()=>{
+    if(b._closed||b._packPicked)return;
+    const o=milestoneOption();if(!o||o.d.id!==offered.d.id){refreshMilestone();return}
+    P.moveCard(save.playbook,o.d.side,o.pile,o.index,true);
+    b._installedMilestone=o.d.id;writeSave();
+    refreshMilestone();
+    $('#openPack')?.focus?.();
+  };
+}
+function refreshMilestone(){const box=$('#milestoneReward');if(box){box.outerHTML=milestoneHTML();bindMilestone()}}
+
 function finalScreen(){
   if(b._packPicked){const over=P.overCapacity(save.playbook);if(over)cutScreen(over);else afterPack();return}
-  $('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
+  $('#sheetToggle').hidden=true;$('#hand').classList.add('away');$('#look').innerHTML='';renderBug();
   const won=b.game.score[b.user]>b.game.score[b.user==='home'?'away':'home'];
   if(DYN&&!b._recorded){
     try{b._saved=HOST.record(JSON.parse(JSON.stringify(b.game)),B.duelTally(b),B.decidingMoments(b))}catch(e){b._saved={ok:false,error:e.message||String(e)}}
@@ -645,10 +789,24 @@ function finalScreen(){
       m.classList.add('on');$('#retryRecord').onclick=()=>finalScreen();$('#leaveUnsaved').onclick=()=>HOST.close();return;
     }
   }
-  if(!b._recorded){b._recorded=true;b._breakout=SG.candidate(b,b.user,save.playbook);save.playbook.record[won?'w':'l']++;save.games++;save.playbook.gamesPlayed=(save.playbook.gamesPlayed||0)+1;
+  if(!b._recorded){
+    // The host awards program/rivalry cards while recording. Adopt that committed inventory before
+    // this frame adds game reps and achievements, so its next snapshot cannot erase the host's awards.
+    if(DYN){
+      const committed=HOST.committedPlaybook();
+      if(committed){
+        const previous=new Set(save.playbook.programCards||[]);
+        b._programMilestones=(committed.programCards||[]).filter(id=>!previous.has(id)).map(reward=>({
+          reward,name:'Program milestone',how:committed.history?.find(h=>h.id===reward&&h.kind==='program')?.why||'Program achievement'
+        }));
+        save.playbook=committed;
+      }
+    }
+    b._recorded=true;b._breakout=SG.candidate(b,b.user,save.playbook);save.playbook.record[won?'w':'l']++;save.games++;save.playbook.gamesPlayed=(save.playbook.gamesPlayed||0)+1;
     if(DYN){for(const [root,n] of Object.entries(DYN.practiceReps||{}))EV.addReps(save.playbook,root,n)}
     else{CL.recordCareers(save.world.userLineup,b.players);const op=save.world.programs[oppId()];if(op?.lineup)CL.recordCareers(op.lineup,b.players);save.pending={won,userTendency:b.tend[b.user]}}
-    b._gained=EV.recordReps(save.playbook,b.log,b.user,b._trainingRates||DYN?.trainingRates||{});b._achievements=P.awardAchievements(save.playbook,b,b.user);writeSave()}
+    b._gained=EV.recordReps(save.playbook,b.log,b.user,b._trainingRates||DYN?.trainingRates||{});b._achievements=P.awardAchievements(save.playbook,b,b.user);if(DYN)b._gamePack=freezeReward(won);writeSave()}
+  if(DYN&&!b._gamePack){b._gamePack=freezeReward(won);writeSave()} // older final, not yet opened
   const top=Object.values(b.players).filter(p=>p.side===b.user).sort((a,c)=>(c.passYds+c.rushYds*1.6+c.recYds*1.6+c.sacks*30+c.intDef*35)-(a.passYds+a.rushYds*1.6+a.recYds*1.6+a.sacks*30+a.intDef*35)).slice(0,3);
   const line=p=>[p.passAtt?`${p.comp}/${p.passAtt} · ${p.passYds} yds · ${p.passTD} TD`:'',p.rushAtt?`${p.rushAtt} car · ${p.rushYds} yds`:'',p.rec?`${p.rec} rec · ${p.recYds} yds`:'',p.sacks?`${p.sacks} sacks`:'',p.intDef?`${p.intDef} INT`:''].filter(Boolean).join(' · ');
   const m=$('#modal');
@@ -658,26 +816,26 @@ function finalScreen(){
     <div style="margin:14px 0">${top.map(p=>`<div class="statline" style="font-size:16px"><b>${esc(p.name)}</b> ${p.role} · ${esc(line(p))}</div>`).join('')}</div>
     ${takeawayHTML()}
     ${b.rivalry?(DYN?`<p class="statline">RIVALRY ${won?'WON':'LOST'}</p>`:`<div class="trophyWrap ${won?'won':''}">${trophyImg()}<p class="statline">${won?`<b>${esc(trophyName())}</b> ${save.world.trophy.holder==='user'?'stays':'comes'} home`:`${esc(specOf(oppId()).short)} keeps <b>${esc(trophyName())}</b>`}</p></div>`):''}
-    ${(b._achievements||[]).map(a=>`<p class="statline">✓ ${esc(a.name)} · ${esc(P.cardDef(a.reward).name)} added to your collection</p>`).join('')}
-    <button class="btn go" id="openPack">${b._breakout?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button></div>`;
+    ${milestoneHTML()}
+    <button class="btn go" id="openPack">${b._breakout&&!b._breakoutResolved?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>${bankButton()}</div>`;
   m.classList.add('on');
   if(won){PT.confetti(220);S.fanfare()}else S.groan();
-  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()}});
-  $('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
+  const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,lineup:teamOf(b.user).lineup,onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
+  bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
 async function packScreen(won){
   S.init();
-  const opp=b.user==='home'?'away':'home';
-  const pack=P.openPack(save.playbook,{won,rivalry:b.rivalry,stage:DYN?.stage||null,favor:won?DYN?.packFavor:null,favorWhy:DYN?.packFavorWhy,seed:DYN?`${DYN.seed}:${save.games}`:`${save.team}:${save.games}`,oppTendency:b.tend[opp],worldTaken:DYN?DYN.worldTaken||[]:W.takenLegendaries(save.world,save.playbook,'user')});
+  const frozen=b._gamePack,pack=frozen?{...frozen,cards:P.gamePackChoices(save.playbook,frozen,HOST.rewardContext().worldTaken)}:drawGamePack(won);
   const post=P.STAGE_PACKS?.[pack.type]||null;
   const pc=pack.type==='title'?['#fff2b0','#8a5a00']:post?['#d8dee9','#2c3448']:pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
   const m=$('#modal');
   m.innerHTML=`<div class="mwrap"><p class="big ${won?'gold':''}" style="font-size:clamp(40px,7vw,80px)">${esc(pack.title.toUpperCase())}</p><p class="statline">${esc(pack.subtitle)}</p>
     <div class="pack" id="pk" style="--pa:${pc[0]};--pb:${pc[1]}"><div class="pt">${post?post.wrap:pack.type==='rivalry'?'RIVALRY':won?'VICTORY':'FILM<br>STUDY'}</div><div class="ps">TAP TO OPEN</div></div>
-    <div class="reveal" id="rv"></div><div id="pkMsg" class="statline"></div><div id="pkBtns"></div></div>`;
+    <div class="reveal" id="rv"></div><div id="pkMsg" class="statline"></div><div id="pkBtns">${bankButton()}</div></div>`;
+  bindBank();
   const pk=$('#pk');
   pk.onclick=async()=>{
-    pk.onclick=null;pk.style.animation='none';pk.querySelector('.ps').textContent='';
+    pk.onclick=null;$('#bankPack')?.remove();pk.style.animation='none';pk.querySelector('.ps').textContent='';
     for(let i=0;i<3;i++){S.rattle(i);await FX.anim(pk,[{transform:'rotate(0)'},{transform:`rotate(${(i+1)*3}deg) scale(${1+i*.03})`},{transform:`rotate(${-(i+1)*3}deg) scale(${1+i*.03})`},{transform:'rotate(0)'}],{duration:240+i*60})}
     S.rip();const r=pk.getBoundingClientRect();
     FX.anim($('#flash'),[{opacity:.9},{opacity:0}],300);PT.burst(r.left+r.width/2,r.top+r.height/2,{n:90,speed:11,colors:won?['#fff','#ffe066','#ffb03c']:['#fff','#9ad8ff','#3fc1ff']});
@@ -688,9 +846,10 @@ async function packScreen(won){
 async function revealCards(pack){
   const rv=$('#rv');rv.innerHTML='';
   // Card backs in your program's colors.
-  const tc=b?.teams?.[b.user]?.colors||[];
+  const tc=b?.teams?.[b.user]?.colors||[],target=DYN?HOST.rewardContext().pursuit:null;
+  const fit=P.packFit(save.playbook,pack.cards,{target,reserveLimit:DYN?500:Infinity});
   const slots=pack.cards.map(c=>{const s=document.createElement('div');s.className='slot';s.innerHTML=`<div class="back" style="${tc[0]?`--tb1:${esc(tc[0])};--tb2:${esc(tc[1]||tc[0])}`:''}">${DYN?esc(teamOf(b.user).short):'CALL<br>SHEET'}</div><div class="front"></div><div class="why"></div>`;
-    s.querySelector('.front').appendChild(card(c.id,{finish:null}));s.querySelector('.why').textContent=c.why||'';rv.appendChild(s);return s});
+    s.querySelector('.front').appendChild(card(c.id,{finish:null}));s.querySelector('.why').textContent=[c.why,target?.missing.includes(c.id)?'For your '+target.name+' album':''].filter(Boolean).join(' · ');rv.appendChild(s);return s});
   for(const [i,s] of slots.entries()){S.whoosh();FX.anim(s,[{transform:'translateY(-300px) rotate(-20deg) scale(.4)',opacity:0},{transform:'none',opacity:1}],{duration:380,easing:'cubic-bezier(.2,1.3,.4,1)'});await FX.wait(120)}
   await FX.wait(300);
   for(const [i,s] of slots.entries()){
@@ -708,19 +867,42 @@ async function revealCards(pack){
     if(c.rarity==='legendary'){PT.burst(cx,cy,{n:160,speed:13,colors:['#ff5a5a','#ffd84d','#72f08a','#3fc1ff','#c07bff','#fff']});PT.confetti(120);await FX.wait(1200);document.getElementById('lg')?.remove();$('#rays').classList.remove('on')}
     await FX.wait(c.rarity==='common'?260:600);
   }
-  $('#pkMsg').innerHTML='PICK <b>ONE</b>. THE REST BURN.';
-  slots.forEach((s,i)=>{s.classList.add('pickable');s.onclick=()=>choose(pack,slots,i)});
+  if(fit){
+    const i=pack.cards.findIndex(c=>c.id===fit.id),tag=slots[i].querySelector('.why'),button=slots[i].querySelector('.front button');
+    tag.dataset.packFit=fit.id;tag.textContent='Coach’s pick';tag.title=fit.reason;
+    button?.setAttribute('aria-label',button.getAttribute('aria-label')+' Coach’s pick: '+fit.reason);
+    $('#pkMsg').innerHTML=`<b>Coach’s pick: ${esc(P.cardDef(fit.id).name)}</b> · ${esc(fit.reason)}<br>Pick any card, then choose where to put it.`;
+  }else $('#pkMsg').textContent='Pick one card, then choose where to put it.';
+  const bar=$('#pkBtns'),limit=DYN?500:Infinity;
+  const preview=i=>{
+    const c=pack.cards[i],name=P.cardDef(c.id).name;
+    slots.forEach((s,j)=>s.querySelector('.front button').setAttribute('aria-pressed',String(i===j)));
+    const wants=c.kind==='upgrade'?['upgrade']:['deck','collection'];
+    $('#pkMsg').innerHTML=`<b>${esc(name)}</b> · ${c.exchangeFor?esc(c.why)+' ':''}${c.kind==='upgrade'?'Replaces the original copy.':'Add it to your deck to draw it in games, or keep it in your collection for later.'}`;
+    bar.innerHTML=wants.map(want=>{
+      const full=P.rewardDestination(save.playbook,c,true,limit,want)==='full',label=want==='upgrade'?'Upgrade '+P.cardDef(c.replaces).name:want==='deck'?(full?'Deck limit reached':'Add to deck'):(full?'Collection limit reached':'Add to collection');
+      return `<button type="button" class="btn" data-pack-destination="${want}"${full?' disabled':''}>${esc(label)}</button>`;
+    }).join('')+bankButton();bindBank();
+    bar.querySelectorAll('[data-pack-destination]').forEach(button=>button.onclick=()=>choose(pack,slots,i,button.dataset.packDestination));
+    (bar.querySelector('[data-pack-destination]:not(:disabled)')||bar.querySelector('#bankPack'))?.focus();
+  };
+  slots.forEach((s,i)=>{s.classList.add('pickable');s.onclick=()=>preview(i)});
+  bar.innerHTML=bankButton();bindBank();
 }
-async function choose(pack,slots,i){
+async function choose(pack,slots,i,want){
+  if(b._packPicked||b._closed||!slots[i].classList.contains('pickable'))return;
+  const dest=P.rewardDestination(save.playbook,pack.cards[i],true,DYN?500:Infinity,want);
+  if(dest==='invalid'||dest==='full')return;
+  $('#pkBtns').innerHTML='';
   slots.forEach(s=>{s.onclick=null;s.classList.remove('pickable')});
   const c=pack.cards[i];S.chime();
   slots[i].classList.add('chosen');
   for(const [j,s] of slots.entries()){if(j===i)continue;s.classList.add('burn');const r=s.getBoundingClientRect();S.burn();PT.embers(r.left+r.width/2,r.top+r.height*.7)}
   await FX.wait(1000);
-  const res=P.applyPick(save.playbook,c);b._packPicked=true;writeSave();
+  const res=P.applyPick(save.playbook,c,{serial:b._gamePack?.serial??save.playbook.packsOpened,stored:dest==='stored'});b._packPicked=true;writeSave();
   if(c.finish)callout(c.finish==='gold'?'GOLD PRINT':'FOIL PRINT','small',900,`${P.cardDef(c.id)?.name||c.id} · a ${c.finish} card for your collection`);
   const def=P.cardDef(c.id);
-  $('#pkMsg').innerHTML=`<b>${esc(def.name)}</b> joins your playbook.`;
+  $('#pkMsg').innerHTML=`<b>${esc(def.name)}</b> ${dest==='upgrade'?'upgraded.':dest==='stored'?'added to your collection, not your deck.':'added to your deck.'}`;
   if(res.over){await cutScreen(res.over,c);return}
   afterPack();
 }
@@ -728,7 +910,7 @@ async function cutScreen(over,added){
   const pb=save.playbook,list=pb[over.side][over.pile];
   const m=$('#modal');
   m.innerHTML=`<div class="mwrap"><p class="big red" style="font-size:clamp(40px,7vw,80px)">PLAYBOOK FULL</p>
-    <p class="statline">Your ${over.side==='off'?'offensive':'defensive'} ${over.pile==='wrinkles'?'play pile':'tactic deck'} holds ${pb.capacity[over.pile]}. <b>Store one card.</b> It stays in your collection and can be equipped again between games.</p>
+    <p class="statline">You can select up to ${pb.capacity[over.pile]} ${over.side==='off'?'offensive':'defensive'} ${over.pile==='wrinkles'?'plays':'tactics'}. <b>Remove one card from your deck.</b> You still own it and can add it again between games.</p>
     <div class="pbgrid" id="cutg"></div></div>`;
   const g=$('#cutg');
   list.forEach((id,i)=>{const w=document.createElement('div');w.className='cutme';const el=card(id,{small:true});w.appendChild(el);w.onclick=async()=>{
@@ -739,7 +921,7 @@ async function cutScreen(over,added){
   };g.appendChild(w)});
 }
 // In a dynasty, branches unlock with the players who run them (the battle's real lineup). The sandbox has no gates.
-const evoReady=pb=>EV.ready(pb,{lineup:DYN&&b?b.teams[b.user].lineup:null}).filter(x=>x.options.some(id=>!x.locks?.[id]));
+const evoReady=pb=>EV.ready(pb,{lineup:DYN&&b?b.teams[b.user].lineup:null}).filter(x=>!(DYN&&pb.deferredEvolutions?.includes(x.rootId))&&x.options.some(id=>!x.locks?.[id]));
 async function afterPack(){
   await FX.wait(900);
   const r=evoReady(save.playbook);
@@ -776,7 +958,7 @@ function trophyImg(cls='trophy'){const src=$('#trophySrc')?.src;return src?`<div
 // A player had a breakout game: he earns his own card.
 async function breakoutScreen(won){
   const c=b._breakout,p=c.p,me=teamOf(b.user),pb=save.playbook,m=$('#modal');
-  const spec=SG.specFor(p,{season:DYN?DYN.season:save.world.season,colors:me.colors,earned:`${c.wins} of ${c.duels} duels won${c.fire?`, caught fire ${c.fire}×`:''} vs ${teamOf(b.user==='home'?'away':'home').short}`});
+  const spec=breakoutSpec();
   m.innerHTML=`<div class="mwrap"><div class="spot"></div><p class="statline">BREAKOUT PERFORMANCE</p>
     <div class="bo"><canvas id="boFace" width="180" height="180"></canvas><div class="boText"><div class="boNum" style="color:${me.colors[0]}">#${p.number}</div><p class="big gold" id="boName" style="font-size:clamp(40px,8vw,96px)">${esc(p.name.toUpperCase())}</p>
     <p class="statline">${esc(p.role)} · ${esc(p.archetype)} · <b>${c.wins}</b> of ${c.duels} duels won${c.fire?` · caught fire <b>${c.fire}×</b>`:''}</p></div></div>
@@ -794,7 +976,7 @@ async function breakoutScreen(won){
   const r=holder.getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+100,{n:140,speed:12,colors:['#ffd84d','#fff6d5','#000','#e5c766']});
   await FX.anim(cel,[{opacity:0,transform:'scale(0) rotate(-30deg)'},{opacity:1,transform:'scale(1.15)'},{transform:'none'}],{duration:600,easing:'cubic-bezier(.2,1.4,.4,1)'});
   $('#rays').classList.remove('on');
-  const done=()=>{b._breakoutResolved=true;writeSave();$('#boBtns').innerHTML=`<button class="btn go" id="toPack">${won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>`;$('#toPack').onclick=()=>packScreen(won)};
+  const done=()=>{b._breakoutResolved=true;writeSave();$('#boBtns').innerHTML=`<button class="btn go" id="toPack">${won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>${bankButton()}`;bindBank();$('#toPack').onclick=()=>packScreen(won)};
   if(!full){SG.add(pb,spec);done();return}
   $('#boSlots').innerHTML=`<p class="statline">ALL ${SG.SLOTS} SIGNATURE SLOTS ARE FULL. <b>Replace one</b>, or let this card go.</p><div class="pbgrid" id="boOld"></div><button class="btn" id="boSkip">LET IT GO</button>`;
   pb.signatures.forEach((sg,i)=>{const w=document.createElement('div');w.className='cutme';w.appendChild(card(sg.id,{small:true}));w.onclick=()=>{S.burn();SG.add(pb,spec,i);$('#boSlots').innerHTML=`<p class="statline">${esc(sg.name)}'s card retires. <b>${esc(p.name)}</b> takes the slot.</p>`;done()};$('#boOld').appendChild(w)});
@@ -839,9 +1021,9 @@ async function seasonEndScreen(){
   $('#toSign').onclick=()=>signingDayScreen();
 }
 // Signing Day: your class in one row, best recruit already in each spot. Tap a card to see the next option.
-function recruitCard(sp,j,colors){
-  const p=sp.prospects[j];
-  return`<span class="spotLab">${esc(ROLE_NAME[sp.role]||sp.role)}</span><canvas data-pid="${esc(p.id)}" width="56" height="56"></canvas><span class="rs">${starStr(p.stars)}</span><span class="rn">${esc(p.name)}</span><span class="mini">${esc(p.archetype)}</span><span class="rimp">${esc(gameImpact(p))}</span><span class="rcycle">${j+1} of ${sp.prospects.length} ↻</span>`;
+function recruitCard(sp,j){
+  const p=sp.prospects[j],signature=SG.describe(SG.specFor(p)).def;
+  return`<span class="spotLab">${esc(ROLE_NAME[sp.role]||sp.role)}</span><canvas data-pid="${esc(p.id)}" width="56" height="56"></canvas><span class="rs">${starStr(p.stars)}</span><span class="rn">${esc(p.name)}</span><span class="mini">${esc(p.archetype)}</span><span class="rimp">${esc(gameImpact(p))}</span><span class="recruit-signature">Possible signature: <b>${esc(signature.name)}</b><br>${esc(signature.matchupText)}</span><span class="rcycle">${j+1} of ${sp.prospects.length} ↻</span>`;
 }
 function signingDayScreen(){
   const o=save.world.offseason,me=specOf(save.team),m=$('#modal');
@@ -853,12 +1035,12 @@ function signingDayScreen(){
   m.classList.add('on');m.scrollTop=0;
   const box=$('#spots');
   o.spots.forEach((sp,i)=>{
-    const el=document.createElement('button');el.className='recruit on';el.innerHTML=recruitCard(sp,0,me.colors);box.appendChild(el);paintTiles(el,sp.prospects,me.colors);
+    const el=document.createElement('button');el.className='recruit on';el.innerHTML=recruitCard(sp,0);box.appendChild(el);paintTiles(el,sp.prospects,me.colors);
     FX.anim(el,[{opacity:0,transform:'translateY(40px) rotate(-4deg)'},{opacity:1,transform:'none'}],{duration:380,delay:110*i,easing:'cubic-bezier(.2,1.4,.4,1)'});
     el.onclick=async()=>{
       if(el.dataset.locked)return;picks[i]=(picks[i]+1)%sp.prospects.length;S.whoosh();
       await FX.anim(el,[{transform:'scaleX(1)'},{transform:'scaleX(0)'}],{duration:120,easing:'ease-in'});
-      el.innerHTML=recruitCard(sp,picks[i],me.colors);paintTiles(el,sp.prospects,me.colors);
+      el.innerHTML=recruitCard(sp,picks[i]);paintTiles(el,sp.prospects,me.colors);
       FX.anim(el,[{transform:'scaleX(0)'},{transform:'none'}],{duration:180,easing:'cubic-bezier(.2,1.6,.4,1)'});
     };
   });
@@ -883,8 +1065,8 @@ function rosterView(){
 function howToPlay(then){
   const m=$('#modal'),guided=!!then&&O.eligible(save);
   m.innerHTML=`<div class="mwrap"><p class="big gold" style="font-size:clamp(40px,7vw,80px)">HOW TO PLAY</p>
-    <div class="howto"><div><b>1</b><span class="hi">🃏</span>Pick a play card</div><div><b>2</b><span class="hi">🪙</span>Add tactics with your coins</div><div><b>3</b><span class="hi">⚔️</span>Win the duels, gain yards</div></div>
-    <p class="statline">Green chips = good odds. Red = risky. A new first down refills your hand.</p>
+    <div class="howto"><div><b>1</b><span class="hi">🃏</span>Read the look</div><div><b>2</b><span class="hi">🪙</span>Choose your call</div><div><b>3</b><span class="hi">⚔️</span>Snap and watch the matchup</div></div>
+    <p class="statline">Compare the players and risks, then snap. Open Full call sheet for every card, tactic, personnel change and matchup.</p>
     ${guided?'<p class="statline">Try a guided opening drive: call every offensive snap, with optional coaching tips. Then choose your pace.</p><button class="btn go" id="guideStart">COACH MY FIRST DRIVE</button>':''}
     <button class="btn" id="gotIt">${guided?'SKIP GUIDE · START GAME':'GOT IT'}</button></div>`;
   m.classList.add('on');
@@ -960,14 +1142,19 @@ function evolutionScreen(r){
   m.innerHTML=`<div class="mwrap"><p class="big gold">EVOLUTION</p>
     <p class="statline"><b>${esc(P.cardDef(held).name)}</b> has <b>${pb.mastery[from]}</b> reps. Your program has mastered it. <b>Choose its future.</b> This is permanent.</p>
     <div class="evo"><div class="evoRoot" id="evoRoot"></div></div>
-    <div class="branches">${r.options.map(id=>`<div class="branch${r.locks?.[id]?' locked':''}" data-b="${id}" ${r.locks?.[id]?`title="${esc(r.locks[id])}" style="opacity:.55"`:''}><div class="btag">${esc(EV.branchTag(id).toUpperCase())}${r.locks?.[id]?` · 🔒 ${esc(r.locks[id])}`:''}</div></div>`).join('')}</div></div>`;
+    <div class="branches">${r.options.map(id=>`<div class="branch${r.locks?.[id]?' locked':''}" data-b="${id}" ${r.locks?.[id]?`title="${esc(r.locks[id])}" style="opacity:.55"`:''}><div class="btag">${esc(EV.branchTag(id).toUpperCase())}${r.locks?.[id]?` · 🔒 ${esc(r.locks[id])}`:''}</div></div>`).join('')}</div>${DYN?'<button class="btn" id="deferEvolution">DECIDE LATER IN DECK ROOM</button>':''}</div>`;
   m.classList.add('on');
+  const defer=$('#deferEvolution');if(defer)defer.onclick=()=>{
+    pb.deferredEvolutions=[...new Set([...(pb.deferredEvolutions||[]),...evoReady(pb).map(x=>x.rootId)])];
+    $('#rays').classList.remove('on');b._closed=true;save.activeBattle=null;writeSave();HOST.close('Ready evolutions are waiting in Deck Room.');
+  };
   const root=card(held,{});$('#evoRoot').appendChild(root);
   $('#rays').classList.add('on');S.fire();
   m.querySelectorAll('.branch').forEach((w,i)=>{const c=card(w.dataset.b,{});w.appendChild(c);
     FX.anim(w,[{opacity:0,transform:`translate(${i?'-':''}160px,-160px) scale(.3)`},{opacity:1,transform:'none'}],{duration:520,delay:300+i*160,easing:'cubic-bezier(.2,1.4,.4,1)'});
     if(w.classList.contains('locked'))return;
     w.onclick=async()=>{
+      if(defer)defer.disabled=true;
       m.querySelectorAll('.branch').forEach(x=>x.onclick=null);
       S.fanfare();FX.anim($('#flash'),[{opacity:.9},{opacity:0}],450);FX.shake(m,1.6);
       const rr=w.getBoundingClientRect();PT.burst(rr.left+rr.width/2,rr.top+rr.height/2,{n:140,speed:12,colors:['#3cf0c0','#c8fff0','#ffe066','#fff']});
@@ -1050,6 +1237,10 @@ function leagueScreen(){
 // ================================================================ start
 function resumeBattle(){
   try{b=B.load(save.activeBattle.battle)}catch(e){err='Could not resume this battle: '+e.message;return}
+  for(const side of ['home','away']){
+    const roster=DYN?DYN[side]?.roster:Ro.lineupPlayers(side==='home'?save.world?.userLineup:save.world?.programs[oppId()]?.lineup);
+    if(roster)Ro.syncBattleUniforms(b,side,roster,DYN?'jerseyNumber':'number');
+  }
   req=b.pending;seen=b.log.length;busy=false;sel={play:null,tac:[]};lastLook={};
   b._lastScore={...b.game.score};setWeather(b.weather);drawField();renderBug();setMarkers(null);
   $('#modal').classList.remove('on');$('#ticker').innerHTML='';if(!req&&b.game.status!=='final')go(null);else decide();

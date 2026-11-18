@@ -1,9 +1,9 @@
 // A short, optional first offensive drive. Only presentation controls change, never the football or RNG.
 (function(root,factory){
-  const api=factory();
+  const api=factory(typeof module==='object'&&module.exports?require('./battle.js'):root.CallSheet.battle);
   if(typeof module==='object'&&module.exports)module.exports=api;
   else root.CallSheet.onboarding=api;
-})(typeof window==='object'?window:globalThis,function(){
+})(typeof window==='object'?window:globalThis,function(B){
 'use strict';
 function eligible(save){return !save?.seenHelp&&!(save?.games>0)&&!save?.settings?.guidedDriveDone}
 function start(b){
@@ -40,21 +40,7 @@ function hint(req,playId){
   const cues=[];
   if(play){
     cues.push(play.name+': '+(play.text||'Read its Gate, Key and Finish matchups.'));
-    const known=key=>req.look?.[key]?.confirmed?req.look[key].value:null;
-    const box=known('box'),shell=known('shell'),pressure=known('pressure'),coverage=known('coverage');
-    const origin=play.evolvedFrom||play.upgradeOf||play.id;
-    if(play.family==='run'){
-      if(box==='light')cues.push('The confirmed light box helps this run at the Gate.');
-      if(box==='loaded')cues.push('The confirmed loaded box makes this run’s Gate harder, even on an outside run.');
-    }
-    if(play.family==='deep'){
-      if(shell===2)cues.push('Two confirmed deep safeties make the Key matchup harder.');
-      if(shell===0)cues.push('No confirmed deep safety helps the Key matchup on this deep pass.');
-    }
-    if(origin==='pa_boot'&&box==='loaded')cues.push('Crowded linebackers give the run fake help at the Key.');
-    if(origin==='screen'&&pressure===true)cues.push('The confirmed rush helps this screen at the Gate: invite it, then throw behind it.');
-    if(play.family==='quick'&&coverage==='man')cues.push('Confirmed man coverage makes this quick pass’s release at the Gate harder.');
-    if(pressure===true&&Object.values(play.duels||{}).some(d=>d.protect))cues.push('Confirmed pressure makes protection harder; check the blocking matchup.');
+    const fit=B.callReason(req,play);if(fit)cues.push(fit);
     if(cues.length===1&&play.duels?.G)cues.push('Start with '+play.duels.G.label.toLowerCase()+' at the Gate; compare those players before committing.');
   }
   cues.push('Add a tactic if it helps and fits your Command budget, or snap without one. Good odds are not a guarantee.');

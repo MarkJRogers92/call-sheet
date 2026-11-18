@@ -4,6 +4,7 @@
 // and the pack is a Bowl Pack (on a win) opened exactly once.
 const assert=require('node:assert/strict'),path=require('node:path');
 const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/chromium-path'),{startNewDynasty}=require('./helpers/start-new-dynasty');
+const {finishPackChoice}=require('./helpers/play-card-battle');
 const shots=process.env.CARD_SHOTS||'';
 async function reachPostseason(page){
   if(!await page.locator('#simSeason').isVisible())await page.click('#programDetails > summary');
@@ -26,6 +27,7 @@ async function openFrame(page){
     await page.evaluate(()=>window.__DL_TEST__.v2PostseasonPrepare('bowl'));
     const start=await page.evaluate(()=>{const m=window.DynastyCardGameDay.meta();return{packs:m?.playbook?.packsOpened||0,games:m?.games||0}});
     await page.evaluate(()=>window.DynastyCardGameDay.paint());
+    await page.click('#clientRail [data-client-tab="deckroom"]');
     const coach=page.locator('#cardProgram [data-coach-post]');
     await coach.waitFor({timeout:10000});
     const label=(await coach.innerText()).replace(/^Coach the | with Cards$/g,'');
@@ -35,6 +37,7 @@ async function openFrame(page){
     await coach.click();
     let frame=await openFrame(page);
     await frame.waitForFunction(()=>window.__slice.req&&!window.__slice.busy,null,{timeout:60000});
+    if(await frame.locator('#sheetToggle').isVisible())await frame.click('#sheetToggle');
     const side=await frame.evaluate(()=>document.querySelector('#side')?.innerText||'');
     assert.ok(side.toLowerCase().includes(label.toLowerCase()),`the battle is labeled with the bowl: ${side.slice(0,120)}`);
     await frame.evaluate(()=>{document.getElementById('modal').classList.remove('on')});
@@ -69,7 +72,7 @@ async function openFrame(page){
     for(let i=0;i<80;i++){if(await frame.$('.slot.pickable'))break;await page.waitForTimeout(150)}
     const slots=(await frame.$$('.slot.pickable')).length;assert.equal(slots,won?5:3);
     if(shots)await page.screenshot({path:`${shots}/p2-pack.png`});
-    await (await frame.$$('.slot.pickable'))[0].click({force:true});
+    await (await frame.$$('.slot.pickable'))[0].click({force:true});await finishPackChoice(frame);
     for(let i=0;i<80;i++){const cut=await frame.$('.cutme');if(cut){await cut.click({force:true}).catch(()=>{});await page.waitForTimeout(900);continue}const br=await frame.$('.branch:not(.locked)');if(br){await br.click({force:true}).catch(()=>{});await page.waitForTimeout(2000);continue}if(await frame.$('#home'))break;await page.waitForTimeout(200)}
     await frame.click('#home',{force:true});
     await page.waitForFunction(()=>!document.querySelector('#cardGameDay'),null,{timeout:10000});

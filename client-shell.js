@@ -1,9 +1,10 @@
 (function(){
   'use strict';
 
-  const TAB_GROUP={dashboard:'home',newsletter:'home',program:'program',roster:'program',depth:'program',development:'program',staff:'program',offseason:'program',recruiting:'recruiting',gamelab:'season',season:'season',stats:'season',history:'world',records:'world',legacy:'world'};
+  const TAB_GROUP={dashboard:'home',newsletter:'home',deckroom:'cards',collection:'cards',program:'program',roster:'program',depth:'program',development:'program',staff:'program',offseason:'program',recruiting:'recruiting',gamelab:'season',season:'season',stats:'season',history:'world',records:'world',legacy:'world'};
   const NAV=[
     {label:'Home',items:[['dashboard','This Week'],['newsletter','News']]},
+    {label:'Cards &amp; Deck',items:[['deckroom','Deck Room'],['collection','Collection']]},
     {label:'Program',items:[['program','Overview'],['roster','Roster'],['depth','Roles & Depth'],['development','Player Development'],['staff','Staff'],['offseason','Offseason']]},
     {label:'Recruiting',items:[['recruiting','Recruiting Board']]},
     {label:'Season',items:[['gamelab','Game Day'],['season','Schedule'],['stats','Stats']]},
@@ -13,6 +14,8 @@
   // Outline icons (16x16, stroke = currentColor) so the nav can be scanned, not just read.
   const NAV_ICONS={
     dashboard:'<rect x="2" y="2" width="5" height="5" rx="1"/><rect x="9" y="2" width="5" height="5" rx="1"/><rect x="2" y="9" width="5" height="5" rx="1"/><rect x="9" y="9" width="5" height="5" rx="1"/>',
+    deckroom:'<rect x="4.5" y="4" width="8.5" height="10" rx="1.5"/><path d="M3 11.5H2.5V2H10M7 7h3.5M7 9.5h2"/>',
+    collection:'<rect x="2" y="3" width="12" height="10" rx="1.5"/><path d="M6 3v10m3-7h2m-2 3h2"/>',
     newsletter:'<rect x="2" y="3.5" width="12" height="9" rx="1.5"/><path d="M2.5 4.5 8 9l5.5-4.5"/>',
     program:'<path d="M2 13h12M3.5 13V7.5M6.5 13V7.5M9.5 13V7.5M12.5 13V7.5M2 6.5 8 3l6 3.5z"/>',
     roster:'<circle cx="6" cy="5.5" r="2.2"/><path d="M2 13c0-2.4 1.8-4 4-4s4 1.6 4 4"/><circle cx="11.5" cy="6" r="1.7"/><path d="M11 9.2c2 .2 3.2 1.5 3.2 3.8"/>',
@@ -79,7 +82,7 @@
   const mobile=document.createElement('nav');
   mobile.className='client-mobile-nav';
   mobile.setAttribute('aria-label','Quick navigation');
-  mobile.innerHTML=`${navButton('dashboard','Home','client-mobile-item')}${navButton('program','Program','client-mobile-item')}${navButton('recruiting','Recruit','client-mobile-item')}${navButton('gamelab','Season','client-mobile-item')}<button type="button" class="client-mobile-item" data-client-more>${navIcon('more')}<span>More</span></button>`;
+  mobile.innerHTML=`${navButton('dashboard','Home','client-mobile-item')}${navButton('deckroom','Cards','client-mobile-item')}${navButton('program','Program','client-mobile-item')}${navButton('recruiting','Recruit','client-mobile-item')}${navButton('gamelab','Season','client-mobile-item')}<button type="button" class="client-mobile-item" data-client-more>${navIcon('more')}<span>More</span></button>`;
   app.appendChild(mobile);
 
   function currentTab(){return app.querySelector('.tabs button.active[data-tab]')?.dataset.tab||'dashboard'}
@@ -109,7 +112,7 @@
 
   function sync(){
     const tab=currentTab();
-    app.querySelectorAll('[data-client-tab]').forEach(button=>{const active=button.dataset.clientTab===tab;button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false')});
+    app.querySelectorAll('[data-client-tab]').forEach(button=>{const active=button.dataset.clientTab===tab||(button.matches('.client-mobile-item[data-client-tab="deckroom"]')&&tab==='collection');button.classList.toggle('active',active);button.setAttribute('aria-current',active?'page':'false')});
     syncStatus();
   }
 

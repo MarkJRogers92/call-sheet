@@ -6,13 +6,23 @@ const P=require('../forks/call-sheet/core/packs.js');
   const e=loadEngine({seed:31,fullRuntime:true});e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
   const n=e.normalizeCallSheet;assert.equal(typeof n,'function');
   // A healthy playbook survives a JSON round trip and normalization unchanged in substance.
-  const pb=P.newPlaybook();pb.off.wrinkles.push('draw');pb.mastery={inside_zone:12};pb.signatures=[{id:'sig_x',playerId:'p1',name:'A B'}];
+  const pb=P.newPlaybook();pb.off.wrinkles.push('draw');pb.off.openingScript='draw';pb.mastery={inside_zone:12};pb.signatures=[{id:'sig_x',playerId:'p1',name:'A B'}];
   let u={callSheet:{version:1,playbook:pb,combos:['establish'],settings:{mode:'snap',control:'both',fast:true,sound:false},games:3,seenHelp:true}};
   u=JSON.parse(JSON.stringify(u));n(u);
   assert.deepEqual(u.callSheet.playbook.off.wrinkles,pb.off.wrinkles);assert.equal(u.callSheet.playbook.mastery.inside_zone,12);
   assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false,integrations:{},replays:'all'});assert.equal(u.callSheet.games,3);
+  assert.equal(u.callSheet.playbook.off.openingScript,'draw');
+  for(const stale of ['inside_zone','fake_punt','unknown',{},'__proto__']){
+    const badScript=JSON.parse(JSON.stringify(u));badScript.callSheet.playbook.off.openingScript=stale;n(badScript);
+    assert.equal(badScript.callSheet.playbook.off.openingScript,undefined);assert.deepEqual(badScript.callSheet.playbook.off.base,pb.off.base);
+  }
   const guided={callSheet:{version:1,playbook:P.newPlaybook(),settings:{guidedDrivePending:true,guidedDriveDone:true}}};
   n(guided);assert.equal(guided.callSheet.settings.guidedDrivePending,true);assert.equal(guided.callSheet.settings.guidedDriveDone,true);
+  const near=P.newPlaybook();near.reserve.off.wrinkles=Array(494).fill('draw');
+  require('../forks/call-sheet/core/playbook-ui');
+  const ui=globalThis.CallSheet.playbookUI,plan=ui.previewPlan(near,'off','ground',500);assert.equal(plan.storageBlock,null);
+  const packed={callSheet:{version:1,playbook:{...near,off:plan.deck,reserve:{...near.reserve,off:plan.reserve}}}},round=JSON.parse(JSON.stringify(packed));
+  n(round);assert.deepEqual(round.callSheet.playbook.off,packed.callSheet.playbook.off);assert.deepEqual(round.callSheet.playbook.reserve,packed.callSheet.playbook.reserve);
   // Damage is repaired or reset, never fatal.
   const bad={callSheet:{version:1,playbook:{off:{base:['inside_zone'],wrinkles:[3,'x']},def:{}},combos:'nope',settings:{mode:'warp'},games:-5}};
   n(bad);assert.equal(bad.callSheet.playbook,null,'a broken call sheet resets');assert.deepEqual(bad.callSheet.combos,[]);

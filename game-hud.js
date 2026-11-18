@@ -11,9 +11,9 @@
   if(!groupsNav||!tabsNav)return;
 
   // Mirrors TAB_GROUPS in app.js (app scope is not global).
-  const GROUP_TABS={home:['dashboard','newsletter'],program:['program','roster','depth','development','staff','offseason'],recruiting:['recruiting'],season:['gamelab','season','stats'],world:['history','records','legacy']};
-  const ICONS={dashboard:'◆',program:'⚑',history:'⌛',roster:'☰',depth:'⇅',development:'▲',recruiting:'★',gamelab:'⚙',season:'▦',stats:'∑',newsletter:'✉',staff:'♟',offseason:'↻',records:'♛',legacy:'✦'};
-  const HINTS={dashboard:'This week’s opponent, choices & news',program:'Identity, budget & facilities',history:'Archive & program legacy',roster:'Full player list',depth:'Roles and depth chart',development:'Training plans & camp',recruiting:'Board, scouting & signing class',gamelab:'Game plan & matchup',season:'Schedule & standings',stats:'Leaders & team stats',newsletter:'Weekly headlines',staff:'Coordinators & schemes',offseason:'Transitions & portal',records:'Awards & record book',legacy:'Achievements, records & hall of fame'};
+  const GROUP_TABS={home:['dashboard','newsletter'],program:['program','roster','depth','development','staff','offseason'],recruiting:['recruiting'],season:['gamelab','season','stats'],world:['history','records','legacy'],cards:['deckroom','collection']};
+  const ICONS={deckroom:'▤',collection:'▦',dashboard:'◆',program:'⚑',history:'⌛',roster:'☰',depth:'⇅',development:'▲',recruiting:'★',gamelab:'⚙',season:'▦',stats:'∑',newsletter:'✉',staff:'♟',offseason:'↻',records:'♛',legacy:'✦'};
+  const HINTS={deckroom:'Build your deck, set your opening script & check roster fit',collection:'Browse owned cards, reward packs & albums',dashboard:'This week’s opponent, choices & news',program:'Identity, budget & facilities',history:'Archive & program legacy',roster:'Full player list',depth:'Roles and depth chart',development:'Training plans & camp',recruiting:'Board, scouting & signing class',gamelab:'Game plan & matchup',season:'Schedule & standings',stats:'Leaders & team stats',newsletter:'Weekly headlines',staff:'Coordinators & schemes',offseason:'Transitions & portal',records:'Awards & record book',legacy:'Achievements, records & hall of fame'};
   const titleOpen=()=>{const t=document.querySelector('#titleScreen');return !!t&&!t.hidden&&getComputedStyle(t).display!=='none'};
   const typing=el=>!!el&&(el.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
   const groupButtons=()=>[...groupsNav.querySelectorAll('button[data-group]')];
@@ -69,7 +69,7 @@
     <header><span class="hud-eyebrow">PLAYBOOK</span><strong id="hudPlaybookTitle">Call your next play</strong></header>
     <input type="search" class="hud-playbook-search" placeholder="Search sections, programs, players, coaches…" aria-label="Search sections, programs, players and coaches" autocomplete="off">
     <ul class="hud-playbook-list" role="listbox" aria-label="Sections"></ul>
-    <footer><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run play</span><span><kbd>1</kbd>–<kbd>5</kbd> groups</span><span><kbd>Esc</kbd> close · pause</span></footer>
+    <footer><span><kbd>↑</kbd><kbd>↓</kbd> move</span><span><kbd>Enter</kbd> run play</span><span><kbd>1</kbd>–<kbd>6</kbd> groups</span><span><kbd>Esc</kbd> close · pause</span></footer>
   </div>`;
   document.body.append(overlay);
   const input=overlay.querySelector('input'),list=overlay.querySelector('ul');

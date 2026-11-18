@@ -421,3 +421,15 @@ use the same eligible lineup. Spring practice remains separate: redshirts may pr
 No rewards, save schema, or independent eligibility rules were added. `tests/card-availability.js`
 covers real coached/sim launch, both teams, specialists, expired rest, missing specialist depth,
 postseason rewards, resumed snapshots and unavailable nemesis moments.
+
+## Signature careers in Dynasty
+
+Prospect and roster profiles now preview the named signature their current role and public
+archetype could produce; this is not an unlock or an extra scouting rating. Earned profiles use the
+same final card definition as game day, including legacy effects and award tiers, and distinguish
+the game deck from stored collection cards. Archived profiles show recorded card duels without
+inventing active ratings. The Ring of Honor opens the existing player archive, and new retirements
+retain the four recorded duel-career counters even if the rolling ledger expires. Loading an older
+save preserves counters still available there; counters already discarded cannot be reconstructed.
+No pack odds, card power or unlock conditions changed. See the new cases in `tests/card-people.js`
+and `npm run test:card-journey-browser` for the profile-to-binder flow.

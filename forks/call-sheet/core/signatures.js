@@ -28,12 +28,43 @@ function templateFor(p){
   if(['FCB','BCB','NICKEL'].includes(r))return'cb_island';
   return's_robber';
 }
+// Earned cards (not passive archetype abilities): exactly one small situational adjustment.
+// The labels and selectors live together; projections use only a public role and style.
+const vs=(label,when)=>({label,when});
+const openZone=vs('zone without pressure',{coverage:'zone',pressure:false}),rush=vs('pressure',{pressure:true});
+const man=vs('man coverage',{coverage:'man'}),oneMan=vs('single-high man',{coverage:'man',shell:1}),oneZone=vs('single-high zone',{coverage:'zone',shell:1}),twoHigh=vs('two deep safeties',{shell:2});
+const light=vs('a light box',{box:'light'}),loaded=vs('a loaded box',{box:'loaded'}),runs=vs('runs',{family:'run'}),deep=vs('deep passes',{family:'deep'});
+const fit=(duel,label,edge,counter,scope={})=>({duel,label,edge,counter,scope});
+const MATCHUPS={
+  qb_audible:fit('K','QB read on Key',openZone,rush,{qbRead:true}),
+  qb_keeper:fit('F','Keeper finish',vs('man without a spy',{coverage:'man',spy:false}),vs('a QB spy',{spy:true})),
+  rb_express:fit('K','Cutback',light,loaded),
+  rb_cut:fit('K','Cutback',vs('pressure from a normal box',{pressure:true,box:'normal'}),loaded),
+  rb_wheel:fit('K','Wheel route',rush,vs('two high without pressure',{shell:2,pressure:false})),
+  wr_special:fit('K','Getting open',oneMan,twoHigh),
+  wr_space:fit('K','Finding space',oneZone,oneMan),
+  wr_catch:fit('F','Catch point',oneMan,twoHigh),
+  te_seam:fit('K','Seam route',oneZone,man),
+  ol_wall:fit('G','Run blocking',vs('Power',{origin:'power'}),vs('Outside Zone',{origin:'outside_zone'})),
+  dl_unleashed:fit('G','Rush at the snap',deep,vs('Screen',{origin:'screen'})),
+  lb_hunt:fit('K','Downhill read',runs,vs('PA Boot',{origin:'pa_boot'})),
+  cb_island:fit('F','Defensive finish',deep,runs),
+  s_robber:fit('K','Jumping the route',vs('quick passes',{family:'quick'}),deep)
+};
+function matchupFor(spec){
+  let key=spec.template;
+  if(key==='wr_special'){
+    if(['Space Hunter','YAC Creator','Motion Weapon'].includes(spec.archetype))key='wr_space';
+    else if(['Boundary Bully','Catch-Point Ace'].includes(spec.archetype))key='wr_catch';
+  }else if(key==='rb_express'&&['Space Cutter','One-Cut Burner','Patient Slasher'].includes(spec.archetype))key='rb_cut';
+  return MATCHUPS[key];
+}
 // Build the card definition for a spec. Kinds: play (offense wrinkle), call (defense wrinkle), tactic.
 function build(spec){
   const L=spec.last,who=spec.name,r=spec.role,base={id:spec.id,cost:1,signature:spec};
   switch(spec.template){
     case'qb_audible':return{kind:'tactic',side:'off',def:{...base,side:'off',name:`${L} Audible`,icon:'📣',effects:[{flag:'qbRead',v:2}],text:`${who} changes the play at the line. Every QB read duel +2.`}};
-    case'qb_keeper':return{kind:'play',side:'off',def:{...base,side:'off',name:`${L} Keeper`,family:'run',carrier:'QB',matchups:[{when:'man',duel:'F',v:1,src:'Defenders turned their backs in man'}],
+    case'qb_keeper':return{kind:'play',side:'off',def:{...base,side:'off',name:`${L} Keeper`,family:'run',carrier:'QB',
       text:`${who} keeps it and goes. Built around one player's legs.`,
       duels:{G:{label:'Pull it',off:['QB'],ot:['iq','speed'],def:['SET'],dt:['iq','speed'],bias:2,qbRun:true},K:{label:'Get outside',off:['QB'],ot:['speed','versatility'],def:['WILL'],dt:['speed','iq'],bias:1,qbRun:true},F:{label:'Take it to the house',off:['QB'],ot:['speed','power'],def:['FS'],dt:['speed','technique'],bias:1,qbRun:true}},
       results:{fail:[R(1,'run',[-1,1.5])],short:[R(1,'run',[3,1.5])],success:[R(1,'run',[9,2])],explosive:[R(1,'run',[20,8],{tail:.3})]}}};
@@ -78,8 +109,21 @@ function withTier(spec,b){
   if(tier>=3){if(def.duels?.K)def.duels.K.bias=(def.duels.K.bias||0)+1;else if(def.effects?.length)def.effects[0].v=(def.effects[0].v||0)+1}
   def.text=`${tier>=3?'AWARD WINNER':'HONORED'} · ${def.text}`;def.tier=tier;return{...b,def};
 }
+function describe(spec){
+  const b=withTier(spec,buildAny(spec)),rule=matchupFor(spec);
+  if(!rule)return b;
+  const gain=spec.legacy ? .5 : 1;
+  const prep=spec.template==='ol_wall'?'on':'vs';
+  const matchupText=`${rule.label}: +${gain} ${prep} ${rule.edge.label}; −1 ${prep} ${rule.counter.label}.`;
+  b.def.signatureMatchup={...rule,gain};b.def.matchupText=matchupText;
+  // Effects may have changed for a legacy/award card; never advertise the original numeric bonus.
+  const phases={G:'Gate',K:'Key',F:'Finish'},labels={qbRead:'QB reads',protect:'pass protection',run:'runs',separation:'separation',release:'release'};
+  const base=b.kind==='play'?b.def.text:(b.def.effects||[]).map(e=>`+${e.v} ${b.side==='def'?'against':'on'} ${labels[e.flag]||e.flag}${e.duel?' ('+phases[e.duel]+')':''}`).join('; ')+'.';
+  b.def.text=base+' '+matchupText;
+  return b;
+}
 function register(spec){
-  const b=withTier(spec,buildAny(spec)),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
+  const b=describe(spec),table=b.kind==='play'?D.PLAYS:b.kind==='call'?D.CALLS:D.TACTICS;
   table[spec.id]=b.def;D.RARITY[spec.id]='signature';return b;
 }
 function registerAll(pb){for(const s of [...(pb?.signatures||[]),...(pb?.reserveSignatures||[])])register(s)}
@@ -120,5 +164,5 @@ function add(pb,spec,replaceIndex){
   return{full:false};
 }
 
-return{SLOTS,COOLDOWN,templateFor,build,buildAny,register,registerAll,specFor,breakouts,candidate,add,lastName};
+return{SLOTS,COOLDOWN,templateFor,build,buildAny,describe,register,registerAll,specFor,breakouts,candidate,add,lastName};
 });

@@ -631,5 +631,11 @@ const SCHEME_CARDS={'Ground Pressure':'counter_trey','Heavy Play Action':'buck_s
   'Match Quarters':'cover4_match','Split-Safety Control':'cover4_match','Odd Front Control':'double_eagle','Contain & Rally':'double_eagle','Pressure Multiple':'fire_zone','Four-Down Attack':'wide_nine','Aggressive Man':'man_free'};
 const PROGRAM_CARDS=['counter_trey','buck_sweep','midline_option','choice_route','dagger','smash','flea_flicker','jet_reverse','cover4_match','double_eagle','fire_zone','wide_nine','man_free','bluff_zero','giant_killer'];
 
-return{COMBOS,DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
+// A base call is already available. Tricks, drill calls and signatures keep their existing draw rules.
+function canScriptOpener(deck,id){
+  if(typeof id!=='string'||!Object.hasOwn(PLAYS,id)||!deck?.wrinkles?.includes(id)||deck.base?.includes(id))return false;
+  const c=PLAYS[id];return !c.trick&&!c.drill&&!c.signature&&!c.thirdOnly&&!c.fourthOnly;
+}
+
+return{canScriptOpener,COMBOS,DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
 });

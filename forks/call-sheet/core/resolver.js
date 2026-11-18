@@ -124,8 +124,18 @@ function buildSnap(ctx){
     if(dt.has('identify_protection')&&d.protect&&call.pressure>0)add(-1,'Aimed pressure');
     // Generic card effects (new tactics, signature cards, calls with duel mods). Each names which duels it touches.
     const hits=e=>whenOn(e.when)&&(e.duel==null||e.duel===key)&&(!e.flag||(e.flag==='run'?play.family==='run':e.flag==='pass'?!!play.pass:e.flag==='countered'?(call.counters||[]).includes(play.family):e.flag==='versatile'?d.off.some(r=>(off[r]?.traits?.versatility??0)>=80):!!d[e.flag]))&&(!e.role||d.off.includes(e.role)||d.def.includes(e.role));
-    for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name)}
-    for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name)}
+    // Card-specific matchup is separate from a player's passive ability. Counters win ties.
+    let facts;
+    const matchup=(card,sign)=>{
+      const m=card?.signatureMatchup;if(!m||m.duel!==key)return;
+      facts??={origin,family:play.family,shell:call.shell,box:call.box,coverage:call.coverage,pressure:call.pressure>0,spy:dt.has('spy'),qbRead:!!d.qbRead};
+      const matches=when=>Object.entries(when).every(([k,v])=>facts[k]===v);
+      if(!matches(m.scope))return;
+      const counter=matches(m.counter.when);
+      if(counter||matches(m.edge.when))add(sign*(counter?-1:m.gain),`${card.name} matchup: ${(counter?m.counter:m.edge).label}`);
+    };
+    for(const id of ot){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(e.v,T.name);matchup(T,1)}
+    for(const id of dt){const T=D.TACTICS[id]||{};for(const e of T.effects||[])if(hits(e))add(-e.v,T.name);matchup(T,-1)}
     // Program edges from the dynasty: scheme fit, weekly prep, crowd. Extra conditions: family, pressureCall, thirdDown.
     // play: one card (or anything evolved/upgraded from it).
     const edgeHits=e=>hits(e)&&(!e.play||[play.id,play.evolvedFrom,play.upgradeOf].includes(e.play))&&(!e.family||play.family===e.family)&&(!e.pressureCall||call.pressure>0)&&(!e.thirdDown||sit.down===3);
@@ -133,6 +143,7 @@ function buildSnap(ctx){
     for(const e of ctx.defEdges||[])if(edgeHits(e))add(-e.v,e.src);
     for(const e of play.effects||[])if(hits(e))add(e.v,e.src||play.name);
     for(const e of call.effects||[])if(hits(e))add(-e.v,e.src||call.name);
+    matchup(play,1);matchup(call,-1);
     // Weather.
     const wx=ctx.weather;
     if(wx==='rain'){if(play.pass&&key==='F')add(-1,'Wet ball');}
