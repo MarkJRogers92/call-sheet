@@ -922,22 +922,31 @@ function lastCallRecap(b,side=b?.user){
 }
 function postgameTakeaway(b,side=b?.user){
   if(!side)return null;
-  const byPlay=new Map();
-  for(const e of b.log||[]){
-    if(e.type!=='snap'||e.offSide!==side||e.penalty||e.category==='kick'||!D.PLAYS[e.play]||!Number.isFinite(e.yards))continue;
-    const t=byPlay.get(e.play)||{id:e.play,n:0,yards:0,stops:0,gateLoss:0};
-    t.n++;t.yards+=e.yards;t.stops+=e.turnover||e.yards<=0?1:0;t.gateLoss+=e.duelResults?.[0]?.won===false?1:0;byPlay.set(e.play,t);
-  }
-  const rows=[...byPlay.values()].filter(t=>t.n>=3);if(!rows.length)return null;
+  const tally=onlyMine=>{
+    const byPlay=new Map();
+    for(const e of b.log||[]){
+      if(e.type!=='snap'||e.offSide!==side||e.penalty||e.category==='kick'||!D.PLAYS[e.play]||!Number.isFinite(e.yards))continue;
+      if(onlyMine&&!e.userCalled)continue;
+      const t=byPlay.get(e.play)||{id:e.play,n:0,mine:0,yards:0,stops:0,gateLoss:0};
+      t.n++;t.mine+=e.userCalled?1:0;t.yards+=e.yards;t.stops+=e.turnover||e.yards<=0?1:0;t.gateLoss+=e.duelResults?.[0]?.won===false?1:0;byPlay.set(e.play,t);
+    }
+    return[...byPlay.values()].filter(t=>t.n>=3);
+  };
   // Prefer a repeatable problem over one spectacular play; small samples remain explicitly labeled.
-  const weak=rows.filter(t=>t.yards/t.n<3||t.stops/t.n>=.5).sort((a,c)=>c.n-a.n||a.yards/a.n-c.yards/c.n)[0];
-  const t=weak||rows.sort((a,c)=>c.n-a.n||c.yards/c.n-a.yards/a.n)[0],play=D.PLAYS[t.id];
+  const isWeak=t=>t.yards/t.n<3||t.stops/t.n>=.5,worst=rows=>rows.filter(isWeak).sort((a,c)=>c.n-a.n||a.yards/a.n-c.yards/c.n)[0];
+  const best=rows=>rows.slice().sort((a,c)=>c.n-a.n||c.yards/c.n-a.yards/a.n)[0];
+  // The coach's own calls come first: a takeaway about a play they never called would not tell them what to change.
+  const mine=tally(true),all=tally(false);if(!all.length)return null;
+  const weak=worst(mine)||worst(all),t=weak||best(mine)||best(all),play=D.PLAYS[t.id];
+  const caller=t.mine===t.n?'you':t.mine?'mixed':'staff';
   const owned=[...new Set([...(b.decks?.[side]?.off?.base||[]),...(b.decks?.[side]?.off?.wrinkles||[])])];
   const alternate=owned.find(id=>id!==t.id&&D.PLAYS[id]&&!D.PLAYS[id].trick&&D.PLAYS[id].family!==play.family)||owned.find(id=>id!==t.id&&D.PLAYS[id]&&!D.PLAYS[id].trick);
-  return{summary:weak?`${play.name} struggled to move the ball.`:`${play.name} was a repeatable part of your offense.`,
-    evidence:`${t.n} recorded calls · ${(t.yards/t.n).toFixed(1)} yards per call · ${t.gateLoss} lost at the Gate. One game, not a permanent verdict.`,
-    recommendation:weak?(alternate?`Consider mixing in ${D.PLAYS[alternate].name} from your current deck, then compare the matchup.`:`Consider reviewing ${play.name}'s Gate matchup before calling it again.`):`Consider keeping ${play.name} in your plan, but read the next opponent before leaning on it.`,
-    playId:weak?(alternate||t.id):t.id,samples:t.n};
+  const who=caller==='you'?(t.n===1?'your call':'your calls'):caller==='staff'?'all called by your staff':`you called ${t.mine}, your staff ${t.n-t.mine}`;
+  const subject=caller==='staff'?`Your staff’s ${play.name} calls`:play.name;
+  return{summary:weak?`${subject} struggled to move the ball.`:`${subject} ${caller==='staff'?'were':'was'} a repeatable part of your offense.`,
+    evidence:`${t.n} recorded calls (${who}) · ${(t.yards/t.n).toFixed(1)} yards per call · ${t.gateLoss} lost at the Gate. One game, not a permanent verdict.`,
+    recommendation:(caller==='staff'?'Staff calls come from your deck. ':'')+(weak?(alternate?`Consider mixing in ${D.PLAYS[alternate].name} from your current deck, then compare the matchup.`:`Consider reviewing ${play.name}'s Gate matchup before calling it again.`):`Consider keeping ${play.name} in your plan, but read the next opponent before leaning on it.`),
+    playId:weak?(alternate||t.id):t.id,samples:t.n,caller,mine:t.mine};
 }
 function adaptationRead(b,req=b?.pending){
   if(req?.kind!=='snap'||!['off','def'].includes(req.role))return null;

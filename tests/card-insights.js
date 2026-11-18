@@ -42,3 +42,16 @@ test('adaptation recommendations never suggest an unaffordable or blocked counte
   req.options.command=2;req.options.plays[0].blocked='Owner resting';assert.equal(B.adaptationRead({log:[]},req).counterPlay,null);
   req.options.plays[0].blocked=null;assert.equal(B.adaptationRead({log:[]},req).counterPlay,'pa_boot');
 });
+test('postgame takeaway leads with the coach\'s own calls and names who called a staff play',()=>{
+  const weakSnap=(play,userCalled)=>snap({play,yards:1,userCalled,duels:[duel()],duelResults:[{won:false}]});
+  const b={user:'home',decks:{home:{off:{base:['inside_zone'],wrinkles:['outside_zone','pa_boot']}}},
+    log:[...Array(6)].map(()=>weakSnap('pa_boot',false)).concat([0,1,2].map(()=>weakSnap('outside_zone',true)))};
+  let t=B.postgameTakeaway(b);
+  assert.match(t.summary,/^Outside Zone struggled/,'a smaller sample of the coach\'s own calls beats a larger staff one');
+  assert.equal(t.caller,'you');assert.match(t.evidence,/3 recorded calls \(your calls\)/);assert.doesNotMatch(t.summary,/PA Boot/);
+  b.log=b.log.slice(0,6);t=B.postgameTakeaway(b);
+  assert.match(t.summary,/^Your staff’s PA Boot calls struggled/);assert.equal(t.caller,'staff');
+  assert.match(t.evidence,/all called by your staff/);assert.match(t.recommendation,/^Staff calls come from your deck\./);
+  b.log.push(weakSnap('pa_boot',true));t=B.postgameTakeaway(b);
+  assert.equal(t.caller,'mixed');assert.match(t.summary,/^PA Boot struggled/);assert.match(t.evidence,/you called 1, your staff 6/);
+});
