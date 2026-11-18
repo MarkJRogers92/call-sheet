@@ -1397,8 +1397,22 @@ function normalizeCallSheet(u){
     for(const el of host.querySelectorAll('[data-card-fold]'))if(folds.has(el.dataset.cardFold))el.open=folds.get(el.dataset.cardFold);
   }
   if(typeof TAB_RENDERERS==='object'){TAB_RENDERERS.deckroom=paintCardRoom;TAB_RENDERERS.collection=paintCardRoom}
+  // This Week's Last Final card: add the recorded deciding snap from the game archive (same text as the final screen).
+  // The card is redrawn wholesale by its own layer, so watch the dashboard and re-add the line when it returns.
+  function paintDecidingSnap(){
+    const host=document.querySelector('#dashboard #highlightsCard');if(!host||host.querySelector('#hlDecider'))return;
+    const rec=(universe?.gameArchive||[]).find(r=>r.id===host.dataset.hlGame),t=rec?.cardMoments?.[0];
+    if(!t||!/^(Deciding duel|Turning point)/.test(t))return;
+    const pay=host.querySelector('.hl-payoff');if(!pay)return;
+    pay.insertAdjacentHTML('beforeend',`<p class="hl-consequence" id="hlDecider"><small>Deciding snap</small><b>${escH(t.replace(/^(Deciding duel|Turning point): /,''))}</b></p>`);
+  }
+  function watchDecidingSnap(){
+    const dash=document.querySelector('#dashboard');if(!dash||dash.__deciderObs||typeof MutationObserver!=='function')return;
+    dash.__deciderObs=new MutationObserver(()=>{try{paintDecidingSnap()}catch(err){}});dash.__deciderObs.observe(dash,{childList:true});
+  }
   function paintCardProgram(){
     if(typeof document==='undefined'||typeof document.getElementById!=='function'||typeof document.createElement!=='function')return;
+    try{if(typeof document.querySelector==='function'){watchDecidingSnap();paintDecidingSnap()}}catch(err){console.error(err)}
     const dash=document.querySelector('#dashboard'),old=document.getElementById('cardDeskLink');
     if(dash&&universe&&!universe.callSheet&&selected()&&(cardGameIsDefault()||POST_PHASES.includes(universe.phase)&&postseasonCardGame()&&!cardGameBlocker()))cardMeta();
     if(cardGameIsDefault()&&universe?.callSheet&&!universe.callSheet.playbook)userPlaybook();

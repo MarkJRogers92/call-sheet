@@ -17,12 +17,15 @@ const {playCardBattle}=require('./helpers/play-card-battle');
     assert.ok(await coach.isVisible(),'the unplayed game can be coached');assert.match(await page.textContent('#broadcastFeature .broadcast-kicker'),/NEXT MATCHUP/);
     await coach.click();await playCardBattle(page,{timeout:240000});
     assert.equal(await page.evaluate(()=>window.DynastyCardGameDay.meta().games),1);
+    // The Last Final card repeats the recorded deciding snap (the same text the battle's final screen showed).
+    const decider=page.locator('#highlightsCard #hlDecider');await decider.waitFor({timeout:10000});
+    assert.match(await decider.innerText(),/Deciding snap[\s\S]+ beat [\s\S]+ on /i);
     assert.match(await page.textContent('#broadcastFeature .broadcast-kicker'),/WEEK 1 · FINAL RECORDED/);
     assert.equal(await coach.isVisible(),false,'a recorded game is not offered again');
     assert.match(await page.textContent('#csPlayedNote'),/Advance the week/);
     await page.click('#hubAdvance');await page.waitForFunction(()=>/WEEK 2 · NEXT MATCHUP/.test(document.querySelector('#broadcastFeature .broadcast-kicker')?.textContent||''),null,{timeout:30000});
     assert.equal(await page.locator('#csPlayedNote').count(),0);assert.ok(await coach.isVisible(),'the next game is offered after the week advances');
     assert.equal(await page.evaluate(()=>window.DynastyCardGameDay.meta().games),1,'no second game was played');
-    assert.deepEqual(errors,[]);console.log('ok  played week: no replay offer before advancing, next game offered after');
+    assert.deepEqual(errors,[]);console.log('ok  played week: deciding snap on Last Final, no replay offer before advancing, next game offered after');
   }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});
