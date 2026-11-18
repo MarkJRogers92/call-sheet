@@ -9,8 +9,8 @@ Mark wants the live Call Sheet site updated from V15 to the build on branch `cla
 |---|---|
 | Game repository | `MarkJRogers92/call-sheet` |
 | Branch | `claude/new-session-8fuxi1`, which starts from `card-battles` at `6f1e525` |
-| Build commit | `20d60fe89ac848f279c9a025b6c3717d5585ff7c`. Later commits on this branch change only docs, so the built pages are identical. |
-| Dynasty page (root `index.html`, committed build) | sha256 `b35d6d5d5d89afff3c7a86475bbce42dd57241fed4a0940f37695ee645a5902d` |
+| Build commit | `19e450e2425142db6aec064fd5f26cd5181d7ecd`. Later commits on this branch change only docs, so the built pages are identical. |
+| Dynasty page (root `index.html`, committed build) | sha256 `6cbeb06091dc220799274fd57373061402f966eda120e025c0e451d099391066` |
 | Standalone battle page (generated, see step 2) | sha256 `a98c20e9e674ade982c7c3a6563c9680d4a901387740842b9f7a9d73b8f94517` |
 | App version string | still `0.36.0`. The version was not bumped. Say "Nov 18 build" in release notes. |
 
@@ -48,7 +48,7 @@ Replace exactly these:
 
 Before deploying, check that every local `src=`/`href=` that the new `index.html` references (excluding `data:` and `https:`) exists in `dist/dynasty/`.
 
-Add a README entry in the hosting repo. It must name the game build commit `20d60fe89ac848f279c9a025b6c3717d5585ff7c` and the two hashes, and say "Nov 18 build on V15 (0.36.0)". Commit it to the hosting repo, then deploy.
+Add a README entry in the hosting repo. It must name the game build commit `19e450e2425142db6aec064fd5f26cd5181d7ecd` and the two hashes, and say "Nov 18 build on V15 (0.36.0)". Commit it to the hosting repo, then deploy.
 
 **Note:** pushing to the hosting repo and deploying the Site are two separate operations. Do both.
 
