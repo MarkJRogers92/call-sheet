@@ -56,12 +56,20 @@ const R=(w,kind,yards,extra={})=>({w,kind,yards,...extra});
 // duel: off/def role lists, the traits each side uses, a label, and a design bias (a visible modifier).
 const PLAYS={
   qb_sneak:{id:'qb_sneak',side:'off',name:'QB Sneak',family:'run',cost:0,carrier:'QB',maxDistance:2,
-    text:'Two yards or less. The center and guards wedge open a gap for the QB. A loaded box can stop it cold.',
+    text:'Two yards or less. The center and guards wedge open a gap for the QB. Keep possession to set up TE Pop Pass on the next snap.',
     duels:{
       G:{label:'Wedge the A-gap',off:['C','LG','RG'],ot:['power','technique'],def:['NT','DT3'],dt:['power','technique'],bias:2},
       K:{label:'Find the surge',off:['QB','C'],ot:['iq','technique'],def:['MIKE'],dt:['iq','technique'],bias:1},
       F:{label:'Push the pile',off:['QB'],ot:['power','durability'],def:['MIKE'],dt:['power','technique'],bias:0}},
     results:{fail:[R(1,'run',[0,.5])],short:[R(1,'run',[1,.35])],success:[R(1,'run',[2,.55])],explosive:[R(1,'run',[3,.65])]}},
+  te_pop_pass:{id:'te_pop_pass',side:'off',name:'TE Pop Pass',family:'constraint',cost:2,setupPlay:'qb_sneak',target:'TE',pass:true,protection:true,
+    text:'Show the wedge again. The QB pulls up and throws behind the linebackers to the tight end. A light box leaves defenders underneath.',
+    matchups:[{duel:'K',when:'loaded',v:1,src:'Linebackers crowd the wedge'},{duel:'K',when:'light',v:-1,src:'Linebackers sit under the pop'}],
+    duels:{
+      G:{label:'Sell the wedge',off:['QB','C'],ot:['technique','composure'],def:['NT','DT3'],dt:['power','iq'],bias:0,protect:true},
+      K:{label:'Slip behind the linebackers',off:['TE'],ot:['technique','iq'],def:['MIKE'],dt:['iq','technique'],bias:0,separation:true},
+      F:{label:'Drop it over the pile',off:['QB','TE'],ot:['technique','composure'],def:['BOXS'],dt:['iq','speed'],bias:0,qbRead:true}},
+    results:{fail:[R(.65,'inc',[0,0],{int:.04}),R(.35,'sack',[-3,1])],short:[R(.55,'inc',[0,0],{int:.06}),R(.45,'catch',[3,1])],success:[R(.87,'catch',[8,2]),R(.13,'inc',[0,0],{int:.03})],explosive:[R(1,'catch',[14,3])]}},
   inside_zone:{id:'inside_zone',side:'off',name:'Inside Zone',family:'run',cost:0,base:true,carrier:'RB',
     text:'Downhill run. The back reads the interior blocks and takes the crease.',
     duels:{
@@ -631,6 +639,8 @@ Object.assign(RARITY,{spinner:'rare',buck_lateral:'rare',triple_option:'rare',sp
 // view, so defensive combos are negative) plus +1 Command to the side that earned it. Each team completes each combo at most once per half.
 const lastN=(a,n)=>a.length>=n?a.slice(-n):null;
 const COMBOS=[
+  {id:'sell_the_sneak',name:'Sell the Sneak',side:'off',duel:'K',v:1,how:'QB Sneak, then TE Pop Pass on the same drive',reward:'Key +1 and +1 Command',
+    test:c=>c.root==='te_pop_pass'&&c.plays.at(-1)==='qb_sneak'},
   {id:'establish',name:'Establish the Run',side:'off',duel:'K',v:1,how:'Run, run, then play-action (PA Boot)',reward:'Key +1 and +1 Command',
     test:c=>c.root==='pa_boot'&&!!lastN(c.fams,2)?.every(f=>f==='run')},
   {id:'shot_after_run',name:'Shot After the Run',side:'off',duel:'F',v:1,how:'Run, run, then a deep pass',reward:'Finish +1 and +1 Command',

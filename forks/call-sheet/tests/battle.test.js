@@ -50,8 +50,9 @@ test('Command never goes negative and over-budget calls are refused',()=>{
     for(const s of ['home','away'])if(b.hands[s])assert.ok(b.hands[s].command>=0);
     if(req.kind==='snap'&&!refused){
       const expensive=req.options.plays.filter(p=>!p.blocked).sort((x,y)=>y.cost-x.cost)[0];
-      const tactics=req.options.tactics.filter(t=>!t.card.info).map(t=>t.id);
-      const total=expensive.cost+req.options.tactics.filter(t=>!t.card.info).reduce((s,t)=>s+t.cost,0);
+      const cards=new Map(req.options.tactics.filter(t=>!t.card.info).map(t=>[t.id,t.cost]));
+      const tactics=[...cards.keys()];
+      const total=expensive.cost+[...cards.values()].reduce((s,cost)=>s+cost,0);
       if(total>req.options.command&&tactics.length){
         assert.throws(()=>B.submit(b,{type:'call',play:expensive.id,tactics}),/Command|Only on|needs|Target/);refused=true;
       }

@@ -279,8 +279,8 @@ function clock(st){const q=b.game.status==='final'?'FINAL':st.period>4?'OT':`Q${
 function renderBug(st=sitNow(),score=b.game.score){
   const options=!busy&&b&&B.sidelineOptions(b);
   const sideline=$('#sidelineBtn');
-  sideline.hidden=!options||(!options.offense&&!options.late&&!b.log.some(e=>e.type==='snap'&&e.offSide===b.game.possession&&e.sit));
-  if(options)sideline.textContent=options.late?`Clock · ${options.timeouts} TO`:options.keep?'Sideline · 1 held':'Sideline';
+  sideline.hidden=!options||(!options.offense&&!options.late&&!options.canCoachDrive&&!b.log.some(e=>e.type==='snap'&&e.offSide===b.game.possession&&e.sit));
+  if(options)sideline.textContent=options.coachDrive?'Coaching this drive':options.late?`Clock · ${options.timeouts} TO`:options.keep?'Sideline · 1 held':'Sideline';
   const dd=st.possession&&st.down?`${['','1ST','2ND','3RD','4TH'][st.down]} & ${st.field+st.distance>=100?'GOAL':st.distance} · ${st.field>50?'OPP '+(100-st.field):st.field===50?'50':'OWN '+st.field}`:'';
   const tm=s=>`<div class="tm ${s}" style="background:${teamOf(s).colors[0]}"><span class="poss ${st.possession===s?'on':''}"></span><div><div class="ab">${esc(teamOf(s).short)}</div>${s===b.user?'<div class="you">YOU</div>':''}</div><div class="sc">${score[s]}</div></div>`;
   $('#bug').innerHTML=`<div class="bug">${tm('home')}<div class="mid"><div class="clk">${b.weather&&b.weather!=='clear'?`<span title="${WX[b.weather].label}">${WX[b.weather].icon}</span> `:''}${clock(st)}</div><div class="dd">${dd}</div></div>${tm('away')}</div>`;
@@ -323,7 +323,17 @@ function snapChoice(tactics){
   return {play:sel.play,tactics,read:readMode,...(req.role==='def'&&sel.edgeAssignment?{edgeAssignment:sel.edgeAssignment}:{}),...(sel.target?{target:sel.target}:{}),...(sel.bracketRole&&tactics.includes('bracket')?{bracketRole:sel.bracketRole}:{})};
 }
 function selectedTactics(){return sel.tac.map(slot=>req.options.tactics.find(t=>t.slot===slot)?.id).filter(Boolean)}
-function choosePlay(id){if(sel.play!==id){delete sel.target;delete sel.bracketRole}sel.play=id;err=''}
+function choosePlay(id){
+  const play=id?req.options.plays.find(p=>p.id===id):null;
+  if(id&&(!play||play.blocked||play.cost>req.options.command)){
+    err=play?.blocked||(!play?'That play is no longer in hand.':`${play.card.name} needs ${play.cost} Command. You have ${req.options.command}.`);
+    S.error();return false;
+  }
+  if(sel.play!==id)delete sel.target;
+  sel.play=id;err='';retainCallTactics(play);
+  if(sel.bracketRole&&!selectedTactics().includes('bracket'))delete sel.bracketRole;
+  return true;
+}
 function sameLookHTML(){
   const pair=B.sameLookPair(b,req,sel.play);
   if(!pair)return '';
@@ -364,9 +374,7 @@ function switchSameLook(e){
   if(!el||busy||req?.kind!=='snap')return;
   const mate=B.sameLookPair(b,req,sel.play)?.mate;
   if(!mate||mate.reason||mate.id!==el.dataset.sameLook)return;
-  const play=req.options.plays.find(p=>p.id===mate.id);
   choosePlay(mate.id);
-  retainCallTactics(play);
   S.tick(6);refresh();
   document.querySelector('[data-same-look]')?.focus({preventScroll:true});
 }
@@ -732,8 +740,14 @@ function tacticClick(t,why){
   if(i<0&&why){err=why;S.error();renderHand();restore();return}
   if(i>=0)sel.tac.splice(i,1);
   else{
-    // A tactic resolves once per snap. Selecting another copy moves the selection.
-    sel.tac=sel.tac.filter(slot=>!req.options.tactics.some(card=>card.slot===slot&&card.id===t.id));
+    // A replacement copy takes the place of the selected copy in the budget.
+    const otherCopy=req.options.tactics.find(card=>card.id===t.id&&sel.tac.includes(card.slot));
+    const total=selCost()-(otherCopy?.cost||0)+t.cost;
+    if(total>req.options.command){
+      err=`Adding ${t.card.name} would cost ${total} Command for the call. You have ${req.options.command}.`;
+      S.error();renderHand();restore();return;
+    }
+    if(otherCopy)sel.tac=sel.tac.filter(slot=>slot!==otherCopy.slot);
     sel.tac.push(t.slot);
   }
   err='';S.tick(sel.tac.length*3);refresh();restore();
@@ -749,7 +763,7 @@ function wirePlayCard(el,p){
   el.addEventListener('pointerup',e=>{
     const wasDrag=!!ghost;if(ghost){ghost.remove();ghost=null;el.style.opacity='';$('#drop').classList.remove('on','hover')}
     if(!start)return;start=null;
-    if(wasDrag){if(overStage(e)){choosePlay(p.id);snap()}return}
+    if(wasDrag){if(overStage(e)){if(choosePlay(p.id))snap();else refresh()}return}
     S.init();choosePlay(sel.play===p.id?null:p.id);S.tick(6);refresh();
   });
   el.addEventListener('click',e=>{if(e.detail!==0||busy||p.blocked)return;choosePlay(p.id);refresh();[...$('#hand').querySelectorAll('.card')].find(c=>c.dataset.id===p.id)?.focus({preventScroll:true})});
@@ -865,7 +879,7 @@ async function present(){
   for(const e of entries){
     if(e.type==='halftime'){ticker('HALFTIME · tendencies cool off, decks reshuffle');await callout('HALFTIME','cool small',900);continue}
     if(e.type==='kick'){await quickKick(e);continue}
-    if(e.type==='rest'){ticker(e.text);continue}
+    if(e.type==='rest'||e.type==='penalty'){ticker(e.text);continue}
     if(e.type!=='snap')continue;
     if(!FX.instant&&e.userCalled&&e.duelResults&&(save.settings.replays==='all'||e.sit.down>=3||e.sit.field>=80||e.turnover||e.yards>=20||scored(e)))await cinematic(e);else await quick(e);
   }
@@ -1077,8 +1091,9 @@ $('#sidelineBtn').onclick=()=>{
   if(busy)return;
   const o=B.sidelineOptions(b);if(!o)return;
   const threat=B.revealedThreat(b,b.game.possession);
-  const editable=o.offense||o.late;
+  const editable=o.offense||o.late||o.canCoachDrive;
   const dialog=coachingDialog(editable?'Sideline instructions':'Sideline film',`
+    ${o.canCoachDrive?`<label class="timeout-choice"><input type="checkbox" id="coachDrive" ${o.coachDrive?'checked':''}> Call every snap this drive</label><p>Key Moments resumes when this possession ends.</p>`:''}
     ${recentSnapsHTML(b.game.possession)}
     ${o.tactics.length?`<label>Keep on a first down <select id="keepTactic"><option value="">Draw a fresh hand</option>${o.tactics.map(id=>`<option value="${esc(id)}" ${id===o.keep?'selected':''}>${esc(D.TACTICS[id].name)}</option>`).join('')}</select></label>
        <p>If this tactic is still in hand when you earn a first down, keep one copy and draw one fewer. A change of possession clears the choice.</p>`:''}
@@ -1093,7 +1108,7 @@ $('#sidelineBtn').onclick=()=>{
   dialog.querySelector('#sidelineCancel').onclick=()=>dialog.close();
   if(!editable)return;
   dialog.querySelector('#sidelineApply').onclick=()=>{
-    B.setSideline(b,{keep:dialog.querySelector('#keepTactic')?.value||null,
+    B.setSideline(b,{coachDrive:dialog.querySelector('#coachDrive')?.checked,keep:dialog.querySelector('#keepTactic')?.value||null,
       intent:dialog.querySelector('#clockIntent')?.value||o.intent,timeoutNext:!!dialog.querySelector('#clockTimeout')?.checked,
       feature:dialog.querySelector('#featurePlayer')?.value||null});
     writeSave();dialog.close();renderBug();
@@ -1326,6 +1341,8 @@ async function cutScreen(over,added){
     <div class="pbgrid" id="cutg"></div></div>`;
   const g=$('#cutg');
   list.forEach((id,i)=>{const w=document.createElement('div');w.className='cutme';const el=card(id,{small:true});w.appendChild(el);w.onclick=async()=>{
+    if(g.inert)return;
+    g.inert=true;
     S.burn();el.style.transition='filter .6s, opacity .8s, transform .8s';el.style.filter='brightness(1.8) sepia(1) saturate(4)';el.style.opacity=0;el.style.transform='translateY(30px) scale(.8)';
     const r=el.getBoundingClientRect();PT.embers(r.left+r.width/2,r.top+r.height/2);
     P.cut(pb,over.side,over.pile,i);writeSave();await FX.wait(700);

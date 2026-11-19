@@ -58,6 +58,11 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
   }else delete pb.gamePacks;
   return pb;
 }
+function cleanThirdDownFilm(counts){
+  if(!counts||typeof counts!=='object'||Array.isArray(counts))return null;
+  return Object.fromEntries(Object.entries(counts).filter(([id,n])=>
+    /^[a-z0-9_]{1,64}$/i.test(id)&&!Object.hasOwn(Object.prototype,id)&&Number.isInteger(n)&&n>0&&n<=999).slice(0,64));
+}
 function cleanRivalryPlay(x){
   if(!x||typeof x.id!=='string'||!x.id||typeof x.name!=='string'||!x.name||
     !['X','Z','SLOT','TE','RB'].includes(x.role)||!['third','fourth','touchdown','explosive'].includes(x.kind)||!Array.isArray(x.snaps))return null;
@@ -135,7 +140,7 @@ function normalizeCallSheet(u){
   // Last three card meetings per opponent, with at most two remembered catches per rivalry meeting.
   const fc=(o,keys)=>Object.fromEntries(keys.map(k=>[k,ci(o?.[k])]));
   cs.oppFilm=Object.fromEntries(Object.entries(cs.oppFilm&&typeof cs.oppFilm==='object'?cs.oppFilm:{}).filter(([k,v])=>k.length<64&&Array.isArray(v)).slice(-80)
-    .map(([k,v])=>[k,v.filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),def:fc(x.def,['pressure','man','zone','total']),off:fc(x.off,['run','pass','total']),...(cleanRivalryPlay(x.rivalryPlay)?{rivalryPlay:cleanRivalryPlay(x.rivalryPlay)}:{}),...(x.star&&typeof x.star==='object'&&x.star.id!=null&&typeof x.star.name==='string'?{star:{id:String(x.star.id).slice(0,64),name:x.star.name.slice(0,60),w:ci(x.star.w),l:ci(x.star.l)}}:{})}))]));
+    .map(([k,v])=>[k,v.filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),def:fc(x.def,['pressure','man','zone','total']),off:{...fc(x.off,['run','pass','total']),...(x.off?.thirdDown?{thirdDown:cleanThirdDownFilm(x.off.thirdDown)}:{})},...(cleanRivalryPlay(x.rivalryPlay)?{rivalryPlay:cleanRivalryPlay(x.rivalryPlay)}:{}),...(x.star&&typeof x.star==='object'&&x.star.id!=null&&typeof x.star.name==='string'?{star:{id:String(x.star.id).slice(0,64),name:x.star.name.slice(0,60),w:ci(x.star.w),l:ci(x.star.l)}}:{})}))]));
 }
 
 (function(){
@@ -468,6 +473,8 @@ function normalizeCallSheet(u){
   function recordOppFilm(oppId,film,week,tally){
     if(oppId==null||!film||typeof film!=='object')return;const meta=cardMeta(),key=String(oppId),n=v=>Math.max(0,Math.min(999,Number(v)|0));
     const entry={year:universe.year,week:n(week),def:{pressure:n(film.def?.pressure),man:n(film.def?.man),zone:n(film.def?.zone),total:n(film.def?.total)},off:{run:n(film.off?.run),pass:n(film.off?.pass),total:n(film.off?.total)}};
+    const thirdDown=cleanThirdDownFilm(film.off?.thirdDown);
+    if(thirdDown)entry.off.thirdDown=thirdDown;
     // Their player who won the most duels against you (4+ wins), for rivalry history. Names come from the battle tally.
     const opp=teamById(oppId),theirs=new Set((opp?.roster||[]).map(p=>String(p.id)));
     const star=Object.entries(tally&&typeof tally==='object'?tally:{}).filter(([id,t])=>theirs.has(String(id))&&(t.w|0)>=4).sort((a,c)=>((c[1].w|0)-(c[1].l|0))-((a[1].w|0)-(a[1].l|0))||(c[1].w|0)-(a[1].w|0))[0];
@@ -1338,7 +1345,16 @@ function normalizeCallSheet(u){
     const prep=h.target&&!g.played&&meta.activeBattle?.seed!==battleSeed(g)?`<button type="button" data-rivalry-prep aria-pressed="${prepared}">${prepared?'Clear prepared bracket':'Prepare bracket on '+escH(h.target.name)}</button><small> Sets the assignment when you play Bracket this game.</small>`:'';
     return `<details class="cpn-foot" id="rivalryHistory"><summary>${escH(h.text)}</summary><ol>${rows}</ol>${prep}</details>`;
   }
-  // Who the opponent is, in card terms: staff's pass estimate (Dynasty's weekly report) and their defensive call sheet.
+  function upcomingPracticeFilm(){
+    const g=currentCardGame(),me=selected();
+    if(!g||g.played||!me)return null;
+    const opp=T(g.home===me.name?g.away:g.home);if(!opp)return null;
+    const meetings=(universe.callSheet?.oppFilm?.[String(opp.id)]||[]).filter(m=>m.off?.thirdDown);
+    const counts={};
+    for(const m of meetings)for(const [id,n] of Object.entries(m.off.thirdDown))counts[id]=(counts[id]||0)+n;
+    return {name:opp.short||opp.name,meetings:meetings.length,counts};
+  }
+  // Staff's pass estimate and the opponent's defensive call sheet.
   function opponentIdentityFor(me,opp){
     if(!me||!opp||!universe?.callSheet)return null;let pe=null;
     try{const r=v0102WeeklyOpponentReport(me,opp),est=r?.passEstimate??r?.metrics?.passEstimate;if(Number.isFinite(Number(est)))pe=Number(est)}catch(err){}
@@ -2106,7 +2122,7 @@ function normalizeCallSheet(u){
     try{paintCardProgram()}catch(err){console.error(err)}
     return out;
   };
-  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();const trigger=e.target.closest('[data-card-deck]');if(trigger){const origin=trigger.closest('#cardBinder')?'#cardBinder':'#cardProgram';if(deckEditsLocked()){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{maxStored:CALL_SHEET_RESERVE_LIMIT,maxUnusedSignatures:CALL_SHEET_UNUSED_SIGNATURE_LIMIT,team:CS.adapter.battleTeam(selected(),null,availabilityFor(selected())),onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()},onClose:()=>document.querySelector(origin+' [data-card-deck]')?.focus()})}});
+  if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();const trigger=e.target.closest('[data-card-deck]');if(trigger){const origin=trigger.closest('#cardBinder')?'#cardBinder':'#cardProgram';if(deckEditsLocked()){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{maxStored:CALL_SHEET_RESERVE_LIMIT,maxUnusedSignatures:CALL_SHEET_UNUSED_SIGNATURE_LIMIT,team:CS.adapter.battleTeam(selected(),null,availabilityFor(selected())),practiceFilm:upcomingPracticeFilm(),onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()},onClose:()=>document.querySelector(origin+' [data-card-deck]')?.focus()})}});
 
   // Replays get a separate iframe and a read-only host. An active weekly game can stay suspended.
   function openClassicDrive(id,trigger){

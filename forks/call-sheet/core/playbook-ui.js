@@ -149,7 +149,7 @@ function pairedDrawSlots(saved,draft){
   return slots.concat(remaining.map(id=>({saved:null,draft:id})));
 }
 const PRACTICE_THREATS=['deep_cross','screen'];
-function thirdDownHands(saved,draft,lineup,team=null,unit='off'){
+function thirdDownHands(saved,draft,lineup,team=null,unit='off',practiceFilm=null,useFilm=true){
   if(!lineup?.off||!lineup?.def)return [];
   const {battle:B,data:D,packs:P,resolver:R}=root.CallSheet;
   const decks={saved:P.decksOf(saved),draft:P.decksOf(draft)},slots={};
@@ -168,6 +168,13 @@ function thirdDownHands(saved,draft,lineup,team=null,unit='off'){
     if(team.packageStarters)practiceTeam.packageStarters={...team.packageStarters};
     grouping=B.dressPackage({game:{...situation,fieldPosition:situation.field},teams:{home:practiceTeam},box:{home:{plays:2}}},'home');
   }
+  const recorded=unit==='def'&&practiceFilm?Object.entries(practiceFilm.counts||{}):[];
+  const eligible=recorded.filter(([id,n])=>{
+    if(!Number.isInteger(n)||n<1||!Object.hasOwn(D.PLAYS,id))return false;
+    const play=D.PLAYS[id];return !play.quickKick&&!play.drill&&!play.setupPlay&&!R.playBlocked(play,dressed.off,situation);
+  }).sort((a,b)=>b[1]-a[1]||a[0].localeCompare(b[0])).slice(0,2);
+  const usingFilm=useFilm&&eligible.length===2;
+  const threats=usingFilm?eligible.map(([id])=>id):PRACTICE_THREATS;
   function project(card,tactic){
     const key=JSON.stringify([card.id,tactic?.id]);
     if(!projections.has(key)){
@@ -178,7 +185,7 @@ function thirdDownHands(saved,draft,lineup,team=null,unit='off'){
         projections.set(key,{chance:R.evaluate(snap,situation).first});
       }else{
         // Commit the same coverage and tactic against both threats before ranking the call.
-        const stops=PRACTICE_THREATS.map(id=>{
+        const stops=threats.map(id=>{
           const snap=R.buildSnap({...ctx,play:D.PLAYS[id],call:card,defTactics:tactics});
           return 1-R.evaluate(snap,situation).first;
         });
@@ -218,6 +225,11 @@ function thirdDownHands(saved,draft,lineup,team=null,unit='off'){
     return hands;
   });
   out.grouping=grouping;
+  if(unit==='def'){
+    out.threats=threats;
+    if(practiceFilm)out.film={name:practiceFilm.name,meetings:practiceFilm.meetings,eligible,usingFilm,
+      sample:recorded.reduce((sum,[,n])=>sum+n,0)};
+  }
   return out;
 }
 function thirdDownHTML(hands,unit){
@@ -227,13 +239,23 @@ function thirdDownHTML(hands,unit){
   const metric=defense?'weaker matchup stop chance':'best conversion';
   function report(h){
     const best=h.calls[0];
-    const odds=!best?'':defense?PRACTICE_THREATS.map((id,i)=>pct(best.stops[i])+' stop vs '+name(id)).join(' · '):pct(best.chance)+' to convert';
+    const odds=!best?'':defense?hands.threats.map((id,i)=>pct(best.stops[i])+' stop vs '+name(id)).join(' · '):pct(best.chance)+' to convert';
     return (best?`<b>${name(best.id)}${best.tactic?' + '+name(best.tactic):''}</b> · ${odds} · ${best.cost} Command`:'No affordable call')+
       `<small>Play draws · ${h.wrinkles.map(name).join(', ')||'None'}<br>Tactic draws · ${h.tactics.map(name).join(', ')||'None'}${defense?'':'<br>Calls at 30% or better · '+(h.calls.filter(c=>c.chance>=.3).map(c=>name(c.id)).join(', ')||'None')}</small>`;
   }
   const personnel=root.CallSheet.battle.GROUPINGS[hands.grouping];
   const score=side=>defense?pct(hands.reduce((total,h)=>total+(h[side].calls[0]?.chance||0),0)/hands.length):hands.filter(h=>h[side].calls.filter(c=>c.chance>=.3).length>=2).length+'/10';
-  return `<p>${defense?'Your defense faces Deep Cross and RB Screen from the offense’s 45. Each hand recommends the same call and tactic for both threats, favoring the higher chance to stop the tougher matchup.':'Your offense faces your defense in Cover 3 at your 45.'} Each sample gives you a fresh hand, two Command left, and up to one non-info tactic per call. Base calls and available player discounts apply.</p>
+  const film=hands.film;
+  let source='';
+  if(film){
+    const opponent=escF(film.name);
+    if(film.eligible.length===2){
+      const calls=film.eligible.map(([id,n])=>name(id)+' ×'+n).join(' · ');
+      source=`<label>Practice opponent<select data-practice-source><option value="film" ${film.usingFilm?'selected':''}>${opponent} film</option><option value="standard" ${!film.usingFilm?'selected':''}>Standard drill</option></select></label>`;
+      if(film.usingFilm)source+=`<p>${opponent} ran ${film.sample} recorded third-down snaps in ${film.meetings} prior card meeting${film.meetings===1?'':'s'}. ${calls}. Your scout-team offense runs these plays for the drill.</p>`;
+    }else source=`<p>${opponent} film has fewer than two different third-down plays your scout team can run here. This drill uses the standard pair.</p>`;
+  }
+  return `${source}<p>${defense?'Your defense faces '+hands.threats.map(name).join(' and ')+' from the offense’s 45. Each hand uses one defensive call and tactic against both plays.':'Your offense faces your defense in Cover 3 at your 45.'} Each sample gives you a fresh hand, two Command left, and up to one non-info tactic per call. Base calls and available player discounts apply.</p>
     <p>Auto personnel on offense: <b>${escF(personnel)}</b>.${!defense&&hands.grouping==='10'?' Plays that need an inline tight end are left out, as in a game.':''}</p>
     <p><b>${defense?'Average stop chance against the tougher matchup':'Hands with two or more calls at 30% or better to convert'}</b><br>Saved ${score('saved')} · Draft ${score('draft')}</p>
     <p>Change a card to replay these draws before saving.</p>
@@ -344,11 +366,11 @@ const EDITOR_CSS=`
 @media(max-width:720px){#deckEditor button,#deckEditor input,#deckEditor select,#deckEditor [data-side],#deckEditor [data-category]{min-height:44px}#deckEditor summary{display:list-item;min-height:44px;align-content:center}}
 @media(max-width:360px){#deckEditor h2{font-size:20px}#deckEditor .de-top{gap:5px}#deckEditor .de-side-nav{padding:1px}#deckEditor .de-side-nav button{padding:5px}#deckEditor .de-body{scrollbar-gutter:auto}}
 `;
-function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null,practiceFilm=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
-  let side='off',category='wrinkles',planKey='',presetChanges=[],repairingPreset=null,showHands=false;
+  let side='off',category='wrinkles',planKey='',presetChanges=[],repairingPreset=null,showHands=false,useFilm=true;
   // A suggested swap is staged in the draft only; Save keeps it, Cancel discards it with everything else.
   let staged=null;
   if(suggest?.remove&&suggest?.add){const deck=draft.off.wrinkles,res=draft.reserve.off.wrinkles,i=deck.indexOf(suggest.remove),j=res.indexOf(suggest.add);
@@ -432,7 +454,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
-    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven ${side==='def'?'defensive ':''}hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup,team,side),side):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
+    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven ${side==='def'?'defensive ':''}hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup,team,side,practiceFilm,useFilm),side):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
     <p>Each series, draw up to ${D.RULES.wrinkleRow} extra plays and ${D.RULES.tacticHand} tactics. Base calls are always available. Special-teams tactics trigger in their own situations instead of being drawn.</p>
     ${side==='off'?openingScriptHTML(deck,lineup):''}
 <details data-plans ${plansOpen?'open':''}><summary>Try a different ${adjective} build</summary>
@@ -484,7 +506,9 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
     if(b.dataset.evolve){const [from,to]=b.dataset.evolve.split(':');act(()=>root.CallSheet.evolution.evolve(draft,from,to,{lineup}),cardName(to)+' selected. Save deck to keep it.',()=>$('[data-more-options] summary')?.focus({preventScroll:true}));return}
   });
   dialog.addEventListener('change',e=>{
-    const el=e.target;if(el.hasAttribute('data-plan')){planKey=el.value;render({focus:'[data-plan]'});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
+    const el=e.target;
+    if(el.hasAttribute('data-practice-source')){useFilm=el.value==='film';render({focus:'[data-practice-source]'});return}
+    if(el.hasAttribute('data-plan')){planKey=el.value;render({focus:'[data-plan]'});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
     if(el.hasAttribute('data-base')){const i=Number(el.dataset.base),id=el.value;act(()=>P.setBase(draft,side,i,id),`Base call ${i+1}: ${cardName(id)}.`,()=>$(at('[data-base',String(i)))?.focus({preventScroll:true}));return}
     if(el.id==='openingScript'){act(()=>P.setOpeningScript(draft,el.value),'Opening script updated.',()=>$('#openingScript')?.focus({preventScroll:true}));return}
   });

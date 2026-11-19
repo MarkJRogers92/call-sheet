@@ -175,3 +175,20 @@ test('defensive practice holds a single affordable call against a deep cross and
   const withTeam=U.thirdDownHands(saved,saved,lineup,team,'def');assert.equal(withTeam.grouping,'10');
   assert.deepEqual(withTeam[0].saved,withTeam[0].draft);
 });
+
+test('opponent practice projects only recorded legal plays and lets the coach use standard threats on the same draws',()=>{
+  global.DynastyRng=require('../rng');global.CallSheet.battle=require('../forks/call-sheet/core/battle');
+  const team=Ro.preset('control'),lineup=team.lineup,pb=P.newPlaybook();
+  const film={name:'Away',meetings:2,counts:{te_pop_pass:9,qb_sneak:7,quick_slant:4,outside_zone:3,vertical_shot:1}};
+  const before=copy([film,team,pb]),drill=source=>U.thirdDownHands(pb,pb,lineup,null,'def',film,source);
+  const filmed=drill(true),standard=drill(false);
+  assert.deepEqual(filmed.threats,['quick_slant','outside_zone']);assert.equal(filmed.film.sample,24);
+  assert.deepEqual(standard.threats,['deep_cross','screen']);
+  for(const [i,h] of filmed.entries()){
+    assert.deepEqual(h.saved.wrinkles,standard[i].saved.wrinkles);assert.deepEqual(h.saved.tactics,standard[i].saved.tactics);
+    const c=h.saved.calls[0],situation={down:3,distance:7,field:45,period:2,clock:480};
+    assert.deepEqual(c.stops,filmed.threats.map(id=>1-R.evaluate(R.buildSnap({...lineup,play:D.PLAYS[id],call:D.CALLS[c.id],defTactics:c.tactic?[c.tactic]:[],grouping:'11',read:'auto',weather:'clear',situation}),situation).first));
+  }
+  assert.deepEqual([film,team,pb],before);
+  film.counts={quick_slant:3,spike:1,bogus:2};assert.deepEqual(drill(true).threats,standard.threats);
+});

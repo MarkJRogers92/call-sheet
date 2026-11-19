@@ -43,6 +43,53 @@ test('a sneak favors one yard over two, and a loaded front can stonewall it',()=
   assert.ok(R.evaluate(open).yards<R.evaluate(snapFor('inside_zone','two_high')).yards);
 });
 
+test('the sneak opens one pop pass decision, including after moving the chains or resuming an older save',()=>{
+  const E=require('../game-engine-v2');
+  const b=B.create({seed:'pop-2',home:Ro.preset('ground'),away:Ro.preset('aerial'),mode:'snap',control:'offense',user:'home'});
+  E.startGame(b.game);Object.assign(b.game,{possession:'home',fieldPosition:48,down:2,distance:1});
+  const start=B.advance(b);
+  assert.ok(!start.options.plays.some(o=>o.id==='te_pop_pass'));
+  assert.match(B.sameLookPair(b,start,'qb_sneak').setup,/next call sheet/);
+  B.submit(b,{type:'call',play:'qb_sneak',tactics:[]});
+  assert.equal(b.game.down,1);
+  assert.equal(b.pending.options.plays.find(o=>o.id==='te_pop_pass').cost,2);
+  b.pending.options.plays=b.pending.options.plays.filter(o=>o.id!=='te_pop_pass');
+  const r=B.load(B.save(b));
+  assert.deepEqual(r.hands,b.hands);assert.deepEqual(r.rng,b.rng);
+  assert.equal(r.pending.options.plays.filter(o=>o.id==='te_pop_pass').length,1);
+  assert.match(B.sameLookPair(r,r.pending,'te_pop_pass').setup,/Sell the Sneak is ready/);
+  const possession=r.game.drive;
+  r.game.drive++;assert.ok(!B.offOptions(r,'home').plays.some(o=>o.id==='te_pop_pass'));
+  r.game.drive=possession;
+  r.game.ot={period:1,possessions:0};
+  assert.ok(!B.offOptions(r,'home').plays.some(o=>o.id==='te_pop_pass'),'regulation ended');
+  r.drive.key='OT:1:0:home';assert.ok(B.offOptions(r,'home').plays.some(o=>o.id==='te_pop_pass'));
+  r.game.ot={period:2,possessions:2};
+  assert.ok(!B.offOptions(r,'home').plays.some(o=>o.id==='te_pop_pass'),'even the same offense starts with a fresh look in the next overtime');
+  delete r.game.ot;r.drive.key=b.drive.key;
+  const command=r.hands.home.command;
+  B.submit(r,{type:'call',play:'te_pop_pass',tactics:[],read:'primary'});
+  const e=r.log.find(e=>e.play==='te_pop_pass');
+  assert.equal(e.primaryTarget,'TE');
+  assert.ok(e.duels[1].mods.some(m=>m.src==='COMBO: Sell the Sneak'&&m.v===1));
+  assert.ok(e.events.some(x=>x.id==='sell_the_sneak'));
+  assert.equal(r.hands.home.command,command-1,'costs two and earns one for the first combination');
+  assert.ok(!r.pending.options.plays.some(o=>o.id==='te_pop_pass'));
+  r.drive.plays.push('qb_sneak');
+  assert.equal(B.comboFor(r,D.PLAYS.te_pop_pass),null,'a new sneak can reopen the call but cannot farm Command');
+});
+
+test('the pop pass needs an actual tight end and has a different answer to the front than the sneak',()=>{
+  const loaded=snapFor('te_pop_pass','run_fit'),light=snapFor('te_pop_pass','two_high');
+  assert.ok(modsOf(loaded,'K').includes('Linebackers crowd the wedge'));
+  assert.ok(modsOf(light,'K').includes('Linebackers sit under the pop'));
+  assert.ok(R.evaluate(loaded,{distance:2}).first>R.evaluate(light,{distance:2}).first);
+  assert.ok(loaded.duels[1].offRoles.includes('TE')&&loaded.duels[1].defRoles.includes('MIKE'));
+  const {off}=lineups();
+  assert.equal(R.playBlocked(D.PLAYS.te_pop_pass,off),null);
+  assert.match(R.playBlocked(D.PLAYS.te_pop_pass,{...off,TE:off.X}),/inline tight end/);
+});
+
 test('pass plays check down to the back or tight end when the first read is covered, unless told not to',()=>{
   const snap=snapFor('quick_slant','cover3');
   assert.ok(snap.checkdown&&['RB','TE'].includes(snap.checkdown.role)&&snap.checkdown.p>0&&snap.checkdown.p<.3);

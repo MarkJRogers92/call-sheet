@@ -127,9 +127,11 @@ function defendLead(b){
   const margin=b.game.score[b.user]-b.game.score[other(b.user)];
   return b.mode==='key'&&b.headset.defendLead&&b.user!==b.game.possession&&margin>=1&&margin<=8;
 }
+// Scoped to this possession so a conversion keeps the coach in charge and a turnover hands back the headset.
+function coachingDrive(b){return b.mode==='key'&&b.coachedDrive===driveKey(b.game,b.game.possession)}
 function isUser(b,side){
   if(b.user!==side||!b.game.possession)return false;
-  if(b.control==='both'||defendLead(b))return true;
+  if(b.control==='both'||defendLead(b)||coachingDrive(b))return true;
   return(b.control==='offense')===(side===b.game.possession);
 }
 function keyMoment(b){
@@ -429,13 +431,13 @@ function sidelineOptions(b){
   const hand=b.hands[req.side],late=drillOn(b);
   const lineup=b.teams[req.side].lineup.off,f=b.featured?.[req.side],half=halfOf(b.game);
   const featurable=req.role==='off'?FEATURE_ROLES.filter(r=>lineup[r]?.id!=null&&lineup[r].name).map(r=>({role:r,id:lineup[r].id,name:lineup[r].name})):[];
-  return {offense:req.role==='off',late,intent:b.clockIntent||'normal',
+  return {canCoachDrive:b.mode==='key'&&b.game.period<=4&&!b.guidedDrive?.active,coachDrive:coachingDrive(b),offense:req.role==='off',late,intent:b.clockIntent||'normal',
     featurable,featured:f&&f.half===half?{id:f.id,name:b.personnel?.[f.id]?.name||null,touches:f.touches,left:Math.max(0,FEATURE_TOUCHES-f.touches)}:null,
     timeouts:timeoutsLeft(b,req.side),timeoutNext:!!b.snap.timeoutNext,
     tactics:req.role==='off'?[...new Set(hand.tactics)]:[],keep:hand.tactics.includes(hand.keepTactic)?hand.keepTactic:null,
     retained:hand.retained||null};
 }
-function setSideline(b,{keep=null,intent='normal',timeoutNext=false,feature=null}){
+function setSideline(b,{keep=null,intent='normal',timeoutNext=false,feature=null,coachDrive}){
   const options=sidelineOptions(b);
   if(!options)throw new Error('Choose sideline instructions before a coached snap.');
   let pick=null;
@@ -448,6 +450,9 @@ function setSideline(b,{keep=null,intent='normal',timeoutNext=false,feature=null
   if(!['normal','preserve','drain'].includes(intent))throw new Error('Unknown clock policy.');
   if(intent!==options.intent&&(!options.late||!options.offense))throw new Error('Choose a tempo on offense in the final two minutes of a half.');
   if(timeoutNext&&(!options.late||!options.timeouts))throw new Error('No late-game timeout available.');
+  if(coachDrive===true&&!options.canCoachDrive)throw new Error('Drive control is available in Key Moments.');
+  if(coachDrive===true)b.coachedDrive=driveKey(b.game,b.game.possession);
+  if(coachDrive===false)delete b.coachedDrive;
   if(pick&&!options.featured)(b.featured??={home:null,away:null})[b.user]={id:pick.id,half:halfOf(b.game),touches:0};
   b.hands[b.user].keepTactic=keep;
   b.clockIntent=intent;
@@ -460,14 +465,18 @@ function showsQuickOut(b,side){
   return b.hands[side].wrinkles.some(isDoubleMove)||b.decks[side].off.base.some(isDoubleMove);
 }
 function sneakAvailable(b){return b.game.distance>=1&&b.game.distance<=D.PLAYS.qb_sneak.maxDistance}
+// Wiped by a change of possession, including the same team taking consecutive overtime possessions.
+function driveKey(g,side){return `${possessionKey(g)}:${side}`}
+function popPassReady(b,side){return b.drive?.key===driveKey(b.game,side)&&b.drive.plays?.at(-1)===D.PLAYS.te_pop_pass.setupPlay}
 function freeCard(b,side,role,id){
   if(b.decks[side][role].base.includes(id))return true;
-  return role==='off'&&((id==='qb_sneak'&&sneakAvailable(b))||(id==='quick_out'&&showsQuickOut(b,side))||((D.DRILL_CARDS||[]).includes(id)&&drillOn(b)));
+  return role==='off'&&((id==='qb_sneak'&&sneakAvailable(b))||(id==='te_pop_pass'&&popPassReady(b,side))||(id==='quick_out'&&showsQuickOut(b,side))||((D.DRILL_CARDS||[]).includes(id)&&drillOn(b)));
 }
 function offOptions(b,side){
   const hand=b.hands[side],team=b.teams[side],lineup=team.lineup.off;
   const bases=[...b.decks[side].off.base];
   if(sneakAvailable(b)&&!bases.includes('qb_sneak'))bases.push('qb_sneak');
+  if(popPassReady(b,side)&&!bases.includes('te_pop_pass'))bases.push('te_pop_pass');
   if(showsQuickOut(b,side)&&!bases.includes('quick_out'))bases.push('quick_out');
   const plays=[...bases.map(id=>({id,base:true})),...(drillOn(b)?(D.DRILL_CARDS||[]).map(id=>({id,base:true,drill:true})):[]),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
     .map(o=>({...o,card:D.PLAYS[o.id],cost:costOf(b,side,D.PLAYS[o.id]),blocked:R.playBlocked(D.PLAYS[o.id],lineup,situation(b))}));
@@ -613,7 +622,7 @@ function payAndRemove(b,side,kind,id){
       if(card.trick)(b.exhausted[side]??=[]).push(id);else b.piles[side][hand.role].wrinkle.discard.push(id)}
   }
   markCostUse(b,side,card);hand.command-=cost;
-  if(kind==='tactic'||(id!=='quick_out'&&id!=='qb_sneak'&&!b.decks[side][hand.role].base.includes(id)))b.box[side].cardsPlayed++;
+  if(kind==='tactic'||(!['quick_out','qb_sneak','te_pop_pass'].includes(id)&&!b.decks[side][hand.role].base.includes(id)))b.box[side].cardsPlayed++;
 }
 // Info tactics resolve at once and change what the side knows this snap.
 function applyInfo(b,side,id){
@@ -714,7 +723,7 @@ function decideAI(b,side,role){
 // Mode rules: does the person decide this snap live?
 function liveFor(b,side){
   if(!isUser(b,side))return false;
-  if(b.mode==='snap')return true;if(b.mode==='sim')return false;
+  if(b.mode==='snap'||coachingDrive(b))return true;if(b.mode==='sim')return false;
   return keyMoment(b);
 }
 function needsPlan(b,side){return isUser(b,side)&&b.mode==='series'&&!b.plan&&!keyMoment(b)}
@@ -748,6 +757,7 @@ function advance(b){
   let guard=0;
   while(++guard<5000){
     const g=b.game;
+    if(b.coachedDrive!=null&&(g.status==='final'||!coachingDrive(b)))delete b.coachedDrive;
     if(b.replayDrive!=null&&(possessionKey(g)!==b.replayDrive||g.status==='final'))return null;
     if(b.pending)return b.pending;
     if(g.status==='pregame')Engine.startGame(g);
@@ -823,7 +833,7 @@ function fourthRecommendation(b){
 function fourthChoice(b){
   const g=b.game,off=offSide(b);
   if(g.period>4){if(g.fieldPosition>=55&&Engine.fieldGoalInRange(g))return'ot_fg';return'go'}
-  if(isUser(b,off)&&b.mode!=='sim'&&(b.mode!=='key'||b.headset.fourth))return'ask';
+  if(isUser(b,off)&&b.mode!=='sim'&&(b.mode!=='key'||b.headset.fourth||coachingDrive(b)))return'ask';
   return fourthRecommendation(b);
 }
 function fourthRequest(b){
@@ -937,7 +947,7 @@ function falseStart(b,side){
 // need only the play; defense combos also need the call (null when only the offense is known).
 function comboFor(b,play,call=null){
   if(!play)return null;
-  const mine=b.drive?.key===`${b.game.drive}:${offSide(b)}`,dr=mine?b.drive:{};
+  const mine=b.drive?.key===driveKey(b.game,offSide(b)),dr=mine?b.drive:{};
   const c={play,call,root:play.evolvedFrom||play.upgradeOf||play.id,fams:dr.fams||[],plays:dr.plays||[],calls:dr.calls||[],results:dr.results||[]};
   // Each team completes each combo at most once per half (overtime is its own half).
   const half=b.game.period<=2?1:b.game.period<=4?2:3,usedBy=side=>b.comboLog?.[side]?.[half]||[];
@@ -1049,7 +1059,7 @@ function resolveSnap(b){
   if(!s.off)s.off=decideAI(b,off,'off');
   const sit=situation(b),lean=leanFor(b),heat=heatFor(b);
   // Drive memory for combos.
-  const dkey=`${g.drive}:${off}`;if(b.drive.key!==dkey)b.drive={key:dkey,fams:[],plays:[],calls:[],results:[],combos:[],firsts:0};
+  const dkey=driveKey(g,off);if(b.drive.key!==dkey)b.drive={key:dkey,fams:[],plays:[],calls:[],results:[],combos:[],firsts:0};
   b.drive.plays??=[];b.drive.calls??=[];b.drive.results??=[];b.drive.combos??=[];
   const card=D.PLAYS[s.off.play];
   const cornerRoll=(card.evolvedFrom||card.upgradeOf||card.id)==='out_and_up'?withRng(b,rng=>rng.next()):undefined;
@@ -1465,19 +1475,30 @@ function sameLookPair(b,req,id){
   const line=b.teams[side].lineup.off,def=b.teams[other(side)].lineup.def;
   const mike=def.MIKE?.name||'the middle linebacker',edge=def.SET?.name||'the edge defender';
   if(!offense){
-    const families=b.drive?.key===`${b.game.drive}:${side}`?b.drive.fams||[]:[];
+    const families=b.drive?.key===driveKey(b.game,side)?b.drive.fams||[]:[];
     if(families.length<2||!families.slice(-2).every(f=>f==='run'))return null;
     return {title:'Two straight runs',read:`On the give, ${mike} fits the crease. If they fake it, ${edge} can stop the rollout before the throw.`};
   }
   const root=id=>{const c=D.PLAYS[id];return c?.evolvedFrom||c?.upgradeOf||id};
   const base=root(id);
-  const pairs={inside_zone:'pa_boot',pa_boot:'inside_zone',quick_out:'out_and_up',out_and_up:'quick_out'};
+  const pairs={qb_sneak:'te_pop_pass',te_pop_pass:'qb_sneak',inside_zone:'pa_boot',pa_boot:'inside_zone',quick_out:'out_and_up',out_and_up:'quick_out'};
   const mate=pairs[base],hand=req.options;
   if(!mate)return null;
   const matches=hand.plays.filter(p=>root(p.id)===mate);
   const option=matches.find(p=>!p.blocked&&p.cost<=hand.command)||matches[0];
   const name=option?D.PLAYS[option.id].name:D.PLAYS[mate].name;
   const reason=!option?'Outside this hand.':option.blocked||(option.cost>hand.command?'Insufficient Command.':'');
+  if(base==='qb_sneak'||base==='te_pop_pass'){
+    const inline=line.TE?.pos==='TE'?line.TE.name:'an inline tight end';
+    const ready=popPassReady(b,side),combo=comboFor(b,D.PLAYS.te_pop_pass);
+    const setup=!ready?'Keep the ball after the sneak to put the pop pass on your next call sheet.':
+      combo?.id==='sell_the_sneak'?'Sell the Sneak is ready. The first pop pass off a sneak this half earns +1 Key and returns 1 Command.':
+      'The sneak opened the pop pass again. Its combo reward has been used this half.';
+    const missing=mate==='qb_sneak'?'Only with one or two yards to gain.':'Opens after the sneak.';
+    return {title:'QB Sneak / TE Pop Pass',diagrams:['qb_sneak','te_pop_pass'],setup,
+      read:`The quarterback follows the center on the sneak. On the fake, ${inline} slips behind ${mike}. A loaded front opens that window. A light box can take it away.`,
+      mate:{id:option?.id||mate,name,cost:option?.cost,reason:option?reason:missing}};
+  }
   if(base==='quick_out'||base==='out_and_up'){
     const receiver=line.X?.name||'X',corner=def.BCB?.name||'the boundary corner',look=setupLook(b,side),away=look.elsewhere;
     const canHold=!!away&&b.pending===req&&!b.snap?.off;
@@ -1636,12 +1657,17 @@ function rivalryCatch(b,e,groups){
   groups.set(key,g);
 }
 function callFilm(b,side=b?.user){
-  if(!b?.log||!side)return null;const opp=side==='home'?'away':'home',film={def:{pressure:0,man:0,zone:0,total:0},off:{run:0,pass:0,total:0},own:{plays:{},snaps:0,mine:0}};
+  if(!b?.log||!side)return null;const opp=side==='home'?'away':'home',film={def:{pressure:0,man:0,zone:0,total:0},off:{run:0,pass:0,total:0,thirdDown:{}},own:{plays:{},snaps:0,mine:0}};
   const catches=new Map();
   for(const e of b.log){
     if(e.type!=='snap'||e.penalty||e.category==='kick')continue;
     if(e.defSide===opp){const c=D.CALLS[e.call];if(c&&film.def[c.family]!==undefined){film.def[c.family]++;film.def.total++}}
-    if(e.offSide===opp){const p=D.PLAYS[e.play];if(p){film.off[p.family==='run'?'run':'pass']++;film.off.total++;if(b.rivalry)rivalryCatch(b,e,catches)}}
+    if(e.offSide===opp&&Object.hasOwn(D.PLAYS,e.play)){
+      const p=D.PLAYS[e.play];
+      film.off[p.family==='run'?'run':'pass']++;film.off.total++;
+      if(e.sit?.down===3)film.off.thirdDown[e.play]=(film.off.thirdDown[e.play]||0)+1;
+      if(b.rivalry)rivalryCatch(b,e,catches);
+    }
     // Your own offensive calls, for the season recap: calls, yards, stops, and how many you called yourself.
     if(e.offSide===side&&D.PLAYS[e.play]&&Number.isFinite(e.yards)){const t=film.own.plays[e.play]??={n:0,yards:0,stops:0,mine:0};
       t.n++;t.yards+=e.yards;t.stops+=e.turnover||e.yards<=0?1:0;t.mine+=e.userCalled?1:0;film.own.snaps++;film.own.mine+=e.userCalled?1:0}
@@ -1915,9 +1941,11 @@ function load(text){
   // V20 snapshots printed a minimum QB speed on the ordinary Read Option.
   // Refresh that one option in place so resuming never spends Command or deals a new hand.
   if(req?.role==='off'&&['snap','plan'].includes(req.kind)){
-    if(sneakAvailable(b)&&req.options?.plays&&!req.options.plays.some(o=>o.id==='qb_sneak')){
-      const card=D.PLAYS.qb_sneak;
-      req.options.plays.push({id:card.id,base:true,card,cost:costOf(b,req.side,card),blocked:null});
+    const situational=[];
+    if(sneakAvailable(b))situational.push(D.PLAYS.qb_sneak);
+    if(popPassReady(b,req.side))situational.push(D.PLAYS.te_pop_pass);
+    for(const card of situational)if(req.options?.plays&&!req.options.plays.some(o=>o.id===card.id)){
+      req.options.plays.push({id:card.id,base:true,card,cost:costOf(b,req.side,card),blocked:R.playBlocked(card,b.teams[req.side].lineup.off,req.situation)});
     }
     for(const o of req.options?.plays||[])if(o.id==='read_option'&&o.card?.needs?.trait==='speed'){
       o.card=D.PLAYS.read_option;

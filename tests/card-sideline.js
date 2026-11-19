@@ -200,3 +200,55 @@ test('film counts actual plays, notices only contemporaneous featured touches, a
   b.teams.home.lineup.off.RB=rb;b.game.period=3;assert.equal(B.revealedThreat(b,'home'),null);
   b.game.period=5;b.log=[{...catchPlay,sit:{...catchPlay.sit,period:4},featuredTouch:rb.id}];assert.equal(B.revealedThreat(b,'home'),null);
 });
+
+test('a Key Moments takeover lasts through first and fourth downs in this possession and survives reload',()=>{
+  const observed=new Set();
+  for(let i=0;i<32&&observed.size<2;i++){
+    const b=fixture('takeover-'+i,{down:3,distance:1});
+    b.mode='key';b.headset.fourth=false;
+    const req=B.advance(b),drive=b.game.drive;
+    assert.equal(req.kind,'snap');
+    const options=B.sidelineOptions(b);
+    assert.equal(options.canCoachDrive,true);assert.equal(options.coachDrive,false);
+    const rng=structuredClone(b.rng);
+    B.setSideline(b,{coachDrive:true});
+    assert.deepEqual(b.rng,rng);assert.equal(b.mode,'key');
+    const resumed=B.load(B.save(b));
+    assert.equal(B.sidelineOptions(resumed).coachDrive,true);
+    const action={type:'call',play:'qb_sneak',tactics:[]};
+    const next=B.submit(b,action);B.submit(resumed,action);
+    assert.equal(B.save(b),B.save(resumed),'resuming a takeover changes neither the snap nor the next decision');
+    if(b.game.drive!==drive)continue;
+    if(b.game.down===1){
+      assert.equal(next.kind,'snap');assert.equal(next.situation.down,1);
+      assert.equal(B.sidelineOptions(b).coachDrive,true,'a new set of downs remains in this drive');
+      observed.add('first');
+    }
+    if(b.game.down===4){
+      assert.equal(next.kind,'fourth','the coach gets the fourth-down decision even with the usual fourth-down prompt off');
+      const following=B.submit(b,{type:'fourth',choice:'punt'});
+      assert.notEqual(b.game.drive,drive);
+      assert.equal(following.kind,'snap');
+      assert.equal(B.sidelineOptions(b).coachDrive,false,'regular Key Moments pace resumes for the next possession');
+      assert.equal(b.mode,'key');assert.equal(b.headset.fourth,false);
+      observed.add('fourth');
+    }
+  }
+  assert.deepEqual(observed,new Set(['first','fourth']));
+});
+
+test('canceling a drive takeover restores the same Key Moments decisions and RNG as never enabling it',()=>{
+  const b=fixture('takeover-cancel',{down:3,distance:1});
+  b.mode='key';B.advance(b);
+  const control=B.load(B.save(b));
+  B.setSideline(b,{coachDrive:true});B.setSideline(b,{coachDrive:false});
+  assert.equal(B.sidelineOptions(b).coachDrive,false);
+  const action={type:'call',play:'qb_sneak',tactics:[]};
+  assert.deepEqual(B.submit(b,action),B.submit(control,action));assert.deepEqual(b.game,control.game);
+  assert.deepEqual(b.rng,control.rng);
+  const everySnap=fixture('takeover-every-snap');B.advance(everySnap);
+  assert.equal(B.sidelineOptions(everySnap).canCoachDrive,false);
+  const before=B.save(everySnap);
+  assert.throws(()=>B.setSideline(everySnap,{coachDrive:true}),/Key Moments/);
+  assert.equal(B.save(everySnap),before,'an unavailable instruction spends nothing and changes no settings');
+});

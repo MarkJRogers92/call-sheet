@@ -62,6 +62,7 @@ function playBlocked(play,lineup,sit=null){
   if(play.thirdOnly&&sit&&sit.down!==3)return'3rd down only';
   // The inline player sells the edge block on these wrinkles. Four-wide
   // personnel can still call the base runs or throw to the fourth receiver.
+  if(rootPlay(play)==='te_pop_pass'&&lineup.TE?.pos!=='TE')return 'Needs an inline tight end. Change personnel for the pop pass.';
   if(['power','pa_boot'].includes(rootPlay(play))&&lineup.TE?.pos==='WR')return 'Needs an inline tight end. Change personnel to run this play.';
   const n=play.needs;
   if(n&&traitGrade(lineup[n.role],n.trait)<n.grade)return`Needs a ${n.role} with ${n.trait} ${n.grade}+`;

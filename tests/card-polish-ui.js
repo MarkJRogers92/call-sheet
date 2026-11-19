@@ -91,9 +91,11 @@ test('a coach can switch paired calls with legal tactics and cannot select an un
  const sel={play:'inside_zone',tac:[3,1,2]},ctx={sel,b:{},busy:false,err:'',
   req:{kind:'snap',options:{command:2,plays:[{id:'pa_boot',cost:1}],tactics:[
    {slot:1,cost:1,card:{name:'Protection'}},{slot:2,cost:1,card:{name:'Extra'}},{slot:3,cost:0,card:{name:'Run tactic'}}]}},
-  B:{sameLookPair:()=>({mate:{id:'pa_boot'}})},choosePlay:id=>{sel.play=id},tacticBlock:t=>t.slot===3,
+  B:{sameLookPair:()=>({mate:{id:'pa_boot'}})},tacticBlock:t=>t.slot===3,
   S:{tick(){}},refresh(){},document:{querySelector:()=>null}};
  ctx.retainCallTactics=play=>run('retainCallTactics',ctx,[play]);
+ ctx.choosePlay=id=>run('choosePlay',ctx,[id]);
+ ctx.selectedTactics=()=>run('selectedTactics',ctx);
  const event={target:{closest:()=>({dataset:{sameLook:'pa_boot'}})}};
  run('switchSameLook',ctx,[event]);assert.equal(sel.play,'pa_boot');assert.deepEqual(sel.tac,[1]);
  sel.play='inside_zone';ctx.B.sameLookPair=()=>({mate:{id:'pa_boot',reason:'Needs an inline tight end'}});
@@ -108,4 +110,32 @@ test('third-down play intent has a keyboard-accessible state and can be switched
  run('bindTwoDown',{b,req,busy:false,B:{submit:(_,action)=>{submitted=action;return req}},writeSave(){saved=true},refresh(){painted=true}},[h]);
  el.onclick();
  assert.equal(submitted.type,'two_down');assert.equal(submitted.active,false);assert.ok(saved&&painted);
+});
+
+test('rapid postgame cuts move one chosen card per prompt and finish once',async()=>{
+ const P=require('../forks/call-sheet/core/packs'),pb=P.newPlaybook();
+ pb.capacity.wrinkles=2;pb.off.wrinkles=['screen','pa_boot','deep_cross','power'];pb.def.wrinkles=[];
+ let grid,saves=0,finishes=0;
+ const waits=[],noop=()=>{};
+ const modal={set innerHTML(markup){grid={inert:false,choices:[],appendChild(choice){this.choices.push(choice)}}}};
+ const start=source.indexOf('async function cutScreen('),end=source.indexOf('\n}',start)+2;
+ const cutScreen=vm.runInNewContext('('+source.slice(start,end)+')',{
+  save:{playbook:pb},P,$:id=>id==='#modal'?modal:grid,
+  document:{createElement:()=>({appendChild:noop})},card:()=>({style:{},getBoundingClientRect:()=>({})}),
+  PT:{embers:noop},S:{burn:noop},FX:{wait:()=>new Promise(resolve=>waits.push(resolve))},
+  writeSave:()=>saves++,afterPack:()=>finishes++
+ });
+ await cutScreen(P.overCapacity(pb));
+ const first=grid.choices,playing=first[1].onclick();
+ first[1].onclick();first[0].onclick();
+ assert.deepEqual(pb.reserve.off.wrinkles,['pa_boot']);
+ assert.equal(saves,1);
+ waits.shift()();await playing;
+ assert.equal(grid.choices.length,3,'a still-overfull deck gets a fresh prompt');
+ first[0].onclick();
+ const second=grid.choices[2].onclick();
+ assert.deepEqual(pb.off.wrinkles,['screen','deep_cross']);
+ assert.deepEqual(pb.reserve.off.wrinkles,['pa_boot','power']);
+ waits.shift()();await second;
+ assert.equal(saves,2);assert.equal(finishes,1);
 });

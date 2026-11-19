@@ -56,3 +56,23 @@ test('rivalry catch survives a save, identifies the new starter and prepares thi
  const now=cg.rivalryHistory();assert.equal(now.still,false);assert.ok(now.text.includes('Alex Graduate graduated'));assert.ok(now.text.includes(starter.name+' now starts at TE'));assert.equal(now.target.id,String(starter.id));
  u.callSheet.oppFilm[opp.id][0]={year:u.year-1,week:10,star:{id,name,w:6,l:3}};assert.equal(cg.rivalryHistory().snaps,undefined);assert.equal(cg.setRivalryPrep(true),false);
 });
+
+test('coached and saved opponent film counts their actual third-down calls exactly once',async()=>{
+  const {e,u,opp}=await setup(),CS=globalThis.CallSheet,host=globalThis.__callSheetDynasty,cfg=host.launch();
+  const team=side=>CS.adapter.battleTeam(cfg[side],null,cfg.program?.[side]);
+  const b=CS.battle.simulate({home:team('home'),away:team('away'),seed:'opponent-drill-film'}),other=cfg.userSide==='home'?'away':'home';
+  const seen={};
+  for(const snap of b.log.filter(e=>e.type==='snap'&&e.offSide===other&&!e.penalty&&e.category!=='kick'&&e.sit.down===3))seen[snap.play]=(seen[snap.play]||0)+1;
+  assert.ok(Object.keys(seen).length>=2);
+  const film=CS.battle.callFilm(b,cfg.userSide);assert.deepEqual(film.off.thirdDown,seen);
+  host.save({activeBattle:{seed:cfg.seed,battle:'{}'}});
+  for(let i=0;i<2;i++)assert.equal(host.record(b.game,{},[],film).ok,true);
+  const entries=u.callSheet.oppFilm[String(opp.id)];assert.equal(entries.length,1);
+  assert.deepEqual(entries[0].off.thirdDown,seen);
+  entries.unshift({year:u.year-1,off:{run:9,pass:10,total:19}});
+  const saved=JSON.parse(JSON.stringify(u.callSheet));
+  saved.oppFilm[opp.id][1].off.thirdDown.constructor=5;
+  e.normalizeCallSheet({callSheet:saved});
+  assert.deepEqual(saved.oppFilm[opp.id][1].off.thirdDown,seen);
+  assert.equal(saved.oppFilm[opp.id][0].off.thirdDown,undefined);
+});

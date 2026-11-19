@@ -38,7 +38,7 @@ function sheet(role,tactics,command=5){
     readMode:'auto',S:{init:noop,chime:noop,tick:noop,error:noop},FX:{shake:noop},
     document:{activeElement:null},$:()=>el,teamOf:side=>b.teams[side],refresh:noop,renderHand:noop,
     writeSave:noop,clearGlow:noop,present:async()=>{},decide:noop});
-  const names=['selectedTactics','tacticBlock','retainCallTactics','snapChoice','selCost','tacticClick','go'];
+  const names=['choosePlay','selectedTactics','tacticBlock','retainCallTactics','snapChoice','selCost','tacticClick','go'];
   vm.runInContext(names.map(handlerSource).join('\n'),ctx);
   return ctx;
 }
@@ -164,4 +164,39 @@ test('recent snaps show the last five completed calls for the requested offense 
   assert.ok(awayFilm.includes(D.PLAYS.vertical_shot.name));
   assert.doesNotMatch(awayFilm,/Holding/);
   assert.equal(JSON.stringify(b),before);
+});
+
+test('switching from Outside Zone to Quick Slant removes Seal Block and keeps the new call playable',()=>{
+  const ctx=sheet('off',['seal_block','motion'],1);
+  ctx.choosePlay('outside_zone');click(ctx,0);
+  ctx.choosePlay('quick_slant');
+  assert.equal(ctx.sel.play,'quick_slant');assert.deepEqual(Array.from(ctx.selectedTactics()),[]);
+  assert.match(ctx.err,/Seal Block/);
+  const start=ctx.b.log.length;
+  B.submit(ctx.b,{type:'call',...call(ctx)});
+  const snap=ctx.b.log.slice(start).find(e=>e.type==='snap');
+  assert.equal(snap.play,'quick_slant');assert.deepEqual(snap.offTactics,[]);
+});
+
+test('an unaffordable tactic leaves the call playable and explains the Command cost',()=>{
+  const ctx=sheet('off',['seal_block','seal_block','hurry_up'],1);
+  ctx.choosePlay('outside_zone');click(ctx,0);click(ctx,1);
+  assert.deepEqual(Array.from(ctx.sel.tac),[1],'the second copy moves the selection at the same cost');
+  click(ctx,2);
+  assert.deepEqual(Array.from(ctx.sel.tac),[1]);
+  assert.equal(ctx.selCost(),1);assert.match(ctx.err,/Command/i);
+  assert.doesNotThrow(()=>B.submit(ctx.b,{type:'call',...call(ctx)}));
+});
+
+test('switching to a pricier play prunes the over-budget pairing and rejects a play that is unaffordable on its own',()=>{
+  const ctx=sheet('off',['hurry_up'],1);
+  ctx.b.hands.home.wrinkles=['deep_cross'];
+  ctx.req.options=B.offOptions(ctx.b,'home');
+  assert.equal(ctx.req.options.plays.find(p=>p.id==='deep_cross').cost,1);
+  ctx.choosePlay('quick_slant');click(ctx,0);
+  assert.equal(ctx.choosePlay('deep_cross'),true);
+  assert.deepEqual(Array.from(ctx.sel.tac),[]);assert.match(ctx.err,/Hurry-Up/);
+  ctx.choosePlay('quick_slant');ctx.req.options.command=0;
+  assert.equal(ctx.choosePlay('deep_cross'),false);
+  assert.equal(ctx.sel.play,'quick_slant');assert.match(ctx.err,/Deep Cross.*1 Command.*0/);
 });

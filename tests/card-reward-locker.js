@@ -164,3 +164,66 @@ test('banked tryout summaries survive save normalization and opening stays optio
   assert.equal(pb.packsOpened,0);
   assert.equal(P.claimGamePack(pb,pack.key,'two_man',[]).ok,true);
 });
+
+test('consecutive coached weeks resume identically and award exactly one pack per final',async()=>{
+  const {postgameFrame}=require('./helpers/postgame-frame'),school='Chicago Metropolitan';
+  globalThis.__DL_TEST__={};
+  const e=loadEngine({seed:25011,fullRuntime:true});
+  e.setUserTeam(school);await e.loadSchools();e.initUniverse();
+  const cg=globalThis.DynastyCardGameDay,host=globalThis.__callSheetDynasty,CS=globalThis.CallSheet,B=CS.battle;
+  cg.enable();
+
+  function next(b,request){
+    if(request.kind==='fourth')return B.submit(b,{type:'fourth',choice:request.recommended});
+    if(request.kind==='halftime')return B.submit(b,{type:'halftime',adjustment:null});
+    assert.equal(request.kind,'snap');
+    const plays=request.options.plays.filter(p=>!p.blocked&&p.cost<=request.options.command);
+    return B.submit(b,{type:'call',play:plays[b.telemetry.userSnaps%plays.length].id,tactics:[]});
+  }
+  function finish(b){
+    let request=b.pending,choices=0;
+    while(request){assert.ok(++choices<450);request=next(b,request)}
+    assert.equal(b.game.status,'final');
+  }
+
+  for(let count=1;count<=2;count++){
+    assert.ok(e.delegateWeeklyDecisions(e.T(school)));
+    const cfg=host.launch(),game=e.findUserGame();
+    const team=side=>{
+      const book=side===cfg.userSide?cfg.playbook:cfg.oppPlaybook;
+      return CS.adapter.battleTeam(cfg[side],book?P.decksOf(book):null,cfg.program[side]);
+    };
+    const original=B.create({home:team('home'),away:team('away'),seed:cfg.seed,user:cfg.userSide,classicSide:cfg.userSide,
+      mode:'key',control:'both',coachingWindows:true,conditions:cfg.conditions,rivalry:cfg.rivalry,weather:cfg.weather});
+    let request=B.advance(original);
+    while(request&&(request.kind!=='snap'||original.game.period<2))request=next(original,request);
+    assert.equal(request?.kind,'snap');
+    host.save({activeBattle:{seed:cfg.seed,battle:B.save(original)}});
+    if(count===1){
+      const backup={version:e.APP_VERSION,userTeam:school,universe:e.packUniverse(e.universe)};
+      const restored=JSON.parse(JSON.stringify(backup));
+      e.validateImportedSaveText(restored);e.installSave(restored);
+    }
+    const active=host.launch().activeBattle;
+    assert.equal(active.seed,cfg.seed);
+    const resumed=B.load(active.battle);
+    finish(original);finish(resumed);
+    assert.deepEqual(resumed.game.score,original.game.score);
+    assert.deepEqual(resumed.rng,original.rng);
+    assert.equal(JSON.stringify(resumed.log),JSON.stringify(original.log));
+
+    host.save({activeBattle:{seed:cfg.seed,battle:B.save(resumed)}});
+    const frame=postgameFrame({...host,close(){}});
+    frame.get('#bankPack').onclick();
+    const meta=e.universe.callSheet;
+    assert.equal(meta.activeBattle,null);assert.equal(meta.games,count);assert.equal(meta.playbook.gamePacks.length,1);
+    const [offer]=meta.playbook.gamePacks;
+    const [pick]=P.gamePackChoices(meta.playbook,offer,host.rewardContext().worldTaken);
+    assert.equal(cg.takeGamePack(offer.key,pick.id).ok,true);
+    assert.equal(cg.takeGamePack(offer.key,pick.id).ok,false);
+    const archived=e.universe.gameArchive.filter(row=>row.week===game.week&&(row.home.name===school||row.away.name===school));
+    assert.equal(archived.length,1);assert.deepEqual(archived[0].score,resumed.game.score);
+    const week=e.universe.week;e.simWeek();
+    assert.equal(e.universe.week,week+1);assert.equal(e.T(school).w+e.T(school).l,count);
+  }
+});
