@@ -39,6 +39,7 @@ function create(opts){
     telemetry:{decisions:{plan:0,snap:0,info:0,fourth:0},snaps:0,series:0,userSnaps:0,lineCounts:{},cardsPlayed:0},
     rng:DynastyRng.create(`${seed}:cards`).snapshot()};
   if(opts.classicSide==='home'||opts.classicSide==='away')b.classicSide=opts.classicSide;
+  if(opts.openingDrive&&b.user)b.driveCoach={opening:'pending',next:false,history:{}};
   // Game-day form: every team is a little sharp or a little flat on a given day (its own seeded stream, so nothing
   // else shifts). Talent still decides each duel; form is what lets an underdog win on a good day.
   {const fr=DynastyRng.create(`${seed}:form`);b.form={};for(const side of ['home','away'])b.form[side]=Math.round(Math.max(-2*FORM_SIGMA,Math.min(2*FORM_SIGMA,fr.gauss()*FORM_SIGMA))*100)/100}
@@ -451,7 +452,7 @@ function setSideline(b,{keep=null,intent='normal',timeoutNext=false,feature=null
   if(intent!==options.intent&&(!options.late||!options.offense))throw new Error('Choose a tempo on offense in the final two minutes of a half.');
   if(timeoutNext&&(!options.late||!options.timeouts))throw new Error('No late-game timeout available.');
   if(coachDrive===true&&!options.canCoachDrive)throw new Error('Drive control is available in Key Moments.');
-  if(coachDrive===true)b.coachedDrive=driveKey(b.game,b.game.possession);
+  if(coachDrive===true){b.coachedDrive=driveKey(b.game,b.game.possession);if(b.driveCoach)driveHistory(b,b.coachedDrive).source??='chosen'}
   if(coachDrive===false)delete b.coachedDrive;
   if(pick&&!options.featured)(b.featured??={home:null,away:null})[b.user]={id:pick.id,half:halfOf(b.game),touches:0};
   b.hands[b.user].keepTactic=keep;
@@ -570,8 +571,10 @@ function aiDefense(b,side,opts={}){
   const weights=offFamilyWeights(b.game,b.tend[offSide(b)],opts.revealedFamily),lean=leanFor(b),heat=heatFor(b);
   const threat=revealedThreat(b,other(side));
   const tacs=uniqTactics(o.tactics.filter(t=>!t.card.info&&!R.signatureBlocked(t.card,team.lineup[b.hands[side].role])));
+  // A drive challenge's alternate look restricts the coordinator to calls with the documented shape, when it has one.
+  const bias=b.aiBias?.[side],shaped=bias&&o.plays.filter(p=>!p.blocked&&p.cost<=cap&&Object.entries(bias).every(([k,v])=>p.card[k]===v));
   const lines=[];
-  for(const p of o.plays){
+  for(const p of shaped?.length?shaped:o.plays){
     if(p.blocked||p.cost>cap)continue;
     for(const ts of subsets(tacs,2)){
       const cost=p.cost+ts.reduce((s,t)=>s+t.cost,0);if(cost>cap)continue;
@@ -760,12 +763,16 @@ const DRIVE_CHALLENGES=[
   {id:'goal_line_stand',name:'Goal-Line Stand',role:'def',situation:'Up 4 · 1:32 · 1st and goal at your 4',objective:'Keep the opponent out of the end zone on this drive.',
     home:'ground',away:'tempo',score:[24,20],clock:92,field:96,down:1,distance:4,timeouts:[2,2],seed:'goal-line-11'},
   {id:'four_minute_offense',name:'Four-Minute Offense',role:'off',situation:'Up 2 · 1:48 · 3rd and 3 · Defense has 1 timeout',objective:'Run out the clock, reach kneel-down range, or take a two-score lead.',
-    home:'ground',away:'aerial',score:[23,21],clock:108,field:42,down:3,distance:3,timeouts:[2,1],seed:'four-minute-1'}
+    home:'ground',away:'aerial',score:[23,21],clock:108,field:42,down:3,distance:3,timeouts:[2,1],seed:'four-minute-1',
+    // Same clock, down, distance, field position, rosters and seed. Only the opposing coordinator's behavior changes.
+    alternate:{id:'stacked_box',name:'Face another look',change:'Their coordinator keeps a loaded box on every snap. Expect run fits and run blitzes, not two deep safeties.',defense:{box:'loaded'}}}
 ];
-function createChallenge(id){
+function createChallenge(id,opts={}){
   const c=DRIVE_CHALLENGES.find(c=>c.id===id);
   if(!c)throw new Error('Unknown drive challenge.');
+  if(opts.look&&opts.look!==c.alternate?.id)throw new Error('That challenge has no such alternate look.');
   const b=create({seed:'challenge:'+c.seed,home:Ro.preset(c.home),away:Ro.preset(c.away),user:'home',mode:'snap',coachingWindows:true});
+  if(opts.look){b.challengeLook=opts.look;b.aiBias={[c.role==='off'?'away':'home']:{...c.alternate.defense}}}
   const g=b.game;Engine.startGame(g);
   const [home,away]=c.timeouts;
   const state={...g.events.at(-1).state,period:4,clock:c.clock,elapsed:4*Engine.QUARTER_SECONDS-c.clock,
@@ -807,14 +814,193 @@ function challengeResult(b){
   return reason?{won,reason,recap:last.text}:null;
 }
 
+// ---------------------------------------------------------------- drive ownership (V29)
+// create({openingDrive:true}): in Key Moments the person coaches their first offensive possession from its first
+// snap, so the opening Command is theirs to spend. A coached possession runs to its real end (fourth down, score,
+// turnover, half). Then the battle pauses with a 'drive_end' request: coach the next offensive possession, or hand
+// routine downs back to the staff. Claiming a drive changes who calls the snaps, never the rules or the RNG streams.
+function driveHistory(b,key){return (b.driveCoach.history??={})[key]??={}}
+function claimDrive(b){
+  const dc=b.driveCoach,g=b.game;
+  if(!dc||b.pending||g.status!=='live'||g.period>4||!b.user||g.possession!==b.user)return;
+  const key=driveKey(g,g.possession);
+  if(b.coachedDrive===key||dc.history?.[key]?.source)return;
+  const want=dc.opening==='pending'?'opening':dc.next?'next':null;
+  if(!want)return;
+  if(want==='opening')dc.opening=b.mode==='key'?'claimed':'not_needed';else dc.next=false;
+  if(b.mode!=='key')return;
+  b.coachedDrive=key;driveHistory(b,key).source=want;
+}
+function driveEndRequest(b,key){
+  const summary=driveSummary(b,key);if(!summary)return null;
+  return{kind:'drive_end',side:b.user,situation:situation(b),summary};
+}
+const keyOwner=key=>key.slice(key.lastIndexOf(':')+1);
+const article=n=>/^(8|11|18)$|^8\d$/.test(String(n))?'An':'A';
+// One possession from the log: plays, net yards, how it ended and one factual line. Reads the log; never mutates.
+function driveSummary(b,key){
+  const entries=(b?.log||[]).filter(e=>e.drive===key&&(e.type==='snap'||e.type==='kick'));
+  const snaps=entries.filter(e=>e.type==='snap');
+  if(!snaps.length)return null;
+  const side=keyOwner(key),last=entries.at(-1),lastSnap=snaps.at(-1),start=snaps[0].sit.field;
+  const td=snaps.find(e=>!e.turnover&&e.score&&e.sit?.score&&e.score[side]-e.sit.score[side]>=6);
+  const safety=snaps.find(e=>e.score&&e.sit?.score&&e.score[other(side)]-e.sit.score[other(side)]===2);
+  const spot=e=>e.after?.possession===side&&!e.turnover?e.after.field:Math.max(0,Math.min(100,e.sit.field+(e.turnover==='interception'?0:Number(e.yards)||0)));
+  const end=td?100:last.type==='kick'?last.sit.field:spot(lastSnap);
+  const third=[...snaps].reverse().find(e=>!e.penalty&&e.sit?.down===3);
+  const thirdStop=third&&!(third.after?.possession===side&&third.after.down===1)&&!third.turnover?
+    (third.kind==='sack'?'A third-down sack':third.kind==='inc'?'A third-down incompletion':`${article(Math.max(0,Number(third.yards)||0))} ${Math.max(0,Number(third.yards)||0)}-yard third-down ${third.kind==='catch'?'catch':'run'}`):null;
+  let result,line;
+  if(td){
+    result='touchdown';const long=snaps.reduce((m,e)=>!e.penalty&&(Number(e.yards)||0)>(Number(m?.yards)||0)?e:m,null);
+    line=long&&long.yards>=15?`Touchdown. The big play was ${article(long.yards).toLowerCase()} ${long.yards}-yard ${D.PLAYS[long.play]?.name||'gain'}.`:'Touchdown.';
+  }else if(safety){result='safety';line='Safety.'}
+  else if(lastSnap.turnover&&last===lastSnap){result=lastSnap.turnover;line=lastSnap.turnover==='interception'?'An interception ended it.':'A lost fumble ended it.'}
+  else if(last.type==='kick'&&last.kick==='punt'){result='punt';line=thirdStop?`${thirdStop} forced a punt.`:'Punt.'}
+  else if(last.type==='kick'&&last.kick==='field_goal'){result=last.made?'field_goal':'missed_field_goal';line=`${thirdStop?thirdStop+' set up a field goal try. It was':'Field goal'} ${last.made?'good':'no good'}.`}
+  else if(lastSnap.sit?.down===4&&lastSnap.after?.possession!==side){result='downs';line='Stopped on fourth down.'}
+  else if(b.game.status==='final'){result='end_of_game';line='The game ended.'}
+  else{result='end_of_half';line='The half ran out.'}
+  const plays=snaps.filter(e=>!e.penalty).length,yards=Math.round(end-start);
+  const user=snaps.filter(e=>e.userCalled),firstUser=user[0];
+  return{key,side,plays,yards,start,end,result,line,text:`${plays} ${plays===1?'play':'plays'}, ${yards} ${Math.abs(yards)===1?'yard':'yards'}. ${line}`,
+    userCalls:user.length,staffCalls:snaps.length-user.length,firstUserDown:firstUser?firstUser.sit.down:null};
+}
+// The possessions the staff ran since log index `since` (both teams), oldest first, each as a one-line recap.
+// The full play-by-play stays in the log for playback.
+function delegatedRecap(b,since=0){
+  const keys=[];
+  for(const e of (b?.log||[]).slice(since))if(e.drive&&(e.type==='snap'||e.type==='kick')&&!keys.includes(e.drive))keys.push(e.drive);
+  return keys.map(k=>{
+    const entries=b.log.filter(e=>e.drive===k&&e.type==='snap');
+    if(entries.some(e=>e.userCalled))return null;
+    const current=b.game.status!=='final'&&driveKey(b.game,b.game.possession)===k;
+    if(current)return null;
+    const s=driveSummary(b,k);return s&&{...s,team:b.teams[s.side]?.short||s.side};
+  }).filter(Boolean);
+}
+// Playtest instrumentation: every possession of the person's team, in order. Where the first coached decision came,
+// with how much Command, who called each snap, whether a setup cue was offered or used, and whether the coach asked
+// for the next drive. Reads the log and telemetry only.
+function driveLog(b){
+  const keys=[];
+  for(const e of b?.log||[])if(e.drive&&keyOwner(e.drive)===b.user&&!keys.includes(e.drive))keys.push(e.drive);
+  return keys.map(k=>{
+    const s=driveSummary(b,k);if(!s)return null;
+    const h=b.driveCoach?.history?.[k]||{},hand=b.telemetry?.handoff?.[k]||null;
+    return{key:k,coached:h.source||null,plays:s.plays,yards:s.yards,result:s.result,userCalls:s.userCalls,staffCalls:s.staffCalls,
+      firstDecision:hand?{down:hand.down,distance:hand.distance,command:hand.command}:null,cuesShown:h.cuesShown||[],cuesUsed:h.cuesUsed||[],coachNext:h.coachNext??null};
+  }).filter(Boolean);
+}
+
+// ---------------------------------------------------------------- reading the decision (V29)
+// One real sequencing opportunity on this snap: a combo (data.COMBOS) that this drive's memory has already set up,
+// offered only when a card that completes it is in hand, legal and affordable, and only while it has not paid out
+// this half. Reads public drive memory, never the hidden call. A setup bonus helps one matchup; it does not repair a
+// bad down and distance, so long-yardage cues say so.
+function setupCue(b,req){
+  if(req?.kind!=='snap'||!b?.game)return null;
+  const opts=req.options||{},offense=req.role==='off',sit=req.situation;
+  const usable=(opts.plays||[]).filter(o=>!o.blocked&&o.cost<=opts.command);
+  const half=b.game.period<=2?1:b.game.period<=4?2:3;
+  let hit=null,card=null;
+  if(offense){
+    for(const o of usable){
+      const c=o.card||D.PLAYS[o.id],combo=c&&comboFor(b,c);
+      if(combo?.side==='off'){hit=combo;card=c;break}
+    }
+  }else{
+    const x=(D.COMBOS||[]).find(x=>x.id==='show_and_bail');
+    const spent=(b.comboLog?.[req.side]?.[half]||[]).includes('show_and_bail');
+    const mine=b.drive?.key===driveKey(b.game,offSide(b)),dr=mine?b.drive:{};
+    if(x&&!spent)for(const o of usable){
+      const c=o.card||D.CALLS[o.id];
+      if(c&&x.test({play:{family:null},call:c,root:null,fams:dr.fams||[],plays:dr.plays||[],calls:dr.calls||[],results:dr.results||[]})){hit={id:x.id,name:x.name,duel:x.duel,v:x.v,side:'def',reward:x.reward};card=c;break}
+    }
+  }
+  if(!hit)return null;
+  const def=(D.COMBOS||[]).find(x=>x.id===hit.id);
+  const longYardage=offense&&sit?.down>=3&&sit.distance>=7;
+  return{id:hit.id,name:hit.name,play:card.id,playName:card.name,duel:hit.duel,reward:hit.reward,how:def?.how||'',
+    text:`${hit.name} is set up. ${card.name} on this snap earns ${hit.reward}.`,
+    caution:longYardage?`It is still ${['','1st','2nd','3rd','4th'][sit.down]} and ${sit.distance}: the bonus helps one matchup, not the whole down.`:null};
+}
+// What the offense actually knows about the look, and what is still a guess. Display only.
+function lookCertainty(look){
+  if(!look)return null;
+  const shell=v=>v===0?'no deep safety':v===2?'two deep safeties':'one deep safety';
+  const facts=[
+    ['box',look.box,v=>`${v} box`],
+    ['shell',look.shell,shell],
+    ['pressure',look.pressure,v=>v?'pressure shown':'no pressure shown'],
+    ['coverage',look.coverage,v=>v?`${v} coverage`:'coverage'],
+    ['lean',look.lean,v=>v?`leaning ${v}`:null]
+  ];
+  const known=[],guess=[];
+  for(const [id,f,label] of facts){
+    if(!f)continue;const text=label(f.value);if(!text)continue;
+    (f.confirmed?known:guess).push(id==='coverage'&&!f.confirmed?'coverage':text);
+  }
+  return{known,guess};
+}
+// Which logged modifiers a tactic produced. Built-in tactics use their resolver labels; generic ones use the card name.
+const TACTIC_SRCS={max_protect:['Max protect','One fewer route'],seal_block:['Seal block'],motion:['Motion'],route_adjust:['Route adjustment','Adjusted to confirmed coverage'],
+  disguise:['Disguised coverage'],bracket:['Bracketed','Bracket left him alone'],spy:['QB spy','One fewer rusher'],press:['Press'],identify_protection:['Aimed pressure']};
+function tacticMods(id,d){
+  const T=D.TACTICS[id],srcs=TACTIC_SRCS[id]||[];
+  return (d?.mods||[]).filter(m=>srcs.includes(m.src)||(T&&(m.src===T.name||String(m.src).startsWith(T.name+' matchup'))));
+}
+// One short explanation of a recorded snap, from the side of `side`: where the coach's tactic did (or did not) act,
+// then the duel that decided the play. A tactic is credited only for a modifier on a duel that was actually reached.
+function snapVerdict(e,side=e?.offSide){
+  if(!e||e.penalty||e.category==='kick'||!e.duelResults?.length||!e.duels?.length)return null;
+  const offense=side===e.offSide,sign=offense?1:-1;
+  const reachedN=e.duelResults[0].won?Math.min(3,e.duelResults.length,e.duels.length):1;
+  const failed=e.duelResults.slice(0,reachedN).findIndex(r=>!r.won),i=failed<0?reachedN-1:failed;
+  const d=e.duels[i];if(!d)return null;
+  const offWon=!!e.duelResults[i].won,mineWon=offense?offWon:!offWon;
+  const label=x=>String(x?.label||'The matchup'),names=a=>(a||[]).filter(Boolean).join(' & ');
+  // Whose player is whose, from the side reading it: "their safety beat your receiver".
+  const own=(mine,list)=>{const n=names(list);return n?`${mine?'your':'their'} ${n}`:mine?'your side':'their side'};
+  const winner=own(mineWon,offWon?d.offNames:d.defNames),loser=own(!mineWon,offWon?d.defNames:d.offNames);
+  const decisive=`${label(d)}: ${winner} beat ${loser}.`;
+  const tactics=[];
+  for(const id of (offense?e.offTactics:e.defTactics)||[]){
+    const T=D.TACTICS[id];if(!T||T.info)continue;
+    let best=null,unreached=null,touched=false;
+    e.duels.forEach((duel,j)=>{
+      const v=tacticMods(id,duel).reduce((n,m)=>n+sign*(Number(m.v)||0),0);if(!v)return;touched=true;
+      if(j<reachedN){if(v>0&&(!best||v>best.v))best={j,v}}else if(v>0&&unreached==null)unreached=j;
+    });
+    const credit=best?((e.duelResults[best.j].won===offense)?'helped':'outweighed'):unreached!=null?'unreached':touched?'cost':'none';
+    tactics.push({id,name:T.name,credit,duel:best?e.duels[best.j].key:unreached!=null?e.duels[unreached].key:null,index:best?best.j:unreached});
+  }
+  const lead=tactics.find(t=>t.credit==='helped'||t.credit==='outweighed')||tactics.find(t=>t.credit==='unreached')||tactics[0];
+  let text=decisive;
+  if(lead){
+    const at=lead.index!=null?label(e.duels[lead.index]):null;
+    if(lead.credit==='helped'&&lead.index===i)text=`${at}: ${winner} beat ${loser}, with help from ${lead.name}.`;
+    else if(lead.credit==='outweighed'&&lead.index===i)text=`${at}: ${lead.name} helped, but ${winner} still beat ${loser}.`;
+    else if(lead.credit==='helped')text=`${at}: won with help from ${lead.name}. ${decisive}`;
+    else if(lead.credit==='unreached')text=`${lead.name} would have helped at ${at}, but the play ended first. ${decisive}`;
+    else if(lead.credit==='none')text=`${lead.name} did not change a matchup on this play. ${decisive}`;
+    else text=`${lead.name} cost a step on this play. ${decisive}`;
+  }
+  if(e.kind==='inc'&&e.duelResults.slice(0,reachedN).every(r=>r.won))text+=' The pass still fell incomplete.';
+  return{text,won:mineWon,decisive:{key:d.key,label:d.label,won:mineWon},tactics};
+}
+
 // Run until a person must decide or the game ends. Returns the pending request or null.
 function advance(b){
   let guard=0;
   while(++guard<5000){
     const g=b.game;
-    if(b.coachedDrive!=null&&(g.status==='final'||!coachingDrive(b)))delete b.coachedDrive;
     if(b.replayDrive!=null&&(possessionKey(g)!==b.replayDrive||g.status==='final'||challengeResult(b)))return null;
     if(b.pending)return b.pending;
+    if(b.coachedDrive!=null&&(g.status==='final'||!coachingDrive(b))){
+      const ended=b.coachedDrive;delete b.coachedDrive;
+      if(b.driveCoach&&b.mode==='key'&&g.status!=='final'){b.pending=driveEndRequest(b,ended);if(b.pending)return b.pending}
+    }
     if(g.status==='pregame')Engine.startGame(g);
     if(g.status==='final'){finalize(b);return null}
     if(g.period>4&&g.ot&&g.ot.period>=3){Engine.step(g);continue}
@@ -822,6 +1008,7 @@ function advance(b){
     if(b.pending)return b.pending;
     rememberDrive(b);
     const off=offSide(b),def=defSide(b);
+    if(!b.snap)claimDrive(b);
     if(!b.snap){
       if(g.down===4&&!b.fourthGo){
         const choice=fourthChoice(b);
@@ -862,9 +1049,16 @@ function fillScripted(b,side,call){
 // ---------------------------------------------------------------- requests (what the sandbox renders)
 function snapRequest(b,side){
   const role=b.hands[side].role;
-  return{kind:'snap',side,role,situation:situation(b),look:role==='off'?b.snap.look:null,offLook:role==='def'?b.snap.offLook:null,
+  const req={kind:'snap',side,role,situation:situation(b),look:role==='off'?b.snap.look:null,offLook:role==='def'?b.snap.offLook:null,
     options:role==='off'?offOptions(b,side):defOptions(b,side),lean:leanFor(b),heat:heatFor(b),...(role==='off'?{leanMeter:leanMeter(b)}:{}),
     offTendency:{...b.tend[offSide(b)]},info:role==='off'?b.snap.offInfo:b.snap.defInfo};
+  if(side===b.user){
+    const cue=setupCue(b,req);if(cue)req.setupCue=cue;
+    const key=driveKey(b.game,b.game.possession);
+    if(role==='off')(b.telemetry.handoff??={})[key]??={down:req.situation.down,distance:req.situation.distance,command:req.options.command};
+    if(cue&&b.driveCoach){const h=driveHistory(b,key);h.cuesShown??=[];if(!h.cuesShown.includes(cue.id))h.cuesShown.push(cue.id)}
+  }
+  return req;
 }
 function planRequest(b,side){
   const role=b.hands[side].role;
@@ -899,10 +1093,10 @@ function fourthRequest(b){
 function kick(b,choice){
   const g=b.game,off=offSide(b),before=g.fieldPosition;
   if(choice==='ot_fg'){Engine.step(g);b.log.push({type:'kick',text:'Overtime field goal attempt.'});return}
-  const sit=situation(b);
-  if(choice==='punt'){const pe=punterEdge(b,off);Engine.punt(g,{netAdjust:pe.netAdjust});b.box[off].punts++;b.log.push({type:'kick',kick:'punt',side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} punts from the ${yardLine(before)}${pe.name&&pe.netAdjust?` (${pe.name}: ${pe.netAdjust>0?'+':''}${pe.netAdjust} yards)`:''}.`})}
+  const sit=situation(b),drive=driveKey(g,off);
+  if(choice==='punt'){const pe=punterEdge(b,off);Engine.punt(g,{netAdjust:pe.netAdjust});b.box[off].punts++;b.log.push({type:'kick',kick:'punt',drive,side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} punts from the ${yardLine(before)}${pe.name&&pe.netAdjust?` (${pe.name}: ${pe.netAdjust>0?'+':''}${pe.netAdjust} yards)`:''}.`})}
   else{const ke=kickerEdge(b,off),evStart=g.events.length;armSpecials(b,off);const made=Engine.attemptFieldGoal(g,{adjust:ke.adjust});const notes=settleSpecials(b,off,evStart);
-    b.log.push({type:'kick',kick:'field_goal',made,side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} ${made?'makes':'misses'} a ${100-before+17}-yard field goal${ke.adjust?` (${ke.name?ke.name+': ':''}${ke.adjust>0?'+':''}${Math.round(ke.adjust*100)}%)`:''}.${notes.length?' '+notes.join('. ')+'.':''}`})}
+    b.log.push({type:'kick',kick:'field_goal',drive,made,side:off,sit,after:situation(b),score:{...g.score},text:`${b.teams[off].short} ${made?'makes':'misses'} a ${100-before+17}-yard field goal${ke.adjust?` (${ke.name?ke.name+': ':''}${ke.adjust>0?'+':''}${Math.round(ke.adjust*100)}%)`:''}.${notes.length?' '+notes.join('. ')+'.':''}`})}
 }
 
 // ---------------------------------------------------------------- submit
@@ -914,6 +1108,12 @@ function submit(b,action){
     if(action.type==='mesh')b.snap.off.meshChoice=choice;
     b.pending=null;
     resolveSnap(b);
+    return advance(b);
+  }
+  if(req.kind==='drive_end'){
+    const next=action.type==='drive_end'&&!!action.coachNext;
+    if(action.type!=='auto'&&action.type!=='drive_end')throw new Error('Choose whether to coach the next drive.');
+    b.pending=null;b.driveCoach.next=next;driveHistory(b,req.summary.key).coachNext=next;
     return advance(b);
   }
   if(req.kind==='halftime'){
@@ -949,6 +1149,9 @@ function submit(b,action){
       const res=commit(b,side,action);
       if(role==='off')b.snap.off=res;else{b.snap.def=res;b.snap.look=lookFor(b,res)}
       b.pending=null;b.telemetry.userSnaps++;b.snap.userCalled=true;
+      if(req.setupCue&&b.driveCoach&&[res.play,D.PLAYS[res.play]?.evolvedFrom,D.PLAYS[res.play]?.upgradeOf].includes(req.setupCue.play)){
+        const h=driveHistory(b,driveKey(b.game,b.game.possession));h.cuesUsed??=[];if(!h.cuesUsed.includes(req.setupCue.id))h.cuesUsed.push(req.setupCue.id);
+      }
       if(role==='def'&&!b.snap.off)b.snap.off=decideAI(b,offSide(b),'off');
       const card=D.PLAYS[res.play];
       // Opt-in: the cue states the end's real first step, so the prompt is a choice only for coaches who want it.
@@ -1127,7 +1330,7 @@ function resolveSnap(b){
   b.tend[off][play.family]++;b.tend[def][call.family==='pressure'?'pressure':call.coverage]++;
   const pen=g.period>4?null:rollPenalty(b,play);
   const lineups={off:Object.fromEntries(Object.entries(b.teams[off].lineup.off).map(([r,p])=>[r,p.id])),def:Object.fromEntries(Object.entries(b.teams[def].lineup.def).map(([r,p])=>[r,p.id]))};
-  const result={lineups,...(s.twoDown?{twoDown:true}:{}),...(snap.edgeAssignment?{edgeAssignment:snap.edgeAssignment,meshChoice:play.carrier==='QB'?'keep':'give'}:{}),primaryTarget:play.target||null,bracketRole:snap.bracketRole,grouping:s.grouping||groupingFor(b,off),userCalled:!!s.userCalled,sit,offSide:off,defSide:def,play:play.id,call:call.id,offTactics:[...s.off.tactics],defTactics:[...s.def.tactics],offInfo:[...s.offInfo],defInfo:[...s.defInfo],lean,heat,duels:snap.duels,look:s.look};
+  const result={drive:dkey,lineups,...(s.twoDown?{twoDown:true}:{}),...(snap.edgeAssignment?{edgeAssignment:snap.edgeAssignment,meshChoice:play.carrier==='QB'?'keep':'give'}:{}),primaryTarget:play.target||null,bracketRole:snap.bracketRole,grouping:s.grouping||groupingFor(b,off),userCalled:!!s.userCalled,sit,offSide:off,defSide:def,play:play.id,call:call.id,offTactics:[...s.off.tactics],defTactics:[...s.def.tactics],offInfo:[...s.offInfo],defInfo:[...s.defInfo],lean,heat,duels:snap.duels,look:s.look};
   if(pen){
     const {against,yards}=enforcePenalty(b,pen.kind,pen.spec.dead?4:8);
     result.penalty={kind:pen.kind,label:pen.spec.label,against,yards};result.text=`Flag: ${pen.spec.label} on ${b.teams[against].short}, ${yards} ${yards===1?'yard':'yards'}.`;
@@ -1662,7 +1865,7 @@ function lastCallRecap(b,side=b?.user){
   if(!e||e.type!=='snap'||!e.userCalled||e.offSide!==side||e.penalty||!D.PLAYS[e.play])return null;
   const y=Number(e.yards)||0,story=matchupStory(e);
   const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sacked, ${y} yd`:`${y>0?'+':''}${y} yd`;
-  return{play:e.play,name:D.PLAYS[e.play].name,down:e.sit?.down??null,result,summary:story?.summary||null,defense:story?.defense||null,offWon:story?story.offWon:null};
+  return{play:e.play,name:D.PLAYS[e.play].name,down:e.sit?.down??null,result,summary:story?.summary||null,verdict:snapVerdict(e,side)?.text||null,defense:story?.defense||null,offWon:story?story.offWon:null};
 }
 // The coach's most recent own call on either side of the ball, and how many snaps have run since. The call board
 // pins it once staff snaps have pushed it out of the ticker. Reads the log; never mutates.
@@ -1674,7 +1877,7 @@ function lastUserCall(b,side=b?.user){
     const off=e.offSide===side,def=off?null:D.CALLS[e.call];if(off?!D.PLAYS[e.play]:!def)return null;
     const y=Number(e.yards)||0,story=matchupStory(e);
     const result=e.turnover?(e.turnover==='interception'?'intercepted':'fumble'):e.kind==='inc'?'incomplete':e.kind==='sack'?`sack, ${y} yd`:`${y>0?'+':''}${y} yd`;
-    return{role:off?'off':'def',id:off?e.play:e.call,name:off?D.PLAYS[e.play].name:def.name,result,summary:story?.summary||null,defense:story?.defense||null,won:story?(off?story.offWon:!story.offWon):null,since};
+    return{role:off?'off':'def',id:off?e.play:e.call,name:off?D.PLAYS[e.play].name:def.name,result,summary:story?.summary||null,verdict:snapVerdict(e,side)?.text||null,defense:story?.defense||null,won:story?(off?story.offWon:!story.offWon):null,since};
   }
   return null;
 }
@@ -2117,5 +2320,5 @@ function duelTally(b){
   }
   return out;
 }
-return{DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{driveSummary,delegatedRecap,driveLog,setupCue,lookCertainty,snapVerdict,DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

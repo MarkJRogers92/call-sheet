@@ -1,5 +1,65 @@
 # Call Sheet: handoff
 
+## November 19, 2026 · V29 own the drive (Claude)
+
+Built on `release/v28` at `90104b4`. Implements the first release from the November 18 development roadmap, with
+the review changes: milestones 1 and 2 shipped together, drive instrumentation, third/fourth-down-only certainty in
+the forecast, "Face another look" pulled forward onto Four-Minute Offense, and the Max Protect matchup kept as a
+regression test. Not built, by decision: a third playbook identity, new animations, more challenges.
+
+**Own the opening drive.** `battle.create({openingDrive:true})` (Quick Battle passes it; Dynasty does not yet).
+In Key Moments the coach's first offensive possession is claimed before the staff calls any snap on it
+(`claimDrive`), whether the team receives or kicks, using the existing per-possession `coachedDrive`. Measured on
+eight programs (`slice:<id>:0`, default settings, tutorial skipped): first offensive decision moved from 3rd down
+with 2–3 Command in all eight to 1st down with 5 Command in all eight. When a coached possession ends (score, punt,
+turnover, downs, half), `advance` returns `{kind:'drive_end',summary}`; `submit({type:'drive_end',coachNext})`
+claims the next possession or returns to Key Moments. `auto` means Key Moments. Simulation, the guided tutorial
+drive (snap mode), finals and challenges never pause. Rules and RNG streams are untouched: accepting every staff
+call gives a byte-identical log, score and clock with or without the option (tested).
+
+**Recaps and instrumentation.** Log entries now carry `drive` (snaps and kicks). `driveSummary(b,key)` gives
+plays, net yards, result and one line ("3 plays, 0 yards. A third-down sack forced a punt."). `delegatedRecap(b,i)`
+lists staff-only possessions since log index `i`; the slice shows them in the ticker and a collapsed
+"While the staff called it" box. `driveLog(b)` records, per possession of the coach's team: who called it
+(opening/next/chosen/Key Moments), first decision down/distance/Command (`telemetry.handoff`), setup cues shown and
+used, and the Coach-next choice. Quick Battle stores the last 30 games in `save.playtest`; the final screen lists
+"Your drives" with **Copy playtest log**.
+
+**Setup cue.** `setupCue(b,req)` is attached to the coach's snap requests as `req.setupCue`: the first combo in
+`data.COMBOS` that this drive's memory has set up and that an in-hand, legal, affordable card completes, only while
+unspent this half (offense via `comboFor`; defense: Show and Bail). On 3rd/4th and 7+ it adds a caution that the bonus
+helps one matchup, not the whole down. The slice shows it in the quick board and full sheet, with a Select button.
+
+**Post-snap verdict.** `snapVerdict(e,side)` writes one or two short sentences: where the coach's tactic acted, then
+the deciding duel, with "your/their". A tactic is credited only for a modifier on a duel the play reached
+(`helped` / `outweighed` / `unreached` / `cost` / `none`), from resolver labels (`TACTIC_SRCS`). Example:
+"Protection: won with help from Max Protect. Read the safety: their FS beat your Z." Used by the matchup story, last
+snap box, pinned call, 4th-down and drive-end recaps (`lastCallRecap`/`lastUserCall` gain `verdict`).
+
+**Forecast.** On 3rd and 4th down the objective reads "Convert" and the forecast adds what the look confirms and
+what is still a guess (`lookCertainty`). Earlier downs are unchanged, to keep routine snaps uncluttered.
+
+**Face another look.** `createChallenge('four_minute_offense',{look:'stacked_box'})`: same seed, rosters, clock,
+down, distance and field position. The opposing coordinator is limited to loaded-box calls (`b.aiBias`, honored in
+`aiDefense`, falling back to the full sheet if none is affordable). The result screen lists "Your calls" with
+verdicts, "Retry this situation" (same look) and the alternate. The alternate is practice only: no sticker.
+
+**Regression matchup.** Sunbelt Deep Cross into Lakeshore Cover 0, 1st and 10 at the 35, 2,000 paired rolls: Max
+Protect raises protection wins 33.7% → 48.5% and first downs without a turnover 17.7% → 22.6%; 80% of pairs show the
+same visible outcome. The roadmap's figures (24% → 48%, 12% → 22%) came from different game states; the test asserts
+direction and size, not those exact numbers.
+
+**Tests.** New `tests/card-own-the-drive.js` (13 tests, registered in `test` and `test:slow`). The full card chain
+passes (350 node tests plus the standalone battle, adapter, save, integration and record checks); `npm run build` and
+`npm run lint` are clean. Browser: a rebuilt standalone battle was driven in Chromium at 1280×800 and 390×844 (fresh
+Quick Battle → 1st-down opening call with 5 Command → drive-end prompt → Coach next drive → 1st-down call; Four-Minute
+result → Face another look), with no page errors or horizontal overflow. `card-gameday-browser` and
+`card-pages-browser` pass. `card-default-browser` fails on "matchup and deck shortcut lead This Week"; it fails the
+same way on untouched V28. Not run: the full Dynasty Lab suite, Safari/VoiceOver, people.
+
+**Next.** Playtest this build against V28 with the two seeded drives in the roadmap's protocol and read
+`save.playtest`. Decide on Dynasty opening drives after that.
+
 ## November 18, 2026 · V22 hold the look and film fixes (Claude)
 
 Built on V21 source `2659b41d`. Follows the V21 review: playtest in Chromium (Quick Battle and a Quick Start
