@@ -459,13 +459,15 @@ function showsQuickOut(b,side){
   const isDoubleMove=id=>id==='out_and_up'||D.PLAYS[id]?.evolvedFrom==='out_and_up';
   return b.hands[side].wrinkles.some(isDoubleMove)||b.decks[side].off.base.some(isDoubleMove);
 }
+function sneakAvailable(b){return b.game.distance>=1&&b.game.distance<=D.PLAYS.qb_sneak.maxDistance}
 function freeCard(b,side,role,id){
   if(b.decks[side][role].base.includes(id))return true;
-  return role==='off'&&((id==='quick_out'&&showsQuickOut(b,side))||((D.DRILL_CARDS||[]).includes(id)&&drillOn(b)));
+  return role==='off'&&((id==='qb_sneak'&&sneakAvailable(b))||(id==='quick_out'&&showsQuickOut(b,side))||((D.DRILL_CARDS||[]).includes(id)&&drillOn(b)));
 }
 function offOptions(b,side){
   const hand=b.hands[side],team=b.teams[side],lineup=team.lineup.off;
   const bases=[...b.decks[side].off.base];
+  if(sneakAvailable(b)&&!bases.includes('qb_sneak'))bases.push('qb_sneak');
   if(showsQuickOut(b,side)&&!bases.includes('quick_out'))bases.push('quick_out');
   const plays=[...bases.map(id=>({id,base:true})),...(drillOn(b)?(D.DRILL_CARDS||[]).map(id=>({id,base:true,drill:true})):[]),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
     .map(o=>({...o,card:D.PLAYS[o.id],cost:costOf(b,side,D.PLAYS[o.id]),blocked:R.playBlocked(D.PLAYS[o.id],lineup,situation(b))}));
@@ -611,7 +613,7 @@ function payAndRemove(b,side,kind,id){
       if(card.trick)(b.exhausted[side]??=[]).push(id);else b.piles[side][hand.role].wrinkle.discard.push(id)}
   }
   markCostUse(b,side,card);hand.command-=cost;
-  if(kind==='tactic'||(id!=='quick_out'&&!b.decks[side][hand.role].base.includes(id)))b.box[side].cardsPlayed++;
+  if(kind==='tactic'||(id!=='quick_out'&&id!=='qb_sneak'&&!b.decks[side][hand.role].base.includes(id)))b.box[side].cardsPlayed++;
 }
 // Info tactics resolve at once and change what the side knows this snap.
 function applyInfo(b,side,id){
@@ -1370,6 +1372,7 @@ function callReason(req,c){
   if(c.quickKick||c.id==='spike')return '';
   const box=known('box'),shell=known('shell'),rush=known('pressure'),coverage=known('coverage'),lean=known('lean');
   const origin=c.evolvedFrom||c.upgradeOf||c.id;
+  if(origin==='qb_sneak')return box==='loaded'?'The box is loaded. Your center and guards must move the interior front.':box==='light'?'The light box helps your line clear a yard or two for the QB.':'The QB follows the center for a short gain.';
   if(lean&&c.punishes===lean)return `${leanRead(lean)}. That helps this counter at the Key.`;
   const match=(c.matchups||[]).find(m=>({pressure:rush===true,shell1:shell===1,shell2:shell===2,man:coverage==='man',zone:coverage==='zone',loaded:box==='loaded',light:box==='light'})[m.when]);
   if(match){
@@ -1912,6 +1915,10 @@ function load(text){
   // V20 snapshots printed a minimum QB speed on the ordinary Read Option.
   // Refresh that one option in place so resuming never spends Command or deals a new hand.
   if(req?.role==='off'&&['snap','plan'].includes(req.kind)){
+    if(sneakAvailable(b)&&req.options?.plays&&!req.options.plays.some(o=>o.id==='qb_sneak')){
+      const card=D.PLAYS.qb_sneak;
+      req.options.plays.push({id:card.id,base:true,card,cost:costOf(b,req.side,card),blocked:null});
+    }
     for(const o of req.options?.plays||[])if(o.id==='read_option'&&o.card?.needs?.trait==='speed'){
       o.card=D.PLAYS.read_option;
       o.blocked=R.playBlocked(o.card,b.teams[req.side].lineup.off,req.situation);

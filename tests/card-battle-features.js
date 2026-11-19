@@ -10,6 +10,39 @@ const lineups=()=>({off:Ro.preset('aerial').lineup.off,def:Ro.preset('ground').l
 const snapFor=(play,call,extra={})=>{const {off,def}=lineups();return R.buildSnap({off,def,play:D.PLAYS[play],call:D.CALLS[call],situation:{down:1,distance:10,field:30,period:1},...extra})};
 const modsOf=(snap,key)=>snap.duels.find(d=>d.key===key).mods.map(m=>m.src);
 
+test('the QB Sneak is a free short-yardage call on a fresh or resumed sheet',()=>{
+  const E=require('../game-engine-v2');
+  const game=distance=>{
+    const b=B.create({seed:'sneak-1',home:Ro.preset('ground'),away:Ro.preset('aerial'),mode:'snap',control:'offense',user:'home'});
+    E.startGame(b.game);Object.assign(b.game,{possession:'home',fieldPosition:48,down:3,distance});B.advance(b);return b;
+  };
+  const b=game(2),old=b.pending.options.plays;
+  const sneak=old.find(o=>o.id==='qb_sneak');assert.equal(sneak.cost,0);assert.ok(sneak.base);
+  b.pending.options.plays=old.filter(o=>o.id!=='qb_sneak');
+  const resumed=B.load(B.save(b));
+  assert.equal(resumed.pending.options.plays.filter(o=>o.id==='qb_sneak').length,1);
+  assert.deepEqual(resumed.hands,b.hands);assert.deepEqual(resumed.rng,b.rng);
+  B.submit(resumed,{type:'call',play:'qb_sneak',tactics:[]});
+  assert.equal(resumed.log.find(e=>e.play==='qb_sneak').participants.carrier,'QB');
+  assert.equal(resumed.box.home.cardsPlayed,0);
+  assert.ok(game(1).pending.options.plays.some(o=>o.id==='qb_sneak'));
+  const long=game(3),saved=B.save(long);
+  assert.ok(!long.pending.options.plays.some(o=>o.id==='qb_sneak'));
+  assert.throws(()=>B.submit(long,{type:'call',play:'qb_sneak',tactics:[]}),/2 yards or less/);
+  assert.equal(B.save(long),saved);
+});
+
+test('a sneak favors one yard over two, and a loaded front can stonewall it',()=>{
+  const open=snapFor('qb_sneak','two_high'),loaded=snapFor('qb_sneak','run_fit');
+  const chance=(snap,distance)=>R.evaluate(snap,{distance}).first;
+  assert.deepEqual(open.duels[0].offRoles,['C','LG','RG']);
+  assert.ok(open.duels[2].offRoles.includes('QB')&&open.duels[2].offTraits.includes('power'));
+  assert.ok(chance(open,1)>chance(open,2));
+  assert.ok(chance(open,1)>chance(snapFor('inside_zone','two_high'),1));
+  assert.ok(chance(open,1)>chance(loaded,1));
+  assert.ok(R.evaluate(open).yards<R.evaluate(snapFor('inside_zone','two_high')).yards);
+});
+
 test('pass plays check down to the back or tight end when the first read is covered, unless told not to',()=>{
   const snap=snapFor('quick_slant','cover3');
   assert.ok(snap.checkdown&&['RB','TE'].includes(snap.checkdown.role)&&snap.checkdown.p>0&&snap.checkdown.p<.3);

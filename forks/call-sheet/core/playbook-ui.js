@@ -148,12 +148,13 @@ function pairedDrawSlots(saved,draft){
   for(const slot of slots)if(!slot.draft&&remaining.length)slot.draft=remaining.shift();
   return slots.concat(remaining.map(id=>({saved:null,draft:id})));
 }
-function thirdDownHands(saved,draft,lineup,team=null){
+const PRACTICE_THREATS=['deep_cross','screen'];
+function thirdDownHands(saved,draft,lineup,team=null,unit='off'){
   if(!lineup?.off||!lineup?.def)return [];
   const {battle:B,data:D,packs:P,resolver:R}=root.CallSheet;
   const decks={saved:P.decksOf(saved),draft:P.decksOf(draft)},slots={};
   for(const pile of ['wrinkles','tactics']){
-    const cards=side=>decks[side].off[pile].filter(id=>!D.TACTICS[id]?.special);
+    const cards=side=>decks[side][unit][pile].filter(id=>!D.TACTICS[id]?.special);
     slots[pile]=pairedDrawSlots(cards('saved'),cards('draft'));
   }
   const situation={down:3,distance:7,field:45,period:2,clock:480};
@@ -167,11 +168,22 @@ function thirdDownHands(saved,draft,lineup,team=null){
     if(team.packageStarters)practiceTeam.packageStarters={...team.packageStarters};
     grouping=B.dressPackage({game:{...situation,fieldPosition:situation.field},teams:{home:practiceTeam},box:{home:{plays:2}}},'home');
   }
-  function project(play,tactic){
-    const key=JSON.stringify([play.id,tactic?.id]);
+  function project(card,tactic){
+    const key=JSON.stringify([card.id,tactic?.id]);
     if(!projections.has(key)){
-      const snap=R.buildSnap({...dressed,play,call,grouping,offTactics:tactic?[tactic.id]:[],read:'auto',weather:'clear',situation});
-      projections.set(key,R.evaluate(snap,situation).first);
+      const ctx={...dressed,grouping,read:'auto',weather:'clear',situation};
+      const tactics=tactic?[tactic.id]:[];
+      if(unit==='off'){
+        const snap=R.buildSnap({...ctx,play:card,call,offTactics:tactics});
+        projections.set(key,{chance:R.evaluate(snap,situation).first});
+      }else{
+        // Commit the same coverage and tactic against both threats before ranking the call.
+        const stops=PRACTICE_THREATS.map(id=>{
+          const snap=R.buildSnap({...ctx,play:D.PLAYS[id],call:card,defTactics:tactics});
+          return 1-R.evaluate(snap,situation).first;
+        });
+        projections.set(key,{chance:Math.min(...stops),stops});
+      }
     }
     return projections.get(key);
   }
@@ -184,17 +196,20 @@ function thirdDownHands(saved,draft,lineup,team=null){
     }
     for(const side of ['saved','draft']){
       const hand=hands[side];
-      const options=B.offOptions({game:{down:3,distance:7,fieldPosition:45,period:2,clock:480},
-        decks:{home:decks[side]},teams:{home:{lineup:dressed}},hands:{home:{...hand,role:'off',command,onceUsed:[]}}},'home');
+      const state={game:{...situation,fieldPosition:situation.field},decks:{home:decks[side]},
+        teams:{home:{lineup:dressed},away:{lineup:dressed}},hands:{home:{...hand,role:unit,command,onceUsed:[]}}};
+      const options=unit==='off'?B.offOptions(state,'home'):B.defOptions(state,'home');
       const calls=new Map();
       for(const p of options.plays){
         if(calls.has(p.id)||p.blocked||p.cost>command)continue;
-        let best={id:p.id,cost:p.cost,chance:project(p.card),tactic:null};
+        let best={id:p.id,cost:p.cost,...project(p.card),tactic:null};
         for(const t of options.tactics){
           const cost=p.cost+t.cost;
-          if(t.card.info||cost>command||R.tacticBlocked(t.card,p.card,dressed.off))continue;
-          const chance=project(p.card,t.card);
-          if(chance>best.chance||chance===best.chance&&cost<best.cost)best={id:p.id,cost,chance,tactic:t.id};
+          if(t.card.info||cost>command)continue;
+          const blocked=unit==='off'?R.tacticBlocked(t.card,p.card,dressed.off):R.signatureBlocked(t.card,dressed.def);
+          if(blocked)continue;
+          const result=project(p.card,t.card);
+          if(result.chance>best.chance||result.chance===best.chance&&cost<best.cost)best={id:p.id,cost,...result,tactic:t.id};
         }
         calls.set(p.id,best);
       }
@@ -205,21 +220,24 @@ function thirdDownHands(saved,draft,lineup,team=null){
   out.grouping=grouping;
   return out;
 }
-function thirdDownHTML(hands){
+function thirdDownHTML(hands,unit){
   const name=id=>escF(root.CallSheet.packs.cardDef(id)?.name||id);
   const pct=x=>Math.round(100*x)+'%';
-  const count=side=>hands.filter(h=>h[side].calls.filter(c=>c.chance>=.3).length>=2).length;
+  const defense=unit==='def';
+  const metric=defense?'weaker matchup stop chance':'best conversion';
   function report(h){
     const best=h.calls[0];
-    return (best?`<b>${name(best.id)}${best.tactic?' + '+name(best.tactic):''}</b> · ${pct(best.chance)} to convert · ${best.cost} Command`:'No affordable call')+
-      `<small>Play draws · ${h.wrinkles.map(name).join(', ')||'None'}<br>Tactic draws · ${h.tactics.map(name).join(', ')||'None'}<br>Calls at 30% or better · ${h.calls.filter(c=>c.chance>=.3).map(c=>name(c.id)).join(', ')||'None'}</small>`;
+    const odds=!best?'':defense?PRACTICE_THREATS.map((id,i)=>pct(best.stops[i])+' stop vs '+name(id)).join(' · '):pct(best.chance)+' to convert';
+    return (best?`<b>${name(best.id)}${best.tactic?' + '+name(best.tactic):''}</b> · ${odds} · ${best.cost} Command`:'No affordable call')+
+      `<small>Play draws · ${h.wrinkles.map(name).join(', ')||'None'}<br>Tactic draws · ${h.tactics.map(name).join(', ')||'None'}${defense?'':'<br>Calls at 30% or better · '+(h.calls.filter(c=>c.chance>=.3).map(c=>name(c.id)).join(', ')||'None')}</small>`;
   }
   const personnel=root.CallSheet.battle.GROUPINGS[hands.grouping];
-  return `<p>Your offense faces your defense in Cover 3 at your 45. Each sample gives you a fresh hand, two Command left, and up to one tactic per call. Base calls and available player discounts apply.</p>
-    <p>Auto personnel on this down: <b>${escF(personnel)}</b>.${hands.grouping==='10'?' Plays that need an inline tight end are left out, as in a game.':''}</p>
-    <p><b>Hands with two or more calls at 30% or better to convert</b><br>Saved ${count('saved')}/10 · Draft ${count('draft')}/10</p>
+  const score=side=>defense?pct(hands.reduce((total,h)=>total+(h[side].calls[0]?.chance||0),0)/hands.length):hands.filter(h=>h[side].calls.filter(c=>c.chance>=.3).length>=2).length+'/10';
+  return `<p>${defense?'Your defense faces Deep Cross and RB Screen from the offense’s 45. Each hand recommends the same call and tactic for both threats, favoring the higher chance to stop the tougher matchup.':'Your offense faces your defense in Cover 3 at your 45.'} Each sample gives you a fresh hand, two Command left, and up to one non-info tactic per call. Base calls and available player discounts apply.</p>
+    <p>Auto personnel on offense: <b>${escF(personnel)}</b>.${!defense&&hands.grouping==='10'?' Plays that need an inline tight end are left out, as in a game.':''}</p>
+    <p><b>${defense?'Average stop chance against the tougher matchup':'Hands with two or more calls at 30% or better to convert'}</b><br>Saved ${score('saved')} · Draft ${score('draft')}</p>
     <p>Change a card to replay these draws before saving.</p>
-    ${hands.map((h,i)=>`<details><summary>Hand ${i+1} · best conversion ${pct(h.saved.calls[0]?.chance||0)} → ${pct(h.draft.calls[0]?.chance||0)}</summary><p>Saved · ${report(h.saved)}</p><p>Draft · ${report(h.draft)}</p></details>`).join('')}`;
+    ${hands.map((h,i)=>`<details><summary>Hand ${i+1} · ${metric} ${pct(h.saved.calls[0]?.chance||0)} → ${pct(h.draft.calls[0]?.chance||0)}</summary><p>Saved · ${report(h.saved)}</p><p>Draft · ${report(h.draft)}</p></details>`).join('')}`;
 }
 function openingScriptHTML(deck,lineup){
   const {data:D,resolver:R}=root.CallSheet;
@@ -414,7 +432,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
-    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(side==='off'&&lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup,team)):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
+    body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven ${side==='def'?'defensive ':''}hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup,team,side),side):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
     <p>Each series, draw up to ${D.RULES.wrinkleRow} extra plays and ${D.RULES.tacticHand} tactics. Base calls are always available. Special-teams tactics trigger in their own situations instead of being drawn.</p>
     ${side==='off'?openingScriptHTML(deck,lineup):''}
 <details data-plans ${plansOpen?'open':''}><summary>Try a different ${adjective} build</summary>

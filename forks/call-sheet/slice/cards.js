@@ -12,7 +12,7 @@ const zonePair={
 };
 function pairRoutes(card){return zonePair[card.evolvedFrom||card.upgradeOf||card.id]}
 const ROUTES={
-  outside_zone:'M50 42 Q72 42 82 22',power:'M44 36 L57 36 M50 42 L54 18',read_option:'M50 38 Q34 36 26 18 M50 38 L57 22',
+  qb_sneak:'M50 41 L50 36 L48 30',outside_zone:'M50 42 Q72 42 82 22',power:'M44 36 L57 36 M50 42 L54 18',read_option:'M50 38 Q34 36 26 18 M50 38 L57 22',
   quick_slant:'M78 34 L78 30 L60 18',stick:'M66 34 L66 22 L60 22',deep_cross:'M82 34 L82 24 L20 8',vertical_shot:'M16 34 L16 2',
   quick_out:'M16 36 L16 23 L6 23',out_and_up:'M16 36 L16 23 L9 23 L9 4',
   screen:'M50 40 L28 40 M44 34 L28 28',draw:'M50 42 L50 40 L50 16',
@@ -62,7 +62,7 @@ function card(id,opts={}){
   if(opts.selected!==undefined&&!c.info)el.setAttribute('aria-pressed',String(!!opts.selected));
   el.dataset.id=id;el.style.setProperty('--fam',FAM[fam]||'#e5c766');
   let type;
-  if(kind==='play')type=`${fam}${c.trick?' · trick':''}${opts.base?' · base':''}`;
+  if(kind==='play')type=`${fam}${c.trick?' · trick':''}${c.maxDistance?' · short yardage':opts.base?' · base':''}`;
   else if(kind==='call')type=`${c.coverage} · ${c.box} box${c.pressure?` · ${c.pressure===2?'all-out':'blitz'}`:''}${c.trick?' · trick':''}`;
   else type=c.info?'info · plays now':'tactic';
   const sg=c.signature;

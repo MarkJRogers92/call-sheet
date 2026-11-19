@@ -55,6 +55,13 @@ const R=(w,kind,yards,extra={})=>({w,kind,yards,...extra});
 // --- Offensive plays -------------------------------------------------------------------------------
 // duel: off/def role lists, the traits each side uses, a label, and a design bias (a visible modifier).
 const PLAYS={
+  qb_sneak:{id:'qb_sneak',side:'off',name:'QB Sneak',family:'run',cost:0,carrier:'QB',maxDistance:2,
+    text:'Two yards or less. The center and guards wedge open a gap for the QB. A loaded box can stop it cold.',
+    duels:{
+      G:{label:'Wedge the A-gap',off:['C','LG','RG'],ot:['power','technique'],def:['NT','DT3'],dt:['power','technique'],bias:2},
+      K:{label:'Find the surge',off:['QB','C'],ot:['iq','technique'],def:['MIKE'],dt:['iq','technique'],bias:1},
+      F:{label:'Push the pile',off:['QB'],ot:['power','durability'],def:['MIKE'],dt:['power','technique'],bias:0}},
+    results:{fail:[R(1,'run',[0,.5])],short:[R(1,'run',[1,.35])],success:[R(1,'run',[2,.55])],explosive:[R(1,'run',[3,.65])]}},
   inside_zone:{id:'inside_zone',side:'off',name:'Inside Zone',family:'run',cost:0,base:true,carrier:'RB',
     text:'Downhill run. The back reads the interior blocks and takes the crease.',
     duels:{

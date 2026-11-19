@@ -142,3 +142,36 @@ test('deck comparison uses the next fresh series when postgame personnel still r
   assert.deepEqual(U.thirdDownHands(book,book,team.lineup,team),fresh);
   assert.deepEqual(team,before);
 });
+
+test('defensive practice holds a single affordable call against a deep cross and a screen',()=>{
+  global.DynastyRng=require('../rng');global.CallSheet.battle=require('../forks/call-sheet/core/battle');
+  const team=Ro.preset('control'),saved=P.newPlaybook(),draft=copy(saved),lineup=team.lineup;
+  saved.def.wrinkles=['bear','cover0','robber','zone_pressure'];
+  draft.def.wrinkles=['cover2_trap','cover0','robber','zone_pressure'];
+  saved.def.tactics=['bracket','press','film_tell'];draft.def.tactics=[...saved.def.tactics];
+  const before=copy([saved,draft,lineup]),hands=U.thirdDownHands(saved,draft,lineup,null,'def');
+  assert.deepEqual(hands,U.thirdDownHands(saved,draft,lineup,null,'def'));
+  const situation={down:3,distance:7,field:45,period:2,clock:480};
+  let sawSwap=false;
+  for(const hand of hands){
+    assert.deepEqual(hand.draft.wrinkles.map(id=>id==='cover2_trap'?'bear':id),hand.saved.wrinkles);
+    sawSwap||=hand.saved.wrinkles.includes('bear');
+    for(const [deck,sample] of [[saved,hand.saved],[draft,hand.draft]]){
+      assert.deepEqual([...new Set([...deck.def.base,...sample.wrinkles])].sort(),sample.calls.map(c=>c.id).sort());
+      for(const [i,c] of sample.calls.entries()){
+        assert.ok(!i||sample.calls[i-1].chance>=c.chance);
+        assert.ok(c.cost<=2);
+        assert.ok(!c.tactic||sample.tactics.includes(c.tactic)&&!D.TACTICS[c.tactic].info);
+        const stops=['deep_cross','screen'].map(id=>{
+          const snap=R.buildSnap({...lineup,grouping:'11',weather:'clear',read:'auto',situation,
+            call:D.CALLS[c.id],play:D.PLAYS[id],defTactics:c.tactic?[c.tactic]:[]});
+          return 1-R.evaluate(snap,situation).first;
+        });
+        assert.deepEqual(c.stops,stops);assert.equal(c.chance,Math.min(...stops));
+      }
+    }
+  }
+  assert.ok(sawSwap);assert.deepEqual([saved,draft,lineup],before);
+  const withTeam=U.thirdDownHands(saved,saved,lineup,team,'def');assert.equal(withTeam.grouping,'10');
+  assert.deepEqual(withTeam[0].saved,withTeam[0].draft);
+});

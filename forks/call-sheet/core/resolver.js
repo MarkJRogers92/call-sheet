@@ -57,6 +57,7 @@ function readOptionPlay(card,assignment,meshChoice){
 // Is a play legal for this lineup? Returns null or a reason.
 function playBlocked(play,lineup,sit=null){
   const sig=signatureBlocked(play,lineup);if(sig)return sig;
+  if(play.maxDistance&&sit&&sit.distance>play.maxDistance)return `Only with ${play.maxDistance} yards or less to gain`;
   if(play.fourthOnly&&sit&&sit.down!==4)return'4th down only';
   if(play.thirdOnly&&sit&&sit.down!==3)return'3rd down only';
   // The inline player sells the edge block on these wrinkles. Four-wide

@@ -279,7 +279,7 @@ function clock(st){const q=b.game.status==='final'?'FINAL':st.period>4?'OT':`Q${
 function renderBug(st=sitNow(),score=b.game.score){
   const options=!busy&&b&&B.sidelineOptions(b);
   const sideline=$('#sidelineBtn');
-  sideline.hidden=!options||(!options.late&&!options.tactics.length);
+  sideline.hidden=!options||(!options.offense&&!options.late&&!b.log.some(e=>e.type==='snap'&&e.offSide===b.game.possession&&e.sit));
   if(options)sideline.textContent=options.late?`Clock · ${options.timeouts} TO`:options.keep?'Sideline · 1 held':'Sideline';
   const dd=st.possession&&st.down?`${['','1ST','2ND','3RD','4TH'][st.down]} & ${st.field+st.distance>=100?'GOAL':st.distance} · ${st.field>50?'OPP '+(100-st.field):st.field===50?'50':'OWN '+st.field}`:'';
   const tm=s=>`<div class="tm ${s}" style="background:${teamOf(s).colors[0]}"><span class="poss ${st.possession===s?'on':''}"></span><div><div class="ab">${esc(teamOf(s).short)}</div>${s===b.user?'<div class="you">YOU</div>':''}</div><div class="sc">${score[s]}</div></div>`;
@@ -349,7 +349,7 @@ function holdLook(e){
 }
 document.addEventListener('click',holdLook);
 function retainCallTactics(play){
-  let remaining=req.options.command-play.cost;
+  let remaining=req.options.command-(play?.cost||0);
   const removed=[];
   sel.tac=sel.tac.filter(slot=>{
     const t=req.options.tactics.find(t=>t.slot===slot);
@@ -466,6 +466,30 @@ function personnelHTML(){
   const packages=B.groupingOptions?.(b,req.side);
   if(packages)return `<div class="box"><h3><label for="personnel">Personnel</label></h3><select id="personnel" class="tbtn">${packages.map(p=>`<option value="${esc(p.id)}" ${p.id===mode?'selected':''} ${p.available===false?'disabled':''}>${esc(p.name)}${p.available===false?' · unavailable':''}</option>`).join('')}</select><p class="mini">${esc(packages.find(p=>p.id===mode)?.detail||'')}</p></div>`;
   return`<div class="box"><h3><label for="personnel">Personnel</label></h3><select id="personnel" class="tbtn" style="width:100%">${Object.entries(B.GROUPINGS).map(([id,name])=>`<option value="${id}" ${id===mode?'selected':''}>${esc(name)}${id==='auto'?` (now ${now})`:''}</option>`).join('')}</select><div class="mini">12/21: run +½ unless they load the box, receivers −½. 10: receivers +½ against one deep safety, run −½.</div></div>`;
+}
+function recentSnapsHTML(offSide){
+  const snaps=b.log.filter(e=>e.type==='snap'&&e.offSide===offSide&&e.sit).slice(-5).reverse();
+  if(!snaps.length)return '';
+  const rows=snaps.map(e=>{
+    const {down,distance,field,period,clock:seconds}=e.sit;
+    const downLabel=['','1st','2nd','3rd','4th'][down]||'';
+    const time=period>4?'OT':`Q${period} ${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;
+    const play=D.PLAYS[e.play]?.name||e.play,call=D.CALLS[e.call]?.name||e.call;
+    const yards=Number(e.yards)||0,gain=`${yards>0?'+':''}${yards} yd`;
+    let outcome=gain;
+    if(e.penalty)outcome=e.penalty.label;
+    else if(e.turnover)outcome=e.turnover==='interception'?'Intercepted':'Fumble lost';
+    else if(e.kind==='punt')outcome='Quick kick';
+    else if(e.kind==='inc')outcome='Incomplete';
+    else if(e.kind==='sack')outcome='Sack · '+gain;
+    if(!e.penalty&&!e.turnover){
+      if(e.score?.[offSide]-e.sit.score?.[offSide]>=6)outcome+=' · TD';
+      else if(e.score?.[e.defSide]-e.sit.score?.[e.defSide]===2)outcome+=' · Safety';
+      else if(e.kind!=='punt'&&down===4&&yards<distance)outcome+=' · Downs';
+    }
+    return `<li><small>${esc(time)} · ${esc(downLabel)} &amp; ${field+distance>=100?'goal':esc(distance)}</small><strong>${esc(play)} · ${esc(outcome)}</strong>${call?`<span>vs ${esc(call)}</span>`:''}</li>`;
+  });
+  return `<details class="recent-snaps"><summary>Recent snaps · ${esc(teamOf(offSide).short)} offense</summary><ol aria-label="Most recent first">${rows.join('')}</ol></details>`;
 }
 function lastSnapHTML(){
   const e=b.lastResult,note=B.explainSnap(e);if(!note)return'';
@@ -688,13 +712,31 @@ function tacticClick(t,why){
   const restore=()=>{if(hadFocus)($('#hand [data-tactic-slot="'+t.slot+'"]')||$('#hand [aria-pressed="true"]')||$('#autoBtn'))?.focus({preventScroll:true})};
   if(t.card.info){
     if(t.cost>req.options.command){err='Not enough Command.';S.error();renderHand();restore();return}
-    try{const keep=sel.play,target=sel.target;req=B.submit(b,{type:'info',tactic:t.id});writeSave();sel={play:keep,target,tac:[]};err='';S.chime();FX.shake($('#look'),.4)}catch(e){err=e.message;S.error()}
-    if(req&&req.kind==='snap'){refresh();restore();return}
-    go(undefined);return;
+    const originalSnap=b.snap;
+    // The engine spends the first copy, even when the coach taps a later duplicate.
+    const spentSlot=req.options.tactics.find(card=>card.id===t.id).slot;
+    try{req=B.submit(b,{type:'info',tactic:t.id})}
+    catch(e){err=e.message;S.error();renderHand();restore();return}
+    writeSave();S.chime();
+    if(req?.kind!=='snap'||b.snap!==originalSnap){go(undefined);return}
+    sel.tac=sel.tac.map(slot=>slot>spentSlot?slot-1:slot);
+    const play=req.options.plays.find(p=>p.id===sel.play);
+    err='';retainCallTactics(play);
+    if(!selectedTactics().includes('bracket'))delete sel.bracketRole;
+    if(play&&play.cost>req.options.command)err=`Choose a cheaper play. ${play.card.name} needs ${play.cost} Command and you have ${req.options.command}.`;
+    FX.shake($('#look'),.4);refresh();
+    if(hadFocus)($('#snapBtn:not(:disabled)')||$('#autoBtn'))?.focus({preventScroll:true});
+    return;
   }
   const i=sel.tac.indexOf(t.slot);
   if(i<0&&why){err=why;S.error();renderHand();restore();return}
-  if(i>=0)sel.tac.splice(i,1);else sel.tac.push(t.slot);err='';S.tick(sel.tac.length*3);refresh();restore();
+  if(i>=0)sel.tac.splice(i,1);
+  else{
+    // A tactic resolves once per snap. Selecting another copy moves the selection.
+    sel.tac=sel.tac.filter(slot=>!req.options.tactics.some(card=>card.slot===slot&&card.id===t.id));
+    sel.tac.push(t.slot);
+  }
+  err='';S.tick(sel.tac.length*3);refresh();restore();
 }
 function wirePlayCard(el,p){
   let start=null,ghost=null;
@@ -1035,7 +1077,9 @@ $('#sidelineBtn').onclick=()=>{
   if(busy)return;
   const o=B.sidelineOptions(b);if(!o)return;
   const threat=B.revealedThreat(b,b.game.possession);
-  const dialog=coachingDialog('Sideline instructions',`
+  const editable=o.offense||o.late;
+  const dialog=coachingDialog(editable?'Sideline instructions':'Sideline film',`
+    ${recentSnapsHTML(b.game.possession)}
     ${o.tactics.length?`<label>Keep on a first down <select id="keepTactic"><option value="">Draw a fresh hand</option>${o.tactics.map(id=>`<option value="${esc(id)}" ${id===o.keep?'selected':''}>${esc(D.TACTICS[id].name)}</option>`).join('')}</select></label>
        <p>If this tactic is still in hand when you earn a first down, keep one copy and draw one fewer. A change of possession clears the choice.</p>`:''}
     ${o.retained?`<p>You carried ${esc(D.TACTICS[o.retained]?.name||o.retained)} into this series.</p>`:''}
@@ -1045,14 +1089,15 @@ $('#sidelineBtn').onclick=()=>{
       :`<label>Feature a player this half <select id="featurePlayer"><option value="">No featured player</option>${o.featurable.map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${esc(p.role)}</option>`).join('')}</select></label>
        <p>Calls designed for him give his duels +1 until he records two carries or catches. The defense spots his productive touches sooner.</p>`):''}
     ${threat?`<p>Recent film · ${esc(b.personnel[threat.playerId]?.name||'The same player')} gained ${threat.yards} yards on ${threat.count} productive ${esc(D.PLAYS[threat.play].name)} call${threat.count===1?'':'s'}.</p>`:''}
-    <div><button type="button" class="btn go" id="sidelineApply">Apply</button> <button type="button" class="btn" id="sidelineCancel">Cancel</button></div>`);
+    <div>${editable?'<button type="button" class="btn go" id="sidelineApply">Apply</button> ':''}<button type="button" class="btn" id="sidelineCancel">${editable?'Cancel':'Close'}</button></div>`);
+  dialog.querySelector('#sidelineCancel').onclick=()=>dialog.close();
+  if(!editable)return;
   dialog.querySelector('#sidelineApply').onclick=()=>{
     B.setSideline(b,{keep:dialog.querySelector('#keepTactic')?.value||null,
       intent:dialog.querySelector('#clockIntent')?.value||o.intent,timeoutNext:!!dialog.querySelector('#clockTimeout')?.checked,
       feature:dialog.querySelector('#featurePlayer')?.value||null});
     writeSave();dialog.close();renderBug();
   };
-  dialog.querySelector('#sidelineCancel').onclick=()=>dialog.close();
 };
 function fourthModal(){
   renderBug();setFormation(sitNow());refresh();$('#hand').classList.add('away');$('#hand').inert=true;

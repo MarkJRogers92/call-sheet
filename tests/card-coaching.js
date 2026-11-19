@@ -46,7 +46,7 @@ test('a resting signature owner cannot lend his card to the replacement back',()
 });
 
 test('rotation credits the actual backs in logs, engine actors, and career duels',()=>{
-  const opts={...teams(),seed:'rotation-accounting'},b=B.simulate(opts),starter=b.teams.home.backfield[0].id;
+  const opts={...teams(),seed:'rotation-accounting',user:'home',headset:{restStarters:false}},b=B.simulate(opts),starter=b.teams.home.backfield[0].id;
   assert.equal(b.game.status,'final');assert.ok(!b.final.engineError);
   const snaps=b.log.filter(e=>e.type==='snap'&&e.offSide==='home'&&!e.penalty),ids=new Set(snaps.map(e=>e.lineups.off.RB));
   assert.ok(ids.has(starter)&&ids.has('receiving-back'));
