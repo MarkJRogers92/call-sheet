@@ -5,20 +5,26 @@ const D=root.CallSheet.data;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const FAM={run:'#6fd25a',quick:'#3fc1ff',deep:'#c07bff',constraint:'#ff9a3c',zone:'#3fc1ff',man:'#ff5a5a',pressure:'#ff9a3c'};
 // Both calls show the same back crossing the QB before the ball goes inside or boots left.
-const mesh='M62 45 Q56 44 50 40';
-const zonePair={
-  inside_zone:[{d:mesh,mesh:true},{d:'M50 40 Q52 34 54 29 L53 17'}],
-  pa_boot:[{d:mesh,mesh:true},{d:'M50 40 Q42 43 29 40 L25 37'},{d:'M84 36 L84 25 L34 13',receiver:true}]
+function chalk(role,points,extra={}){
+  const d=points.map(([x,y],i)=>(i?'L':'M')+x+' '+y).join(' ');
+  return {role,points,d,...extra};
+}
+const mesh=chalk('RB',[[62,45],[56,44],[50,40]],{mesh:true});
+const concepts={
+  inside_zone:[mesh,{d:'M50 40 Q52 34 54 29 L53 17'}],
+  outside_zone:[chalk('RB',[[50,42],[60,42],[72,38],[80,33],[82,22]])],
+  pa_boot:[mesh,chalk('QB',[[50,40],[42,43],[29,40],[25,37]]),chalk('receiver',[[84,36],[84,25],[34,13]],{receiver:true})],
+  rpo_bubble:[mesh,chalk('receiver',[[68,36],[72,39],[80,39],[92,33]],{receiver:true})]
 };
-function pairRoutes(card){return zonePair[card.evolvedFrom||card.upgradeOf||card.id]}
+function pairRoutes(card){return concepts[card.evolvedFrom||card.upgradeOf||card.id]}
 const ROUTES={
-  qb_sneak:'M50 41 L50 36 L48 30',te_pop_pass:'M50 42 L50 37 M68 36 L67 29 Q65 25 55 18',outside_zone:'M50 42 Q72 42 82 22',power:'M44 36 L57 36 M50 42 L54 18',read_option:'M50 38 Q34 36 26 18 M50 38 L57 22',
+  qb_sneak:'M50 41 L50 36 L48 30',te_pop_pass:'M50 42 L50 37 M68 36 L67 29 Q65 25 55 18',power:'M44 36 L57 36 M50 42 L54 18',read_option:'M50 38 Q34 36 26 18 M50 38 L57 22',
   quick_slant:'M78 34 L78 30 L60 18',stick:'M66 34 L66 22 L60 22',deep_cross:'M82 34 L82 24 L20 8',vertical_shot:'M16 34 L16 2',
   quick_out:'M16 36 L16 23 L6 23',out_and_up:'M16 36 L16 23 L9 23 L9 4',
   screen:'M50 40 L28 40 M44 34 L28 28',draw:'M50 42 L50 40 L50 16',
   four_verts:'M16 34 L16 2 M34 34 L34 4 M66 34 L66 4 M84 34 L84 2',statue_left:'M50 42 L44 44 L22 30 L14 8'
 };
-for(const [id,parts] of Object.entries(zonePair))ROUTES[id]=parts.map(part=>part.d).join(' ');
+for(const [id,parts] of Object.entries(concepts))ROUTES[id]=parts.map(part=>part.d).join(' ');
 ROUTES.inside_zone_plus=ROUTES.inside_zone;ROUTES.quick_slant_plus=ROUTES.quick_slant;ROUTES.pa_boot_plus=ROUTES.pa_boot;
 const DEF={two_high:[[30,6],[70,6]],cover1:[[50,4]],cover3:[[20,8],[50,6],[80,8]],run_fit:[[50,18],[36,22],[64,22]],zone_pressure:[[50,6]],cover0:[],sim_pressure:[[50,6]],two_man:[[28,6],[72,6]],robber:[[50,16],[50,4]],bear:[[50,6]],corner_blitz:[[50,6]],cover2_trap:[[28,6],[72,6]],midnight_mirage:[[28,6],[72,6]]};
 const RUSH={zone_pressure:[[36,24,44,36],[64,24,56,36]],cover0:[[30,22,42,36],[50,20,50,36],[70,22,58,36],[18,26,36,36]],sim_pressure:[[40,22,46,36]],bear:[[44,24,46,35],[56,24,54,35]],corner_blitz:[[10,30,36,36]],midnight_mirage:[[36,24,44,36],[64,24,56,36]]};
@@ -30,7 +36,7 @@ function diagram(id,side){
   for(const [x,y] of [[50,43],[16,36],[84,36],[68,36]])s+=`<circle cx="${x}" cy="${y}" r="2.4" fill="none" stroke="#efe6d2" stroke-width="1.3"/>`;
   if(side==='off'){
     const pair=pairRoutes(D.PLAYS[id]||{id});
-    if(pair)s+='<circle cx="62" cy="45" r="2" fill="none" stroke="#efe6d2" stroke-width="1.3"/>';
+    if(pair?.some(part=>part.mesh))s+='<circle cx="62" cy="45" r="2" fill="none" stroke="#efe6d2" stroke-width="1.3"/>';
     for(const part of pair||[{d:ROUTES[id]||''}]){
       s+=`<path d="${part.d}" fill="none" stroke="${part.mesh?'#efe6d2':'#ffe066'}" stroke-width="2" stroke-linecap="round" ${part.mesh?'stroke-dasharray="1.5 1.5"':'marker-end="url(#ah)" filter="url(#gl)"'}/>`;
     }

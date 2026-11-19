@@ -22,11 +22,18 @@ test('adaptation panel makes clues readable without declaring a guaranteed count
  const html=run('adaptationHTML',{B:{adaptationRead:()=>({summary:'They show <pressure>',detail:'A screen may punish it.',counterPlay:'screen'})},D:{PLAYS:{screen:{name:'HB Screen'}}},b:{},req:{},esc});
  assert.match(html,/Opponent adjustment/);assert.match(html,/&lt;pressure&gt;/);assert.match(html,/may/);assert.match(html,/Try HB Screen/);
 });
-test('field story withholds rating explanations under scouting fog',()=>{
+test('field story leads with the recorded play outcome and keeps the duel secondary and fog-safe',()=>{
  const note={summary:'Tackle beat edge',detail:'player-rating edge'};
- const B={matchupStory:()=>note};
- assert.doesNotMatch(run('matchupStoryHTML',{B,setupReceipt:()=>'',fogSpread:()=>2,esc},[{}]),/player-rating/);
- assert.match(run('matchupStoryHTML',{B,setupReceipt:()=>'',fogSpread:()=>0,esc},[{}]),/player-rating/);
+ const B={matchupStory:()=>note},D={PLAYS:{power:{name:'Power'}}};
+ const e={play:'power',offSide:'home',defSide:'away',yards:3,kind:'run',sit:{down:2,distance:5,score:{home:0,away:0}},after:{down:3,possession:'home'},score:{home:0,away:0}};
+ const html=(extra={},fog=2)=>run('matchupStoryHTML',{B,D,setupReceipt:()=>'',fogSpread:()=>fog,esc},[{...e,...extra}]);
+ assert.match(html(),/^<strong>Power · \+3 yd<\/strong><span>Tackle beat edge/);
+ assert.doesNotMatch(html(),/player-rating/);assert.match(html({},0),/player-rating/);
+ assert.match(html({yards:6,after:{down:1,possession:'home'}}),/\+6 yd · First down<\/strong>/);
+ assert.match(html({score:{home:7,away:0}}),/Touchdown<\/strong>/);
+ assert.match(html({kind:'inc',yards:0}),/Incomplete<\/strong>/);
+ assert.match(html({kind:'sack',yards:-5,turnover:'fumble'}),/Sack · -5 yd · Fumble lost<\/strong>/);
+ assert.match(html({kind:'inc',turnover:'interception'}),/Intercepted<\/strong>/);
 });
 test('resume advances an unfinished checkpoint instead of awarding a premature final',()=>{
  let advanced=0,decided=0;
@@ -50,9 +57,9 @@ test('setup receipt names the actual players and result only for an adjustment t
 test('quick sheet shows only offered calls, escaped public read, costs and optional full-sheet access',()=>{
  const req={role:'off',options:{command:2,plays:[{id:'screen',cost:1,card:{name:'Screen'}},{id:'draw',cost:0,card:{name:'Draw'}}]}};
  const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.'}]};
- const html=run('quickSheetHTML',{req,b:{},sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',tacticNoteHTML:()=>'<p>Pair with a tactic</p>',esc,err:''},[view]);
+ const html=run('quickSheetHTML',{req,b:{},callForecastHTML:()=>'<div id="callForecast">Forecast</div>',sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',tacticNoteHTML:()=>'<p>Pair with a tactic</p>',esc,err:''},[view]);
  assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);assert.match(html,/Snap.*Screen/i);
- assert.match(html,/Your last call/);assert.match(html,/Featured duel/);assert.match(html,/Finish guided drive/);assert.doesNotMatch(html,/data-quick-call="draw"/);assert.match(html,/Pair with a tactic/);
+ assert.match(html,/Your last call/);assert.match(html,/Featured duel/);assert.match(html,/id="callForecast"/);assert.match(html,/Finish guided drive/);assert.doesNotMatch(html,/data-quick-call="draw"/);assert.match(html,/Pair with a tactic/);
 });
 test('standalone signing day previews the named recruit’s possible signature and matchup without awarding a card',()=>{
  const SG=require('../forks/call-sheet/core/signatures'),D=require('../forks/call-sheet/core/data');
@@ -138,4 +145,37 @@ test('rapid postgame cuts move one chosen card per prompt and finish once',async
  assert.deepEqual(pb.reserve.off.wrinkles,['pa_boot','power']);
  waits.shift()();await second;
  assert.equal(saves,2);assert.equal(finishes,1);
+});
+
+test('featured matchup follows the tactic to its duel and reads odds from the coach’s side',()=>{
+ const D=require('../forks/call-sheet/core/data'),B=require('../forks/call-sheet/core/battle');
+ const render=(b,play,tactics,fog=0)=>{
+  const mark={style:{}},locator={querySelector:()=>mark};
+  return run('matchupHTML',{b,req:b.pending,D,B,sel:{play},selectedTactics:()=>tactics,
+   snapChoice:ids=>({play,tactics:ids}),fogSpread:()=>fog,fieldGlow(){assert.equal(fog,0,'fogged players use neutral field markers')},clearGlow(){},frameSelectedPlay(){},
+   layer:{dots:{}},window:{SliceCards:{routeFor:()=>null}},$:()=>locator,absOf:x=>x,sameLookHTML:()=>'',esc});
+ };
+ const offense=B.createChallenge('four_minute_offense');
+ assert.match(render(offense,'outside_zone',[]),/Gate · Edge block[\s\S]*37% estimated duel win/);
+ const sealed=render(offense,'outside_zone',['seal_block']);
+ assert.match(sealed,/Gate · Edge block[\s\S]*37% → 67% · \+30 pts/);
+ const fogged=render(offense,'outside_zone',['seal_block'],2);
+ assert.match(fogged,/Gate · Edge block[\s\S]*Seal Block helps this block/);
+ assert.doesNotMatch(fogged,/%|\d+ pts/);
+ const defense=B.createChallenge('goal_line_stand');
+ defense.snap.offLook.family={confirmed:true,value:'quick'};
+ assert.match(render(defense,'cover1',['disguise']),/Timing throw vs quick[\s\S]*77% → 85% · \+8 pts/);
+ assert.match(render(defense,'cover1',['bracket']),/Release vs quick[\s\S]*66% → 52% · -14 pts/);
+});
+
+test('selected play shows scouting bands on defense and switches to touchdown odds at the goal',()=>{
+ const ctx={req:{role:'def',side:'away',situation:{field:45,distance:3},options:{plays:[{id:'cover1',card:{id:'cover1'}}]}},
+   sel:{play:'cover1'},b:{},DYN:{scouting:{confidence:70}},selectedTactics:()=>[],snapChoice:()=>({play:'cover1'}),
+   B:{filmFog:()=>({spread:1}),scoutedForecast:()=>({yards:[1.5,4.6],first:[22,44]}),preview:()=>assert.fail('fogged calls must use only the scouting model')}};
+ const html=run('callForecastHTML',ctx);
+ assert.match(html,/Moderate scouting confidence/);assert.match(html,/yards allowed <b>1–5 yd/);assert.match(html,/Opp\. 1st down <b>20–45%/);
+ ctx.req.situation={field:97,distance:3};
+ const goal=run('callForecastHTML',ctx);assert.match(goal,/3 yd to goal/);assert.match(goal,/Opp\. TD <b>20–45%/);
+ ctx.req.options.plays=[{id:'spike',card:{id:'spike'}}];ctx.sel.play='spike';
+ assert.match(run('callForecastHTML',ctx),/0 yards.*stop the clock/);
 });

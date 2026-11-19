@@ -546,6 +546,13 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   #hand .cmd{background:#192532;border-color:#445461}
 }
 
+.call-forecast{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;padding:4px 9px;border-left:2px solid #88b8be;background:#172632;color:#e6edef;text-align:left;font:600 14px/1.2 var(--cond)}
+.call-forecast small{flex-basis:100%;font:600 12px/1.2 system-ui;color:#bdcfd4}
+.call-forecast span{white-space:nowrap}
+.call-forecast b{color:#f6dc91;font-variant-numeric:tabular-nums}
+.quick-board .call-forecast{margin-top:6px;width:fit-content}
+@media(max-width:860px){#hand .cmd .call-forecast{grid-column:1/-1}}
+
 /* While plays run, only the scoreboard, playing surface and live result occupy the viewport. */
 #root.playback{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);overflow:hidden}
 #root.playback #hand,#root.playback #side,#root.playback #look,#root.playback #scorebar button{display:none}

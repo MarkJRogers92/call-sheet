@@ -92,3 +92,50 @@ test('the zone and boot chalk diagrams start at the same mesh and end on differe
     assert.ok(cards.diagram(id,'off').includes(run[0].d));assert.ok(cards.routeFor(P(id)).includes(run[0].d));
   }
 });
+
+test('authored route shapes survive the card, field and recorded snap result',async()=>{
+  const fs=require('node:fs'),vm=require('node:vm');
+  const window={CallSheet:{data:D}},ctx=vm.createContext({window,D,YD:10,MIDY:266});
+  vm.runInContext(fs.readFileSync(require.resolve('../forks/call-sheet/slice/cards.js'),'utf8'),ctx);
+  const src=fs.readFileSync(require.resolve('../forks/call-sheet/slice/slice.js'),'utf8');
+  vm.runInContext(src.slice(src.indexOf('function conceptTracks('),src.indexOf('// ================================================================ broadcast bug')),ctx);
+  const origin={'o:QB':{x:450,y:266},'o:RB':{x:425,y:266},'o:SLOT':{x:490,y:412},'o:Z':{x:490,y:462},'d:FS':{x:585,y:266}};
+  const frames=[];
+  let ball;Object.assign(ctx,{
+    S:{whistle(){}},FX:{ease:{inOut:t=>t},async tween(ms,fn){for(const t of [0,.22,.4,.65,1]){fn(t);frames.push({t,ball:{...ball},pos:structuredClone(ctx.pos)})}}},
+    formation(){return {dir:1,los:500,dots:Object.fromEntries(Object.keys(origin).map(k=>[k,{role:k.split(':')[1]}]))}},
+    placeDot(k,x,y){ctx.pos[k]={x,y}},placeBall(x,y,h=0){ball={x,y,h}}
+  });
+  const snap=async(play,props)=>{
+    frames.length=0;ctx.pos=structuredClone(origin);
+    await ctx.animatePlay({play,sit:{},yards:8,...props});
+    return frames;
+  };
+  const bubble=P('rpo_bubble'),cards=window.SliceCards;
+  for(const part of cards.pairRoutes(bubble))assert.ok(cards.diagram(bubble.id,'off').includes(part.d)&&cards.routeFor(bubble).includes(part.d));
+  await snap('outside_zone',{kind:'run',participants:{carrier:'RB',defender:'FS'}});
+  assert.ok(frames[1].pos['o:RB'].y>300&&frames[1].pos['o:RB'].x<435,'stretch outside before cutting upfield');
+  assert.equal(ball.x,580);assert.equal(ball.y,ctx.pos['o:RB'].y);
+  await snap('outside_zone',{kind:'run',yards:-2,participants:{carrier:'RB'}});
+  assert.equal(ball.x,480);
+  await snap('pa_boot',{kind:'catch',completed:true,participants:{target:'Z'}});
+  assert.deepEqual(frames[1].pos['o:RB'],frames[1].pos['o:QB'],'show the fake at the mesh');
+  assert.ok(frames[2].pos['o:QB'].y<250&&frames[2].ball.h===0,'the quarterback keeps it and boots out');
+  assert.equal(ball.x,580);assert.equal(ball.y,ctx.pos['o:Z'].y);
+  await snap('rpo_bubble',{kind:'catch',completed:true,participants:{target:'SLOT'}});
+  assert.ok(frames[1].pos['o:SLOT'].y>420&&frames[1].pos['o:SLOT'].x<490,'receiver bubbles backward toward the sideline');
+  assert.deepEqual([frames[3].ball.x,frames[3].ball.y],[frames[3].pos['o:SLOT'].x,frames[3].pos['o:SLOT'].y],'slot owns ball before the final run');
+  assert.equal(ball.x,580);
+  await snap('pa_boot',{kind:'catch',completed:true,checkdown:{role:'RB'},participants:{target:'RB'}});
+  assert.deepEqual([ball.x,ball.y],[580,ctx.pos['o:RB'].y]);
+  await snap('pa_boot',{kind:'catch',completed:true,primaryTarget:'SLOT',participants:{target:'SLOT'}});
+  assert.deepEqual([ball.x,ball.y],[580,ctx.pos['o:SLOT'].y]);assert.ok(ctx.pos['o:SLOT'].y<origin['o:SLOT'].y);
+  const away=ctx.conceptTracks({kind:'run',participants:{carrier:'RB'}},P('outside_zone'),origin,-1,345)['o:RB'];
+  assert.equal(away.at(-1).x,345);assert.ok(away[2].x<origin['o:RB'].x);
+  await snap('pa_boot',{kind:'sack',yards:-6,participants:{sacker:'FS'}});
+  assert.equal(ball.x,440);assert.deepEqual([ball.x,ball.y],[ctx.pos['o:QB'].x,ctx.pos['o:QB'].y]);
+  await snap('rpo_bubble',{kind:'inc',turnover:'interception',participants:{target:'SLOT',defender:'FS'}});
+  assert.deepEqual([ball.x,ball.y],[ctx.pos['d:FS'].x,ctx.pos['d:FS'].y],'a picked pass ends with its recorded defender');
+  await snap('rpo_bubble',{kind:'inc',yards:0,participants:{target:'SLOT'}});
+  assert.equal(ball.h,0);assert.ok(ball.x>ctx.pos['o:SLOT'].x,'an ordinary incompletion falls away from the receiver');
+});

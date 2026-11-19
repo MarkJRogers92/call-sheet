@@ -65,7 +65,8 @@ const shots=process.env.CARD_SHOTS||'';
     if(shots)await page.screenshot({path:`${shots}/c2-before-hand.png`});
     if(await frame.evaluate(()=>window.__slice.req?.kind==='snap'&&window.__slice.req.role==='off')){
       await frame.locator('#hand .card.k-play:not(.blocked)').first().click();
-      assert.match(await frame.locator('#side').innerText(),/Exact forecasts are unavailable/);
+      assert.match(await frame.locator('#callForecast').innerText(),/scouting confidence/i);
+      assert.match(await frame.locator('#callForecast').innerText(),/\d+–\d+%/);
       assert.equal(await frame.locator('#field .edge,#field .risk,#field .threat').count(),0,'fog cannot reveal exact matchup margins through field colors');
     }
     if(shots)await page.screenshot({path:`${shots}/c2-battle.png`});

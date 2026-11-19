@@ -41,6 +41,59 @@ function playChallenge(id,calls){
   return {b,result};
 }
 
+test('thin film forecasts use public calls and own personnel, leaving the hidden team and random stream alone',()=>{
+  const b=B.create({seed:'feel-31',home:W.teamFor('sunbelt',P.newPlaybook()),away:W.teamFor('lakeshore',P.newPlaybook()),user:'home',control:'offense',mode:'snap'});
+  B.advance(b);
+  const q=B.submit(b,{type:'info',tactic:'check_with_me'}),snapshot=B.save(b);
+  const forecast=(play,extras={},confidence=50)=>B.scoutedForecast(b,q,{play,...extras},confidence);
+  const baseline=forecast('deep_cross'),protect=forecast('deep_cross',{tactics:['max_protect']});
+  assert.ok(protect.first[0]>baseline.first[0]&&protect.first[1]>baseline.first[1]);
+  const tighter=forecast('deep_cross',{},72);
+  for(const m of ['first','turnover','yards']){
+    assert.ok(tighter[m][0]>=baseline[m][0]&&tighter[m][1]<=baseline[m][1]);
+  }
+  assert.ok(tighter.first[1]-tighter.first[0]<baseline.first[1]-baseline.first[0]);
+  assert.notDeepEqual(forecast('deep_cross',{target:'TE'}),baseline);
+  assert.notDeepEqual(forecast('quick_slant').first,baseline.first);
+  const short={...q,situation:{...q.situation,distance:2,down:3}};
+  assert.ok(B.scoutedForecast(b,short,{play:'deep_cross'},50).first[0]>baseline.first[0]);
+  assert.equal(forecast('deep_cross',{},82),null);
+  assert.equal(forecast('no_such_card'),null);
+  assert.equal(B.save(b),snapshot);
+  const noPeeking=()=>{throw new Error('unseen opponent accessed')};
+  Object.defineProperty(b.teams,'away',{get:noPeeking});
+  Object.defineProperty(b.snap,'def',{get:noPeeking});
+  Object.defineProperty(b,'form',{get:noPeeking});
+  assert.deepEqual(forecast('deep_cross'),baseline);
+  const flipped={...q,look:{...q.look,pressure:{confirmed:true,value:false,realLevel:0},shell:{confirmed:true,value:2}}};
+  assert.notDeepEqual(B.scoutedForecast(b,flipped,{play:'deep_cross'},50).first,baseline.first);
+});
+
+test('a defensive scout estimates conversions allowed from public family film and applied tactics',()=>{
+  const b=B.createChallenge('goal_line_stand'),q=b.pending,forecast=req=>B.scoutedForecast(b,req,{play:'two_high'},50);
+  const snapshot=B.save(b),unread=forecast(q);
+  assert.equal(B.save(b),snapshot);
+  const confirmed=family=>({...q,offLook:{...q.offLook,family:{value:family,confirmed:true}}});
+  assert.notDeepEqual(forecast(confirmed('run')).first,forecast(confirmed('deep')).first);
+  assert.deepEqual(forecast({...q,offLook:{...q.offLook,family:{value:'deep',confirmed:false}}}),unread);
+  assert.ok(unread.yards[1]<=100-q.situation.field);
+  assert.ok(unread.first[1]<=100&&unread.first[0]>=0);
+  const noPeeking=()=>{throw new Error('hidden offense accessed')};
+  Object.defineProperty(b.teams,'away',{get:noPeeking});
+  Object.defineProperty(b.snap,'off',{get:noPeeking});
+  assert.deepEqual(forecast(q),unread);
+  const passing=confirmed('deep'),plain=B.scoutedForecast(b,passing,{play:'two_high'},50);
+  assert.notDeepEqual(B.scoutedForecast(b,passing,{play:'two_high',tactics:['disguise']},50),plain);
+});
+
+test('a two-minute sideline pass has forecasts and a clock spike does not',()=>{
+  const b=B.createChallenge('need_six'),q=b.pending;
+  assert.ok(q.options.plays.some(p=>p.id==='sideline_out'));
+  assert.ok(B.scoutedForecast(b,q,{play:'sideline_out'},60));
+  assert.equal(B.scoutedForecast(b,q,{play:'spike'},60),null);
+  assert.equal(B.scoutedForecast(b,{...q,kind:'fourth'},{play:'field_goal'},60),null);
+});
+
 test('each drive challenge deals the same isolated opening state on a retry',()=>{
   for(const c of B.DRIVE_CHALLENGES){
     const b=B.createChallenge(c.id),opening=B.save(b);

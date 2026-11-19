@@ -268,13 +268,50 @@ async function setFormation(st,ms=380,e=null){
   const from={};for(const k of Object.keys(f.dots))from[k]=pos[k]||{x:f.dots[k].x,y:f.dots[k].y+(k[0]==='o'?40:-40)};
   await FX.tween(ms,t=>{for(const[k,d]of Object.entries(f.dots))placeDot(k,from[k].x+(d.x-from[k].x)*t,from[k].y+(d.y-from[k].y)*t);placeBall(f.los-1.2*YD*f.dir,MIDY)},FX.ease.out);
 }
+// Fit the chalkboard concept to the actual personnel and result. The logged yard line stays authoritative.
+function conceptTracks(e,play,starts,dir,endX){
+  if(!play||e.kind==='sack'||e.kind==='scramble')return {};
+  const concept=play.evolvedFrom||play.upgradeOf||play.id;
+  if(!['outside_zone','pa_boot','rpo_bubble'].includes(concept))return {};
+  const tracks={},qb=starts['o:QB'],actual=e.participants||{};
+  for(const route of window.SliceCards.pairRoutes(play)){
+    const role=route.receiver?(e.primaryTarget||play.target):route.role,key='o:'+role,start=starts[key];
+    if(!start)continue;
+    if(route.mesh){
+      // The back sells the inside give at the quarterback, then carries the fake beyond him.
+      if(role!==actual.target)tracks[key]=[{t:0,...start},{t:.22,...qb},{t:1,x:qb.x+dir*5*YD,y:qb.y+55}];
+      continue;
+    }
+    const finishing=role===actual.carrier||role===actual.target;
+    const points=route.points,[firstX,firstY]=points[0],lastY=points.at(-1)[1];
+    const flip=route.receiver&&start.y<MIDY?-1:1;
+    const delay=role==='QB'?.22:0;
+    const frames=[{t:0,...start}];
+    if(delay)frames.push({t:delay,...start});
+    for(let i=1;i<points.length;i++){
+      const [cx,cy]=points[i],depth=firstY-cy;
+      // A bubble first steps backward. Keep that step shallow even on a long gain.
+      const x=finishing&&depth>=0?start.x+(endX-start.x)*depth/(firstY-lastY):start.x+dir*depth*6;
+      frames.push({t:delay+(1-delay)*i/(points.length-1),x:Math.max(5,Math.min(1195,x)),y:Math.max(24,Math.min(509,start.y+flip*(cx-firstX)*5))});
+    }
+    tracks[key]=frames;
+  }
+  return tracks;
+}
+function routePosition(frames,t){
+  const next=frames.findIndex(p=>p.t>=t);
+  if(next<=0)return next===0?frames[0]:frames.at(-1);
+  const a=frames[next-1],b=frames[next],u=(t-a.t)/(b.t-a.t);
+  return {x:a.x+(b.x-a.x)*u,y:a.y+(b.y-a.y)*u};
+}
 // Run the play: everyone moves, the key actor carries the result.
 async function animatePlay(e){
   const f=formation(e.sit,e);if(!f)return;
   const dir=f.dir,los=f.los,P0={};for(const k of Object.keys(f.dots))P0[k]={...(pos[k]||f.dots[k])};
-  const yards=e.yards||0,endX=Math.max(5,Math.min(1195,los+yards*YD*dir)),part=e.participants||{},pass=D.PLAYS[e.play]?.pass;
+  const yards=e.yards||0,endX=Math.max(5,Math.min(1195,los+yards*YD*dir)),part=e.participants||{},play=D.PLAYS[e.play],pass=play?.pass;
   const carrier=part.carrier?`o:${part.carrier}`:null,target=part.target?`o:${part.target}`:null,qb='o:QB';
-  const endY=MIDY+(Math.random()-.5)*160;
+  const tracks=conceptTracks(e,play,P0,dir,endX);
+  const endY=tracks[target||carrier]?.at(-1).y??(MIDY+(Math.random()-.5)*160);
   const T={};
   for(const[k,d]of Object.entries(f.dots)){
     const p=P0[k];let tx=p.x,ty=p.y;
@@ -290,16 +327,22 @@ async function animatePlay(e){
   else if(carrier&&(e.kind==='run'||e.kind==='scramble')){T[carrier]={x:endX,y:endY};if(defKey)T[defKey]={x:endX+10*dir,y:endY+8}}
   else if(target){T[target]={x:endX,y:endY};if(defKey)T[defKey]={x:endX+(e.completed?14:4)*dir,y:endY+12}}
   S.whistle();
+  const concept=play?.evolvedFrom||play?.upgradeOf||play?.id,bubble=concept==='rpo_bubble'&&!!tracks[target];
+  const throwAt=bubble ? .24 : tracks[qb] ? .55 : .4;
+  const catchAt=bubble&&e.completed?.62:1;
   await FX.tween(1050,t=>{
-    for(const k of Object.keys(f.dots)){const a=P0[k],z=T[k];placeDot(k,a.x+(z.x-a.x)*t,a.y+(z.y-a.y)*t)}
+    for(const k of Object.keys(f.dots)){
+      const a=P0[k],z=T[k],p=tracks[k]?routePosition(tracks[k],t):{x:a.x+(z.x-a.x)*t,y:a.y+(z.y-a.y)*t};
+      placeDot(k,p.x,p.y);
+    }
     const qbp=pos[qb];
     if(pass&&e.kind!=='sack'&&target&&e.kind!=='scramble'){
-      if(t<.4)placeBall(qbp.x,qbp.y);
-      else{const u=(t-.4)/.6,tp=pos[target],tx=tp.x,ty=tp.y,bx=qbp.x+(tx-qbp.x)*u,by=qbp.y+(ty-qbp.y)*u;placeBall(bx,by,Math.sin(Math.PI*u)*70)}
+      if(t<throwAt)placeBall(qbp.x,qbp.y);
+      else{const u=Math.min(1,(t-throwAt)/(catchAt-throwAt)),tp=pos[target],bx=qbp.x+(tp.x-qbp.x)*u,by=qbp.y+(tp.y-qbp.y)*u;placeBall(bx,by,Math.sin(Math.PI*u)*(bubble?18:70))}
     }else{const c=carrier?pos[carrier]:qbp;if(c)placeBall(c.x,c.y)}
   },FX.ease.inOut);
   if(e.turnover==='interception'&&defKey&&pos[defKey])placeBall(pos[defKey].x,pos[defKey].y);
-  if(e.kind==='inc'&&target){const tp=pos[target];await FX.tween(260,t=>placeBall(tp.x+t*20*dir,tp.y+t*14,(1-t)*10))}
+  else if(e.kind==='inc'&&target){const tp=pos[target];await FX.tween(260,t=>placeBall(tp.x+t*20*dir,tp.y+t*14,(1-t)*10))}
 }
 
 // ================================================================ broadcast bug and side panel
@@ -322,6 +365,39 @@ function hotHTML(){
 const COMBOS=[...(D.COMBOS||[]).map(c=>({id:c.id,name:c.name,how:c.how,reward:c.reward})),{id:'chain_gang',name:'Chain Gang',how:'Three first downs in one drive',reward:'+1 Command next series'}];
 function comboHTML(){if(!save.combos.length)return'';return`<div class="box"><h3>Combo book</h3>${COMBOS.map(c=>{const f=save.combos.includes(c.id);return`<div class="combo ${f?'found':''}"><b>${f?esc(c.name):'? ? ?'}</b><br>${f?esc(c.how)+' · '+esc(c.reward):'Undiscovered'}</div>`}).join('')}</div>`}
 const fmtEdge=n=>`${n>0?'+':''}${Number(n.toFixed(1))}`;
+// The same whole-play estimate sits beside the call in either sheet.
+function callForecastHTML(){
+  const play=req.options.plays.find(p=>p.id===sel.play)?.card;
+  if(!play)return '';
+  if(play.quickKick||play.id==='spike'){
+    const outcome=play.quickKick?'Punt · give up possession for field position':'0 yards · spend a down to stop the clock';
+    return `<div class="call-forecast" id="callForecast">${outcome}</div>`;
+  }
+  const offense=req.role==='off',choice=snapChoice(selectedTactics());
+  const confidence=DYN?.scouting?.confidence,fog=B.filmFog(confidence);
+  let yards,chance,label;
+  if(fog.spread){
+    const range=B.scoutedForecast(b,req,choice,confidence);
+    if(!range)return '';
+    const band=(low,high)=>low===high?String(low):low+'–'+high;
+    yards=band(Math.floor(range.yards[0]),Math.ceil(range.yards[1]));
+    chance=band(5*Math.floor(range.first[0]/5),5*Math.ceil(range.first[1]/5))+'%';
+    label=fog.spread===2?'Low scouting confidence':'Moderate scouting confidence';
+  }else{
+    const projection=B.preview(b,req.side,choice);
+    const rows=projection?.ev?[{weight:1,ev:projection.ev}]:(projection?.vs||[]);
+    const total=rows.reduce((sum,row)=>sum+row.weight,0);
+    if(!total)return '';
+    const average=key=>rows.reduce((sum,row)=>sum+row.weight*row.ev[key],0)/total;
+    yards=average('yards').toFixed(1);
+    chance=Math.round(100*average('first'))+'%';
+    label=confidence==null?'From the shown look':'High scouting confidence';
+  }
+  const goal=req.situation.field+req.situation.distance>=100;
+  const objective=(offense?'':'Opp. ')+(goal?'TD':'1st down');
+  const yardage=goal?`<span>${100-req.situation.field} yd to goal</span>`:`<span>Est. ${offense?'gain':'yards allowed'} <b>${yards} yd</b></span>`;
+  return `<div class="call-forecast" id="callForecast" aria-label="Selected play forecast" title="Estimated average gain and chance to move the chains against the visible look."><small>${label}</small>${yardage}<span>${objective} <b>${chance}</b></span></div>`;
+}
 function readHTML(){
   if(!req||req.kind!=='snap'){clearGlow();return''}
   if(!sel.play){clearGlow();return`<div class="box"><h3>The read</h3><div class="mini">Pick a play card. Drag it onto the field, or tap it and hit SNAP.</div></div>`}
@@ -332,7 +408,7 @@ function readHTML(){
     clearGlow();
     const duels=req.role==='off'?pv.snap.duels:pv.vs.slice().sort((a,c)=>c.weight-a.weight)[0]?.snap.duels||[];
     const side=b.user==='home'?'away':'home';
-    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}% (from your coordinators and head coach). Exact forecasts are unavailable.</div>
+    return`<div class="box"><h3>The read</h3><div class="mini">Film confidence ${esc(DYN.scouting.confidence)}% (from your coordinators and head coach). The call sheet shows a range of estimates. Better film narrows it.</div>
       ${duels.map(d=>`<div class="drow"><span class="k">${d.key}</span><span class="n"><b>${esc(d.label)}</b><br>${esc(d.offNames.join(' & '))} vs ${esc(d.defNames.join(' & '))}<br>Opponent grade ${esc(fogGrade(req.role==='off'?d.defGrade:d.offGrade,(req.role==='off'?d.defNames:d.offNames)[0],side).text)}</span><span class="chip fogchip">?</span></div>`).join('')}</div>`;
   }
   if(req.role==='off'){
@@ -414,10 +490,32 @@ function matchupHTML(){
   const likely=pv?.vs?.slice().sort((a,c)=>c.weight-a.weight)[0],snap=pv?.snap||likely?.snap;
   if(!snap?.duels?.length)return '';
   const off=req.role==='off',fog=fogSpread(),gate=snap.duels[0];
-  const d=!fog&&gate.p<.5?gate:snap.duels.find(d=>d.key==='K')||gate;
+  let d=!fog&&gate.p<.5?gate:snap.duels.find(d=>d.key==='K')||gate;
   const pct=duel=>Math.round(100*(off?duel.p:1-duel.p));
+  let detail;
+  if(fog){
+    detail='Opponent grades uncertain';
+    // These printed blocking effects are known before seeing an opponent's grade.
+    const blocker=off&&tactics.find(id=>id==='seal_block'||id==='max_protect'&&card.duels?.G?.protect);
+    if(blocker){d=gate;detail=D.TACTICS[blocker].name+' helps this block · opponent grades uncertain'}
+  }else{
+    let impact=0,before;
+    if(tactics.length){
+      const plain=B.preview(b,req.side,snapChoice([]));
+      const baseline=plain?.snap||plain?.vs?.find(v=>v.family===likely?.family)?.snap;
+      for(const duel of snap.duels){
+        const original=baseline?.duels.find(row=>row.key===duel.key);
+        if(!original)continue;
+        const delta=pct(duel)-pct(original);
+        if(Math.abs(delta)>Math.abs(impact)){d=duel;before=pct(original);impact=delta}
+      }
+    }
+    detail=impact
+      ?`Estimated duel win ${before}% → ${pct(d)}% · ${impact>0?'+':''}${impact} pts from selected tactics`
+      :pct(d)+'% estimated duel win';
+  }
   const label={G:'Gate',K:'Key',F:'Finish'}[d.key];
-  fieldGlow(snap.duels,off);
+  if(!fog)fieldGlow(snap.duels,off);
   const roles=new Set([...d.offRoles.map(role=>'o:'+role),...d.defRoles.map(role=>'d:'+role)]);
   for(const [key,el] of Object.entries(layer.dots||{}))el.classList.toggle('dim',!roles.has(key));
   const path=off&&window.SliceCards.routeFor(card);
@@ -446,12 +544,6 @@ function matchupHTML(){
   const locator=$('#fieldLocator');locator.hidden=false;
   locator.querySelector('b').style.left=absOf(spot.field,spot.possession)+'%';
   locator.querySelector('i').style.left=absOf(Math.min(100,spot.field+spot.distance),spot.possession)+'%';
-  let detail=fog?'Opponent grades uncertain':pct(d)+'% estimated duel win';
-  if(!fog&&tactics.length){
-    const plain=B.preview(b,req.side,{...choice,tactics:[],bracketRole:undefined});
-    const before=(plain?.snap||plain?.vs?.find(v=>v.family===likely?.family)?.snap)?.duels.find(row=>row.key===d.key);
-    if(before){const diff=pct(d)-pct(before);detail+=' · '+(diff>0?'+':'')+diff+' pts from selected tactics'}
-  }
   return `<div class="quick-matchup"><b>${esc(label)} · ${esc(d.label)}${likely?' vs '+esc(likely.family):''}</b><span>${esc(d.offNames.join(' & '))} vs ${esc(d.defNames.join(' & '))}</span><small>${esc(detail)}</small></div>${sameLookHTML()}`;
 }
 function assignmentHTML(){
@@ -546,7 +638,23 @@ function setupReceipt(e){
 }
 function matchupStoryHTML(e){
   const note=B.matchupStory(e);if(!note)return'';
-  return`<strong>${esc(note.summary)}</strong><span>${esc(setupReceipt(e)||(fogSpread()?'The duel is the result, not a guarantee of the whole play. Their grades are ranges at your film confidence.':note.detail))}</span>${note.defense?`<small>${esc(note.defense)}</small>`:''}`;
+  const {offSide,defSide,sit,after}=e,yards=Number(e.yards)||0;
+  const result=[];
+  if(e.turnover==='interception')result.push('Intercepted');
+  else if(e.kind==='inc')result.push('Incomplete');
+  else{
+    if(e.kind==='sack')result.push('Sack');
+    result.push(`${yards>0?'+':''}${yards} yd`);
+    if(e.turnover==='fumble')result.push('Fumble lost');
+  }
+  if(!e.turnover){
+    if(e.score?.[offSide]-sit?.score?.[offSide]>=6)result.push('Touchdown');
+    else if(e.score?.[defSide]-sit?.score?.[defSide]===2)result.push('Safety');
+    else if(sit?.down===4&&yards<sit.distance)result.push('Turnover on downs');
+    else if(after?.possession===offSide&&after?.down===1&&yards>=sit?.distance)result.push('First down');
+  }
+  const detail=note.defense||(!fogSpread()&&note.detail);
+  return`<strong>${esc(D.PLAYS[e.play]?.name||e.play)} · ${esc(result.join(' · '))}</strong><span>${esc(setupReceipt(e)||note.summary)}</span>${detail?`<small>${esc(detail)}</small>`:''}`;
 }
 function showMatchupStory(e){
   let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
@@ -682,7 +790,7 @@ function quickSheetHTML(view){
     ${pinnedCallHTML()}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${assignmentHTML()}${matchupHTML()}${tacticNoteHTML(true)}
-    <div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
+    ${callForecastHTML()}<div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
     ${guidedDriveHTML()}${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
 }
 function renderQuickHand(h){
@@ -725,7 +833,7 @@ function renderHand(){
   let coins='';for(let i=0;i<total;i++){const gone=i>=o.command,spend=!gone&&i>=o.command-cost;coins+=`<span class="coin ${gone?'gone':''} ${spend?'spend':''}"></span>`}
   const over=cost>o.command,why=play&&(play.blocked||blockedSelection(play));
   cmd.innerHTML=`${sel.play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}</strong>`:''}${assignmentHTML()}${role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
-    <button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
+    ${callForecastHTML()}<button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
     const why=tacticBlock(t,play),selected=sel.tac.includes(t.slot);

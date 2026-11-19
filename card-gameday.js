@@ -271,7 +271,7 @@ function normalizeCallSheet(u){
   // Before kickoff: how sharply you will see their grades, and what actually changes that (staff, not recruiting).
   function filmNote(me,opp,g=null){
     if(!me||!opp||!integrationOn(FOG_LINK))return null;const f=CS.battle.filmFog(filmConfidence(me,opp,g)),prep=prepWeekFor(g)?` Includes +${PREP_WEEK} for the extra week of postseason film.`:'';
-    return{...f,prep:!!prep,text:(f.exact?`Film confidence ${f.confidence}%: you see ${opp.name}'s exact grades in the battle.`:`Film confidence ${f.confidence}% (your coordinators and head coach): ${opp.name}'s grades show as ranges in the battle. ${f.nextAt}% ${f.nextAt===82?'shows them exactly':'narrows them'}.`)+prep};
+    return{...f,prep:!!prep,text:(f.exact?`Film confidence ${f.confidence}%: you see ${opp.name}'s exact grades in the battle.`:`Film confidence ${f.confidence}% (your coordinators and head coach): ${opp.name}'s grades and play forecasts appear as ranges. ${f.nextAt}% ${f.nextAt===82?'shows exact grades':'narrows the ranges'}.`)+prep};
   }
 
   // Practice reps: this week's prep focus trains the matching cards toward evolution.

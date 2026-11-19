@@ -312,11 +312,11 @@ function presumedCall(look,confirmedLeanOnly=false){
   return{id:'presumed',box:look.box.value,shell,coverage,pressure,counters:look.lean.value&&(!confirmedLeanOnly||look.lean.confirmed)?[look.lean.value]:[],look:{}};
 }
 // What the defense knows of the offense: family if Film Tell confirmed it, else its tendency.
-function offFamilyWeights(b,revealedFamily){
+function offFamilyWeights(g,t,revealedFamily){
   if(revealedFamily)return Object.fromEntries(OFF_FAMILIES.map(f=>[f,f===revealedFamily?1:0]));
-  const g=b.game,t=b.tend[offSide(b)],w={run:1.1,quick:1,deep:.7,constraint:.45};
+  const w={run:1.1,quick:1,deep:.7,constraint:.45};
   if(g.distance<=2){w.run*=2.2;w.deep*=.5}else if(g.distance>=8&&g.down>=2){w.run*=.45;w.deep*=1.5;w.quick*=1.3}
-  for(const f of OFF_FAMILIES)w[f]*=1+t[f]*.18;
+  for(const f of OFF_FAMILIES)w[f]*=1+(t[f]||0)*.18;
   const s=Object.values(w).reduce((a,v)=>a+v,0);for(const f of OFF_FAMILIES)w[f]/=s;return w;
 }
 const REP_PLAYS={run:['inside_zone','outside_zone','power'],quick:['quick_slant','stick'],deep:['deep_cross','vertical_shot'],constraint:['pa_boot','screen']};
@@ -567,7 +567,7 @@ function aiOffense(b,side,look,opts={}){
 }
 function aiDefense(b,side,opts={}){
   const o=defOptions(b,side),team=b.teams[side],offTeam=b.teams[other(side)],sit=situation(b),cap=opts.cap??budget(b,side);
-  const weights=offFamilyWeights(b,opts.revealedFamily),lean=leanFor(b),heat=heatFor(b);
+  const weights=offFamilyWeights(b.game,b.tend[offSide(b)],opts.revealedFamily),lean=leanFor(b),heat=heatFor(b);
   const threat=revealedThreat(b,other(side));
   const tacs=uniqTactics(o.tactics.filter(t=>!t.card.info&&!R.signatureBlocked(t.card,team.lineup[b.hands[side].role])));
   const lines=[];
@@ -1392,7 +1392,7 @@ function preview(b,side,choice){
     return{snap,ev:R.evaluate(snap,sit),against:call};
   }
   const call=D.CALLS[choice.play];if(!call)return null;
-  const fam=b.snap.offLook.family.confirmed?b.snap.offLook.family.value:null,w=offFamilyWeights(b,fam),out=[];
+  const fam=b.snap.offLook.family.confirmed?b.snap.offLook.family.value:null,w=offFamilyWeights(b.game,b.tend[offSide(b)],fam),out=[];
   for(const f of OFF_FAMILIES){if(w[f]<.02)continue;const id=REP_PLAYS[f].find(x=>!R.playBlocked(D.PLAYS[x],b.teams[other(side)].lineup.off));if(!id)continue;
     const snap=R.buildSnap({weather:b.weather,...edgesFor(b,other(side)),off:b.teams[other(side)].lineup.off,def:b.teams[side].lineup.def,play:D.PLAYS[id],...knownEffects(b,D.PLAYS[id],call),call,bracketRole:choice.bracketRole||req.options.bracketPlan?.role,edgeAssignment:choice.edgeAssignment,defTactics:activeTactics(b,'def',choice.tactics||[]),offTactics:b.snap.offLook.protection?.confirmed&&b.snap.offLook.protection.value?['max_protect']:[],read:autoRead(sit),situation:sit,lean:leanFor(b),heat:heatFor(b)});
     out.push({family:f,weight:w[f],play:id,snap,ev:R.evaluate(snap,sit)})}
@@ -1686,6 +1686,82 @@ function filmFog(confidence){
   const c=Number(confidence);if(confidence==null||!Number.isFinite(c))return{spread:0,exact:true,nextAt:null};
   const spread=c>=FILM_EXACT?0:c>=FILM_NARROW?1:2;
   return{spread,exact:!spread,confidence:Math.round(c),nextAt:spread===2?FILM_NARROW:spread===1?FILM_EXACT:null};
+}
+// These anonymous scouting scenarios use league-average players with a broader range of
+// plausible ratings when film is thin. An opponent's actual roster never sets the range.
+const scoutPriors={};
+for(const role of ['off','def']){
+  scoutPriors[role]={};
+  for(const rating of [50,60,70,80,90]){
+    const traits=Object.fromEntries(D.TRAITS.map(t=>[t,rating]));
+    const roles=role==='off'?D.OFF_ROLES:D.DEF_ROLES;
+    scoutPriors[role][rating]=Object.fromEntries(Object.entries(roles).map(([spot,pos])=>[
+      spot,{role:spot,id:'scout-prior-'+spot,name:spot,pos,traits}
+    ]));
+  }
+}
+const filmDefenses=['cover1','two_high','cover3','run_fit','cover0','zone_pressure','sim_pressure','two_man','robber','bear'];
+function possibleFilmCalls(look){
+  const fits=(fact,value)=>!fact?.confirmed||fact.value===value;
+  const pressure=look.pressure;
+  const fitsPressure=c=>pressure.confirmed
+    ?(Number.isFinite(pressure.realLevel)?c.pressure===pressure.realLevel:(c.pressure>0)===pressure.value)
+    :c.look.pressureShown===pressure.value;
+  const calls=filmDefenses.map(id=>D.CALLS[id]).filter(c=>
+    fits(look.box,c.box)&&fits(look.shell,c.shell)&&fits(look.coverage,c.coverage)&&fitsPressure(c));
+  // The shown alignment is one possible read even when no base defense matches the film.
+  // A strong safety can disguise shell. A shown rush can still drop out.
+  return [presumedCall(look,true),...calls];
+}
+function scoutedForecast(b,req,choice,confidence){
+  const fog=filmFog(confidence),role=req?.role,offense=role==='off',sit=req?.situation;
+  if(!fog.spread||req?.kind!=='snap'||!['off','def'].includes(role)||!Number.isFinite(sit?.field)||!Number.isFinite(sit.distance)||!b?.game)return null;
+  const id=choice?.play,card=(offense?D.PLAYS:D.CALLS)[id],line=b.teams?.[req.side]?.lineup?.[role];
+  if(!line||!card||card.quickKick||card.id==='spike'||!req.options?.plays?.some(c=>c.id===id&&!c.blocked))return null;
+  if(offense&&!req.look?.box||!offense&&!req.offLook)return null;
+  if(offense&&choice.target&&!R.targetOptions(card,line).some(t=>t.role===choice.target))return null;
+  const played=[...new Set([...(req.info||[]),...(choice.tactics||[])])];
+  const context={situation:sit,weather:b.weather,read:choice.read||'auto',fire:b.fire,workload:b.workload};
+  if(offense){
+    context.off=line;context.offEdges=b.teams[req.side].edges?.off;context.play=R.targetedPlay(card,choice.target,line);
+    context.offTactics=played;context.motionConfirmed=played.includes('motion')&&!!req.look.coverage?.confirmed;
+    context.lean=req.look.lean?.confirmed?req.look.lean.value:null;context.heat=!!req.look.heat;
+    context.grouping=groupingFor(b,req.side);context.combo=comboFor(b,context.play);
+  }else{
+    context.def=line;context.defEdges=b.teams[req.side].edges?.def;context.call=card;context.defTactics=played;
+    context.bracketRole=choice.bracketRole||req.options.bracketPlan?.role;context.edgeAssignment=choice.edgeAssignment;
+    context.lean=req.lean;context.heat=!!req.heat;
+    context.offTactics=req.offLook.protection?.confirmed&&req.offLook.protection.value?['max_protect']:[];
+  }
+  const metrics=['yards','first','turnover'];
+  const bounds=Object.fromEntries(metrics.map(m=>[m,[Infinity,-Infinity]]));
+  const calls=offense?possibleFilmCalls(req.look):null;
+  const weights=offense?null:offFamilyWeights(sit,req.offTendency||{},req.offLook.family?.confirmed?req.offLook.family.value:null);
+  const evaluate=ctx=>R.evaluate(R.buildSnap(ctx),sit);
+  for(const rating of fog.spread===2?[50,60,70,80,90]:[60,70,80]){
+    // Defensive forecasts weight each public offensive family by down, distance and
+    // prior calls. Film Tell restricts that mixture to the confirmed family.
+    const groups=offense?[[1,calls.map(call=>evaluate({...context,def:scoutPriors.def[rating],call}))]]:
+      OFF_FAMILIES.filter(f=>weights[f]>0).map(f=>[weights[f],REP_PLAYS[f].map(playId=>{
+        const play=D.PLAYS[playId];
+        return evaluate({...context,off:scoutPriors.off[rating],play,combo:comboFor(b,play,card)});
+      })]);
+    for(const m of metrics){
+      let low=0,high=0;
+      for(const [weight,group] of groups){
+        const values=group.map(ev=>ev[m]);
+        low+=weight*Math.min(...values);high+=weight*Math.max(...values);
+      }
+      bounds[m][0]=Math.min(bounds[m][0],low);bounds[m][1]=Math.max(bounds[m][1],high);
+    }
+  }
+  // Projected gains use the ordinary result tables; a field boundary limits what
+  // can be credited. The goal-to-go UI foregrounds the end-zone probability.
+  bounds.yards=bounds.yards.map(y=>Math.max(-sit.field,Math.min(100-sit.field,y)));
+  return {confidence:fog.spread===2?'Limited film':'Partial film',
+    yards:[Math.floor(bounds.yards[0]*10)/10,Math.ceil(bounds.yards[1]*10)/10],
+    first:[Math.floor(bounds.first[0]*100),Math.ceil(bounds.first[1]*100)],
+    turnover:[Math.floor(bounds.turnover[0]*100),Math.ceil(bounds.turnover[1]*100)]};
 }
 // A duel as two vertical sums: each side's ability, plus the labeled modifiers that help that side, and a total.
 // Resolver mods are signed for the offense (raw = offGrade - defGrade + sum of mods), so a negative mod is listed as a
@@ -2041,5 +2117,5 @@ function duelTally(b){
   }
   return out;
 }
-return{DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });
