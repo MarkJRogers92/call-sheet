@@ -16,15 +16,15 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 #root{position:fixed;inset:0;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px);display:grid;grid-template-columns:270px minmax(0,1fr);grid-template-rows:auto minmax(0,1fr) auto;
   background:radial-gradient(ellipse at 50% -10%,rgba(255,236,170,.22),transparent 55%),radial-gradient(ellipse at 15% 0%,rgba(255,236,170,.12),transparent 40%),radial-gradient(ellipse at 85% 0%,rgba(255,236,170,.12),transparent 40%),linear-gradient(180deg,#0b1020,#06080d 70%)}
 /* ---------- broadcast bug */
-#bug{grid-column:1/-1;display:flex;justify-content:center;padding:10px 12px 4px;z-index:5}
-.bug{display:flex;align-items:stretch;border-radius:10px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.6),0 0 0 1px rgba(255,216,77,.3);font-family:var(--cond)}
+#bug{grid-column:1/-1;display:flex;justify-content:center;padding:6px 8px;z-index:5}
+.bug{display:flex;align-items:stretch;border:1px solid #56616c;border-radius:6px;overflow:hidden;box-shadow:0 3px 8px #0005;font-family:var(--cond);font-variant-numeric:tabular-nums}
 .bug .tm{display:flex;align-items:center;gap:8px;padding:4px 12px;min-width:150px;color:#fff}
 .bug .tm.away{flex-direction:row-reverse}
 .bug .ab{font-weight:800;font-size:22px;letter-spacing:.05em}
 .bug .sc{font-weight:800;font-size:34px;min-width:44px;text-align:center;background:rgba(0,0,0,.28);padding:0 8px}
-.bug .poss{width:9px;height:9px;border-radius:50%;background:var(--gold);box-shadow:0 0 10px var(--gold);visibility:hidden}
+.bug .poss{width:11px;height:7px;border-radius:70% 30%;background:#ffdf64;box-shadow:0 0 0 1px #171d26;visibility:hidden;flex:none}
 .bug .poss.on{visibility:visible}
-.bug .mid{background:#0b0e16;padding:4px 14px;text-align:center;min-width:150px}
+.bug .mid{background:#111c28;padding:4px 14px;text-align:center;min-width:150px;border-inline:1px solid #1d2633}
 .bug .clk{font-weight:800;font-size:20px}
 .bug .dd{font-weight:800;font-size:15px;color:var(--gold);letter-spacing:.06em}
 .bug .you{font-size:11px;opacity:.75;letter-spacing:.1em}
@@ -59,7 +59,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 /* ---------- stage */
 #stage{position:relative;overflow:hidden;min-height:0;min-width:0}
 #fieldWrap{position:absolute;inset:0;perspective:1100px;display:flex;align-items:center;justify-content:center}
-#field{width:min(100%,1150px);transform:rotateX(34deg) translateY(-2%);transform-origin:50% 60%;filter:drop-shadow(0 30px 40px rgba(0,0,0,.7))}
+#field{width:min(96%,1280px);height:100%;max-height:100%;transform:rotateX(16deg);transform-origin:center;filter:drop-shadow(0 8px 12px #0007)}
 #field .pl{transition:none;cursor:pointer}
 #field .pl .pc{transform-box:fill-box;transform-origin:center}
 #field .pl .cbody{filter:drop-shadow(0 2px 2px rgba(0,0,0,.6))}
@@ -368,7 +368,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .duelmath{display:block;font:12px/1.5 system-ui;color:#c9d8e0;margin-top:5px}.cl{height:auto;min-height:280px;padding-top:180px}.cl .mods{position:static;margin-top:8px}.clashmath{position:relative;text-align:center;background:#0b121de8;border-radius:9px;padding:6px}.setup-ready{position:absolute;top:2px;left:3px;right:3px;text-align:center;background:#ffe066;color:#171300;border-radius:5px;font:700 10px system-ui;padding:3px;z-index:5}
 #matchupStory{position:absolute;left:8px;right:8px;bottom:7px;z-index:9;max-width:680px;margin:auto;padding:9px 13px;border:1px solid #dfc365;border-radius:9px;background:#101722ed;color:#f4edda;pointer-events:none;font:14px/1.35 system-ui;text-align:left}#matchupStory strong,#matchupStory span{display:block}#matchupStory span{font-size:12px;color:#d0d7e1;margin-top:3px}#matchupStory[hidden]{display:none}@media(max-width:600px){#matchupStory{font-size:12px;padding:6px 8px}#matchupStory span{font-size:12px}}
 /* The sideline has one decision surface. The full diagrammed sheet remains a view, not a separate hand. */
-#scorebar{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;min-width:0}
+#scorebar{grid-column:1/-1;display:flex;align-items:center;justify-content:center;gap:8px;min-width:0;background:#111a25;border-bottom:1px solid #384958}
 #sheetToggle{border:1px solid #5c6372;border-radius:8px;min-height:44px;padding:6px 12px;font:700 15px var(--cond);color:#e6ebee;background:#17202d}
 #root.quick-snap{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(105px,1fr) auto}
 .quick-snap #side,.quick-snap #look{display:none}
@@ -462,7 +462,7 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   #root.full-snap #stage{grid-row:2;grid-column:2}
   #root.full-snap #hand{grid-column:1/-1;grid-row:3;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;min-height:0;padding:0 12px 6px;overflow:visible;background:#0d131e}
   .sheet-cards{display:grid;grid-template-columns:minmax(140px,var(--plays)) minmax(140px,var(--tactics));align-items:start;gap:12px;max-height:36dvh;overflow:auto;overscroll-behavior:contain}
-  #hand .fan{min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,135px),1fr));gap:7px;padding:25px 4px 8px}
+  #hand .fan{min-width:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,120px),1fr));align-items:stretch;gap:7px;padding:25px 4px 8px}
   #hand .fanlab{left:5px;top:3px;letter-spacing:.12em}
   #hand .fan .card{width:100%;height:auto;min-height:155px;margin:0;transform:none;padding-bottom:17px}
   #hand .fan .card .cost{right:3px;top:3px;width:24px;height:24px;font-size:16px}
@@ -474,10 +474,91 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   #hand .cmd .snap{margin-left:auto;min-height:40px;padding:4px 18px;font-size:21px;border-radius:8px;animation:none}
 }
 .sheet-error{color:#ffb8b1;grid-column:1/-1}
-#field{max-height:100%}
-#fieldLocator{position:absolute;right:12px;top:8px;width:92px;height:10px;border:1px solid #a3b2ab;border-radius:2px;background:repeating-linear-gradient(90deg,#173b29 0 9%,#52765c 9% 10%);pointer-events:none}
+#fieldLocator{position:absolute;right:10px;bottom:7px;width:92px;height:10px;border:1px solid #a3b2ab;border-radius:2px;background:repeating-linear-gradient(90deg,#173b29 0 9%,#52765c 9% 10%);pointer-events:none;box-shadow:0 0 0 2px #111a25}
 #fieldLocator i,#fieldLocator b{position:absolute;top:-2px;height:12px;width:2px;background:#ffe066}
 #fieldLocator b{width:6px;transform:translateX(-50%);background:#78ceff;border-radius:2px}
+#fieldWrap:has(#fieldLocator:not([hidden])) .pl:is(:not(.dim),:focus) .pface{opacity:.25}
+#fieldWrap:has(#fieldLocator:not([hidden])) .pl:is(:not(.dim),:focus) .nband{opacity:0}
+#fieldWrap:has(#fieldLocator:not([hidden])) .pl:is(:not(.dim),:focus) .num{font-size:18px;transform:translateY(-11px);stroke-width:2.5px}
+
+/* Keep scouting, the playing surface and the last result in separate rows. */
+.full-snap #stage{display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 48%,#233c3b,#111e25 68%,#0c151f)}
+.full-snap #look{position:relative;order:-1;flex:none;justify-content:flex-start;gap:5px;top:auto;padding:7px 12px;background:#111c26;border-bottom:1px solid #35444e}
+.full-snap #look:empty{display:none}
+#look .tag{padding:3px 8px;border-width:1px;border-radius:4px;font-size:13px;line-height:1.25;letter-spacing:.055em}
+#look .tag.conf{background:#163b2f;box-shadow:none}
+#look .tag.unc{color:#d1d9e4;border-color:#8591a1;background:#222d3a}
+#look .tag.lean{color:#ffd4a1;background:#402d20;animation:none;box-shadow:none}
+.full-snap #fieldWrap{position:relative;flex:1 1 0;min-height:0}
+.full-snap #ticker,.full-snap #matchupStory{position:relative;inset:auto;left:auto;transform:none;width:100%;max-width:100%;margin:0;flex:none;align-items:flex-start}
+.full-snap #ticker:not(:empty){padding:4px 12px;background:#0d1720}
+.full-snap #ticker .tick{border:0;border-radius:0;background:none;padding:0;text-align:left;white-space:normal}
+.full-snap #ticker .tick:not(:first-child){display:none}
+.full-snap #matchupStory{border-width:1px 0 0;border-radius:0;border-color:#946f3f;background:#18212a}
+.full-snap #stage:has(#matchupStory:not([hidden])) #ticker{position:absolute;width:1px;height:1px;clip-path:inset(50%);overflow:hidden;padding:0}
+#side{background:#101822}
+#side .box{box-shadow:none;border-radius:7px;border-color:#34424e;background:#17212c}
+#side .box h3{color:#ead092;letter-spacing:.1em}
+#side .mini{color:#c1c7c8}
+
+#root.full-snap #hand{border-top:2px solid #4b6061;background:#101924}
+.sheet-cards .fanlab{color:#dacda8;font-size:13px;letter-spacing:.11em}
+#hand .fan .card{border-radius:7px;box-shadow:0 2px 5px #0004}
+#hand .fan .card:before{height:3px;border-radius:6px 6px 0 0}
+#hand .fan .card .cost{border-radius:5px;background:#f4d677;border:1px solid #a58a40;box-shadow:none}
+#hand .fan .card .art{border-radius:4px}
+#hand .fan .card .origin{position:static;align-self:flex-start;border-radius:3px;margin-top:2px;padding:1px 5px}
+#hand .fan .card .ticon{height:100%;text-shadow:none;background:#172538}
+#hand .fan .card .shine{opacity:.36}
+#hand .fan .card.sel{border-color:#ffe078;box-shadow:inset 0 0 0 1px #ffe078;background-color:#29323b}
+#hand .fan .card.sel .ctype:after{content:' ✓';color:#ffe078}
+#hand .fan .card .cwhy,#hand .fan .card .setup-ready{position:static;display:block;white-space:normal;margin-top:2px}
+#hand .fan .card .setup-ready{color:#f9e8a4;background:#3b3523;padding:2px 4px;text-align:left}
+#hand .cmd .coins{gap:3px}
+#hand .cmd .coin{width:13px;height:6px;border-radius:2px;background:#e8c765;box-shadow:none}
+#hand .cmd .coin.gone{background:#364352;outline:1px solid #586473}
+#hand .cmd .coin.spend{border:1px solid #f8dc84;background:repeating-linear-gradient(120deg,#453b23 0 2px,#b99b4f 2px 4px)}
+#hand .cmd .snap{animation:none;border:1px solid #f8db79;color:#1b1a14;background:#f1cc61;box-shadow:0 2px 0 #a38231;letter-spacing:.05em}
+#hand .cmd .snap:disabled{filter:none;background:#35404c;color:#c1c7cf;border-color:#535f6d;box-shadow:none}
+#hand .cmd .auto{color:#cbd1d5;text-transform:none;letter-spacing:.035em}
+@media(hover:hover){
+  #hand .fan .card:not(.blocked):hover{border-color:#c0cbd4}
+  #hand .fan .card.sel:hover{border-color:#ffe078}
+  #hand .cmd .snap:enabled:hover{background:#ffe190}
+}
+@media(min-width:861px){
+  #hand .cmd{border-color:#44505a}
+  #hand .cmd .snap{min-height:44px}
+}
+@media(min-width:1150px) and (max-width:1399px){
+  #hand .fan{grid-template-columns:repeat(auto-fit,minmax(min(100%,100px),1fr));gap:5px}
+  #hand .fan .card{padding-inline:6px}
+  #hand .fan .card .art{height:45px}
+}
+@media(max-width:860px){
+  #root.full-snap #stage{flex:0 0 auto}
+  .full-snap #fieldWrap{flex:0 0 clamp(182px,29dvh,255px)}
+  .full-snap #look{padding:5px 8px;gap:4px}
+  #look .tag{font-size:12px}
+  #hand .fan .card:not(.k-tactic) .art{display:block;margin:4px 0;height:38px}
+  #hand .fan .card .setup-ready{display:block}
+  #hand .cmd{background:#192532;border-color:#445461}
+}
+
+.challenge-menu,.challenge-result{box-sizing:border-box;width:min(850px,100%);margin:auto;text-align:left;border:1px solid #43525d;border-top:3px solid #d6b661;border-radius:8px;padding:clamp(16px,4vw,36px);background:linear-gradient(120deg,#1a2935,#101923 78%);color:#f4f2e9;box-shadow:0 15px 40px #0005}
+.challenge-menu h1,.challenge-menu h2,.challenge-result h1,.challenge-result h2{font:800 clamp(30px,5vw,52px)/1 var(--cond);letter-spacing:.015em;margin:0 0 12px}
+.challenge-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(185px,100%),1fr));align-items:stretch;gap:10px;margin:18px 0}
+.challenge-option{display:flex;flex-direction:column;gap:8px;min-width:0;min-height:44px;padding:14px;text-align:left;border:1px solid #516271;border-top:3px solid #d6b661;border-radius:6px;color:#eff0ea;background:#1b2c38}
+.challenge-option strong,.challenge-option b{font:800 23px/1.08 var(--cond)}
+.challenge-option small{font:600 14px/1.3 var(--cond);color:#c7d4db}
+.challenge-option:focus-visible,.challenge-option:hover{background:#253a49;border-color:#e4c874}
+.challenge-objective{display:block;margin:8px 0;color:#f6dc91}
+.challenge-score{display:block;width:fit-content;margin:12px 0;font:800 clamp(26px,5vw,42px)/1.1 var(--cond);font-variant-numeric:tabular-nums;color:#f8df97}
+.challenge-sticker{display:inline-flex;align-items:center;gap:7px;width:fit-content;max-width:100%;color:#f6df99;font:700 15px/1.15 var(--cond)}
+.challenge-sticker:before{content:var(--sticker-mark);display:inline-grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;transform:rotate(-8deg);background:var(--sticker-fill,#e8c566);color:#18232b;font:800 16px/1 var(--cond);box-shadow:inset 0 0 0 2px #eee7d1,inset 0 0 0 3px #49505a}
+[data-sticker="need_six"]{--sticker-mark:'6';--sticker-fill:#f4cc66}
+[data-sticker="goal_line_stand"]{--sticker-mark:'W';--sticker-fill:#98d7be}
+[data-sticker="four_minute_offense"]{--sticker-mark:'00';--sticker-fill:#a7d9eb}
 </style>
 </head>
 <body>
@@ -486,8 +567,7 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   <aside id="side"></aside>
   <main id="stage">
     <div class="rays" id="rays"></div>
-    <div id="fieldWrap"><svg id="field" viewBox="0 0 1200 533" role="group" aria-label="Field players. Use arrow keys to inspect the lineup."></svg></div>
-    <div id="fieldLocator" aria-hidden="true" hidden><i></i><b></b></div>
+    <div id="fieldWrap"><svg id="field" viewBox="0 0 1200 533" role="group" aria-label="Field players. Use arrow keys to inspect the lineup."></svg><div id="fieldLocator" aria-hidden="true" hidden><i></i><b></b></div></div>
     <div id="look"></div>
     <div id="ticker" aria-live="polite"></div>
     <div id="drop">DROP TO CALL IT</div>
@@ -537,6 +617,7 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
 <script src="fx.js"></script>
 <script src="cards.js"></script>
 <script src="../core/playbook-ui.js"></script>
+<script src="challenge-awards.js"></script>
 <script src="slice.js"></script>
 </body>
 </html>

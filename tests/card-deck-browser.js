@@ -133,8 +133,25 @@ async function showOptions(page){
   assert.match(await frame.textContent('#look'),/Opening script: Screen/i);await frame.click('#sheetToggle');
   const saved=await frame.evaluate(()=>({game:window.__slice.b.game,rng:window.__slice.b.rng}));
   assert.ok(await dynasty.evaluate(()=>window.DynastyCardGameDay.meta().activeBattle));
-  // Reopening the iframe reconstructs the screen from the host save, not a fresh kickoff.
-  await dynasty.evaluate(()=>window.__callSheetDynasty.close());await dynasty.locator('#clientRail [data-client-tab="deckroom"]').click();await dynasty.locator('#cardProgram [data-coach-cards]').click();frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();await frame.waitForFunction(()=>window.__slice?.req);
+  await dynasty.evaluate(()=>window.__callSheetDynasty.close());await dynasty.locator('#clientRail [data-client-tab="deckroom"]').click();
+  const checkpointBeforeChallenge=await dynasty.evaluate(()=>window.DynastyCardGameDay.meta());
+  const driveChallenges=dynasty.getByRole('button',{name:'Drive Challenges',exact:true});
+  await driveChallenges.focus();await dynasty.keyboard.press('Enter');
+  const challenge=dynasty.frameLocator('#driveChallengeHost iframe[data-drive-challenges]');
+  await challenge.locator('[data-challenge="need_six"]').click();
+  await challenge.locator('#hand .card.k-play:not(.blocked)').first().click();await challenge.locator('#snapBtn').click();
+  assert.ok(await driveChallenges.evaluate(original=>{
+    window.DynastyCardGameDay.openDynastyConnection('deckroom');
+    return !original.isConnected;
+  }),'exercise a Deck Room redraw while the challenge is open');
+  await dynasty.click('#driveChallengeBack');await dynasty.locator('#driveChallengeHost').waitFor({state:'detached'});
+  assert.ok(await driveChallenges.evaluate(el=>el===document.activeElement),'outer Return to Dynasty focuses the redrawn launcher');
+  await driveChallenges.click();await challenge.locator('#challengeBack').click();
+  await dynasty.locator('#driveChallengeHost').waitFor({state:'detached'});
+  assert.ok(await driveChallenges.evaluate(el=>el===document.activeElement),'challenge menu return restores Deck Room focus');
+  assert.deepEqual(await dynasty.evaluate(()=>window.DynastyCardGameDay.meta()),checkpointBeforeChallenge,'challenges preserve the weekly checkpoint, record and inventory');
+  // Reopening the weekly battle reconstructs its original screen from the host save.
+  await dynasty.locator('#cardProgram [data-coach-cards]').click();frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();await frame.waitForFunction(()=>window.__slice?.req);
   assert.deepEqual(await frame.evaluate(()=>({game:window.__slice.b.game,rng:window.__slice.b.rng})),saved);
   assert.ok(await frame.locator('#quickClue').isVisible(),'Dynasty remembers Quick Calls when the battle reopens');
   await frame.click('#sheetToggle');await frame.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true});await frame.click('#bSim');await frame.waitForSelector('#openPack');

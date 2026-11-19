@@ -10,14 +10,16 @@ const STORE='callsheet.slice.v1';
 // ================================================================ persistence (per-viewer, optional)
 // Dynasty mode: when Dynasty Lab opens the battle (an iframe on the same origin), the host supplies the real teams,
 // the program's playbook and settings, records the result into the season, and stores the playbook in the save.
-const HOST=(()=>{try{return window.parent!==window&&(window.frameElement?.dataset?.classicDrive?window.parent.__callSheetClassic:window.parent.__callSheetDynasty)||null}catch(e){return null}})();
+const challengeFrame=window.frameElement?.dataset?.driveChallenges==='true';
+let campaignSave=null,activeChallenge=null;
+const HOST=(()=>{try{return !challengeFrame&&window.parent!==window&&(window.frameElement?.dataset?.classicDrive?window.parent.__callSheetClassic:window.parent.__callSheetDynasty)||null}catch(e){return null}})();
 const DYN=HOST?HOST.launch():null;
 function loadSave(){
   if(DYN)return{team:null,world:null,playbook:DYN.playbook?JSON.parse(JSON.stringify(DYN.playbook)):P.newPlaybook(),settings:DYN.settings||null,activeBattle:DYN.activeBattle||null,combos:[...(DYN.combos||[])],games:DYN.games||0,seenHelp:!!DYN.seenHelp};
   try{const t=localStorage.getItem(STORE);if(t)return JSON.parse(t)}catch(e){}return null;
 }
 function writeSave(){
-  if(DYN?.classicDrive)return;
+  if(campaignSave||DYN?.classicDrive)return;
   if(b&&!b._closed)save.activeBattle={seed:b.seed,battle:B.save(b)};
   if(DYN){HOST.save({activeBattle:save.activeBattle||null,playbook:save.playbook,combos:save.combos,settings:save.settings,games:save.games,seenHelp:!!save.seenHelp});return}
   try{localStorage.setItem(STORE,JSON.stringify(save))}catch(e){}
@@ -59,7 +61,7 @@ let layer={},pos={};
 function drawField(){
   svg.innerHTML='';
   const defs=mk('defs',{},svg);
-  const g=mk('linearGradient',{id:'turf',x1:0,y1:0,x2:0,y2:1},defs);mk('stop',{offset:0,'stop-color':'#1f6b33'},g);mk('stop',{offset:1,'stop-color':'#124a22'},g);
+  const g=mk('linearGradient',{id:'turf',x1:0,y1:0,x2:0,y2:1},defs);mk('stop',{offset:0,'stop-color':'#276348'},g);mk('stop',{offset:1,'stop-color':'#154939'},g);
   {const f=mk('filter',{id:'plglow',x:'-60%',y:'-60%',width:'220%',height:'220%'},defs);mk('feGaussianBlur',{stdDeviation:2.6},f)}
   mk('rect',{x:0,y:0,width:1200,height:533,fill:'url(#turf)',rx:6},svg);
   for(let i=0;i<10;i++)mk('rect',{x:100+i*100,y:0,width:50,height:533,fill:'rgba(255,255,255,.035)'},svg);
@@ -68,7 +70,20 @@ function drawField(){
   for(const [x,t,rot] of [[50,teamOf('home').short,-90],[1150,teamOf('away').short,90]]){const tx=mk('text',{x,y:MIDY,'text-anchor':'middle','dominant-baseline':'middle',transform:`rotate(${rot} ${x} ${MIDY})`,fill:'rgba(255,255,255,.85)','font-family':'Barlow Condensed,Impact,sans-serif','font-weight':800,'font-size':64,'letter-spacing':12},svg);tx.textContent=t}
   for(let y=0;y<=100;y+=5){const x=X(y);mk('line',{x1:x,y1:0,x2:x,y2:533,stroke:'rgba(255,255,255,'+(y%10?'.35':'.7')+')','stroke-width':y%50?2:3},svg)}
   for(let y=1;y<100;y++){const x=X(y);for(const yy of [8,206,320,519])mk('line',{x1:x,y1:yy,x2:x,y2:yy+8,stroke:'rgba(255,255,255,.5)','stroke-width':1.5},svg)}
-  for(let y=10;y<100;y+=10){const n=y>50?100-y:y;for(const yy of [60,488]){const t=mk('text',{x:X(y),y:yy,'text-anchor':'middle',fill:'rgba(255,255,255,.75)','font-family':'Barlow Condensed,Impact,sans-serif','font-weight':800,'font-size':36},svg);t.textContent=n}}
+  const paint=mk('g',{'aria-hidden':'true',fill:'#e2e7d5'},svg);
+  mk('rect',{x:2,y:2,width:1196,height:529,rx:4,fill:'none',stroke:'#d8dfcd','stroke-width':4},paint);
+  for(let yard=10;yard<100;yard+=10){
+    const x=X(yard),number=Math.min(yard,100-yard),towardGoal=yard<50?-1:1;
+    for(const y of [80,453]){
+      const label=mk('text',{x,y,'text-anchor':'middle','dominant-baseline':'central',transform:y<MIDY?`rotate(180 ${x} ${y})`:'','font-family':'Barlow Condensed,Impact,sans-serif','font-weight':800,'font-size':34},paint);
+      label.textContent=number;
+      if(yard!==50){
+        const base=x+towardGoal*23;
+        mk('path',{d:`M ${base} ${y-4} v 8 l ${towardGoal*7} -4 Z`},paint);
+      }
+    }
+  }
+  for(const x of [X(0),X(100)])for(const y of [3,523])mk('rect',{x:x-3,y,width:6,height:7,rx:1,fill:'#f6974a'},paint);
   layer.zone=mk('rect',{x:0,y:0,width:0,height:533,fill:'rgba(63,193,255,.08)'},svg);
   layer.los=mk('line',{x1:0,y1:0,x2:0,y2:533,stroke:'#3fc1ff','stroke-width':4,opacity:.9},svg);
   layer.fd=mk('line',{x1:0,y1:0,x2:0,y2:533,stroke:'#ffe066','stroke-width':5,opacity:.95,filter:''},svg);
@@ -77,6 +92,19 @@ function drawField(){
   layer.ball=mk('ellipse',{cx:0,cy:0,rx:8,ry:5,fill:'#8a4b1c',stroke:'#fff','stroke-width':1.5},svg);
   pos={};layer.dots={};
 }
+function frameSelectedPlay(spot){
+  const height=$('#fieldWrap').clientHeight;
+  if(!height)return;
+  // Crop the sidelines around the two widest receivers and preserve the yard scale.
+  const top=40,frameHeight=453;
+  const width=Math.min(1200,Math.max(525,Math.round(frameHeight*svg.clientWidth/height)));
+  const center=X(absOf(spot.field,spot.possession))+(spot.possession==='home'?90:-90);
+  const left=Math.max(0,Math.min(1200-width,center-width/2));
+  svg.setAttribute('viewBox',`${left} ${top} ${width} ${frameHeight}`);
+}
+if(window.ResizeObserver)new ResizeObserver(()=>{
+  if(!$('#fieldLocator').hidden&&req?.kind==='snap')frameSelectedPlay(req.situation);
+}).observe($('#fieldWrap'));
 const OFF_SPOTS={LT:[-1,194],LG:[-1,230],C:[-1,266],RG:[-1,302],RT:[-1,338],TE:[-1.3,376],X:[-1,70],Z:[-1,462],SLOT:[-2,412],QB:[-5,266],RB:[-7.5,266]};
 const DEF_SPOTS={RUSH:[1.3,176],NT:[1.3,246],DT3:[1.3,290],SET:[1.3,358],WILL:[5,212],MIKE:[5,268],BOXS:[6,352],NICKEL:[5.5,412],BCB:[7,70],FCB:[7,462],FS:[13,266]};
 function formation(st,e=null){
@@ -413,8 +441,8 @@ function matchupHTML(){
       svg.insertBefore(layer.route,layer.players);
     }
   }
-  const spot=req.situation,center=X(absOf(spot.field,spot.possession))+(spot.possession==='home'?90:-90);
-  svg.setAttribute('viewBox',`${Math.max(0,Math.min(530,center-335))} 0 670 533`);
+  const spot=req.situation;
+  frameSelectedPlay(spot);
   const locator=$('#fieldLocator');locator.hidden=false;
   locator.querySelector('b').style.left=absOf(spot.field,spot.possession)+'%';
   locator.querySelector('i').style.left=absOf(Math.min(100,spot.field+spot.distance),spot.possession)+'%';
@@ -557,10 +585,12 @@ function takeawayHTML(){
 function renderSide(){
   if(req?.kind==='snap'&&!fullSheet){$('#side').replaceChildren();return}
   const pb=save.playbook;
-  const ur=DYN?DYN.record:(save.world.userRecord||pb.record),opponent=teamOf(b.user==='away'?'home':'away');
-  $('#side').innerHTML=guidedDriveHTML()+adaptationHTML()+backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box"><h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">${DYN?.classicDrive?'RECORDED FINAL · '+esc(DYN.finalScore):`RECORD <b>${ur.w}-${ur.l}</b>`}${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>
+  const ur=DYN?DYN.record:(save.world?.userRecord||pb.record),opponent=teamOf(b.user==='away'?'home':'away');
+  const goal=activeChallenge?`<section class="box"><h3>${esc(activeChallenge.name)}</h3><p class="challenge-objective">${esc(activeChallenge.objective)}</p></section>`:'';
+  const gameContext=activeChallenge?'':`<h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">${DYN?.classicDrive?'RECORDED FINAL · '+esc(DYN.finalScore):`RECORD <b>${ur.w}-${ur.l}</b>`}${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>`;
+  $('#side').innerHTML=goal+guidedDriveHTML()+adaptationHTML()+backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box">${gameContext}
    <div class="mini">vs ${esc(opponent.name)} · ${esc(opponent.coach.name)}</div>
-   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='all'?'all':'key moments'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button><button class="tbtn" id="bSim">${DYN?.classicDrive?'Sim this drive':'Sim to end'}</button></div></div>`;
+   <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='all'?'all':'key moments'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button>${activeChallenge?'':`<button class="tbtn" id="bSim">${DYN?.classicDrive?'Sim this drive':'Sim to end'}</button>`}</div></div>`;
   bindGuide($('#side'));
   if(req?.kind==='snap'&&sel.play){
     const featured=matchupHTML();if(featured)$('#coachingRead')?.insertAdjacentHTML('afterbegin',featured);
@@ -575,7 +605,7 @@ function renderSide(){
   $('#bSound').onclick=()=>{save.settings.sound=!save.settings.sound;S.on=save.settings.sound;writeSave();renderSide()};
   $('#bReplay').onclick=()=>{save.settings.replays=save.settings.replays==='all'?'moments':'all';writeSave();renderSide()};
   $('#bRead').onclick=()=>{readMode=readMode==='primary'?'auto':'primary';save.settings.readMode=readMode;writeSave();refresh()};
-  $('#bSim').onclick=()=>{if(busy)return;if(b.guidedDrive?.active){O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false}b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
+  const sim=$('#bSim');if(sim)sim.onclick=()=>{if(busy)return;if(b.guidedDrive?.active){O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false}b.mode='sim';b.pending=null;FX.skipping=true;go(null)};
 }
 
 // ================================================================ the Look
@@ -648,6 +678,7 @@ function quickSheetHTML(view){
   return `<div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
     ${req.role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}
+    ${b.challenge?`<p class="challenge-objective">${esc(activeChallenge.name)} · ${esc(activeChallenge.objective)}</p>`:''}
     ${pinnedCallHTML()}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${assignmentHTML()}${matchupHTML()}${tacticNoteHTML(true)}
@@ -829,7 +860,7 @@ new MutationObserver(()=>{
 }).observe(modal,{attributes:true,attributeFilter:['class'],childList:true});
 modal.addEventListener('keydown',ev=>{
   if(ev.key==='Escape'){
-    const back=modal.querySelector('#gotIt,#back,#toTitle');
+    const back=modal.querySelector('#gotIt,#back,#toTitle,#challengeBack,#challengeMenu');
     if(back&&!(back.id==='gotIt'&&modal.querySelector('#guideStart'))){ev.preventDefault();back.click()}
     return;
   }
@@ -856,6 +887,7 @@ function guidedDriveDone(){
   for(const [id,mode] of [['guideKey','key'],['guideSnap','snap']])$('#'+id).onclick=()=>{b.mode=mode;save.settings.mode=mode;writeSave();m.classList.remove('on');decide()};
 }
 function decide(){
+  if(b.challenge){const result=B.challengeResult(b);if(result){challengeFinish(result);return}}
   if(O.update(b)){save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();if(req){guidedDriveDone();return}}
   if(!req){
     if(DYN?.classicDrive){
@@ -1517,11 +1549,57 @@ function standingsHTML(compact){
   const rows=compact?all.filter((r,i)=>i<4||r.you):all;
   return`<table class="stand"><tr><th></th><th>Program</th><th>W-L</th><th>Notable</th></tr>${rows.map(r=>`<tr class="${r.you?'you':''}" ${r.you?'':`data-prog="${r.id}"`}><td>${all.indexOf(r)+1}</td><td><b>${esc(r.name)}</b>${r.you?' <span class="mini">(you)</span>':''}</td><td>${r.w}-${r.l}</td><td class="mini">${r.legendaries.map(id=>`<span class="leg">★ ${esc(P.cardDef(id).name)}</span>`).join(' ')} ${r.evolved.length?`${r.evolved.length} evolved`:''}</td></tr>`).join('')}</table>`;
 }
+function challengeSticker(award){
+  return `<span class="challenge-sticker" data-sticker="${esc(award.id)}" data-challenge-earned>${esc(award.name)}</span>`;
+}
+function challengeMenu(){
+  if(busy)return;
+  if(!campaignSave){
+    campaignSave=save;
+    save={team:null,world:null,playbook:P.newPlaybook(),settings:JSON.parse(JSON.stringify(save.settings)),combos:[],games:0,seenHelp:true};
+  }
+  activeChallenge=null;b=null;req=null;
+  $('#challengeExit')?.remove();
+  const m=$('#modal'),awards=window.ChallengeAwards;
+  const options=B.DRIVE_CHALLENGES.map(c=>{
+    const earned=awards.get(c.id);
+    return `<button type="button" class="challenge-option" data-challenge="${esc(c.id)}"><small>${c.role==='off'?'OFFENSE':'DEFENSE'}</small><strong>${esc(c.name)}</strong><span>${esc(c.situation)}</span><span class="challenge-objective">${esc(c.objective)}</span>${earned?challengeSticker(earned):''}</button>`;
+  }).join('');
+  m.innerHTML=`<section class="challenge-menu"><h1>Drive Challenges</h1><p>Coach one possession. Retry with the same roster and opening hand.</p><p class="statline">Helmet stickers · ${awards.list().length} / ${B.DRIVE_CHALLENGES.length}</p><div class="challenge-list">${options}</div><button class="tbtn" id="challengeBack">${challengeFrame?'Return to Dynasty':'Back to Quick Battle'}</button></section>`;
+  m.classList.add('on');m.scrollTop=0;
+  for(const option of m.querySelectorAll('[data-challenge]'))option.onclick=()=>startChallenge(option.dataset.challenge);
+  $('#challengeBack').onclick=()=>{
+    if(challengeFrame){window.frameElement.dispatchEvent(new Event('closechallenge'));return}
+    save=campaignSave;campaignSave=null;readMode=save.settings.readMode==='primary'?'primary':'auto';fullSheet=save.settings.sheetView!=='quick';
+    FX.speed=save.settings.fast?.45:1;S.on=save.settings.sound!==false;FX.setMotion(save.settings.motion||'system');
+    title();
+  };
+}
+function startChallenge(id){
+  activeChallenge=B.DRIVE_CHALLENGES.find(c=>c.id===id);
+  b=B.createChallenge(id);req=b.pending;seen=b.log.length;err='';lastLook={};sel={play:null,tac:[]};
+  save.combos=[];FX.skipping=false;S.init();hideTip();clearGlow();
+  b._lastScore={...b.game.score};setWeather(b.weather);drawField();setMarkers(null);
+  $('#ticker').replaceChildren();const story=$('#matchupStory');if(story)story.hidden=true;
+  const exit=$('#challengeExit')||document.createElement('button');
+  exit.type='button';exit.id='challengeExit';exit.className='tbtn';exit.textContent='Challenges';exit.title='Return to Drive Challenges';exit.onclick=challengeMenu;
+  $('#scorebar').appendChild(exit);
+  $('#modal').classList.remove('on');decide();
+}
+function challengeFinish(result){
+  const c=activeChallenge,awards=window.ChallengeAwards,first=result.won&&awards.earn(c.id);
+  const earned=awards.get(c.id),opponent=b.user==='home'?'away':'home',score=b.game.score;
+  const m=$('#modal');
+  m.innerHTML=`<section class="challenge-result"><p class="statline">${esc(c.name)}</p><h1>${result.won?'Challenge cleared':'Drive over'}</h1><p class="challenge-score">${esc(teamOf(b.user).short)} ${score[b.user]} · ${esc(teamOf(opponent).short)} ${score[opponent]}</p><p><strong>${esc(result.reason)}</strong></p><p>${esc(result.recap)}</p>${result.won&&earned?`<p>${first?'Helmet sticker earned':'Helmet sticker collected'} · ${challengeSticker(earned)}</p>`:''}<button class="btn go" id="challengeRetry">Retry this drive</button><button class="btn" id="challengeMenu">All challenges</button></section>`;
+  m.classList.add('on');m.scrollTop=0;
+  if(first)S.fanfare();
+  $('#challengeRetry').onclick=()=>startChallenge(c.id);$('#challengeMenu').onclick=challengeMenu;
+}
 function title(){
   const m=$('#modal'),pb=save.playbook,st=save.settings;
   const opt=(k,v,l)=>`<button class="opt ${st[k]===v?'on':''}" data-k="${k}" data-v="${v}">${l}</button>`;
   const picker=!save.team;
-  m.innerHTML=`<div class="mwrap"><p class="big gold">CALL SHEET</p><p class="statline">${picker?'CHOOSE YOUR PROGRAM':`${esc(specOf(save.team).name)} · SEASON <b>${save.world.season}</b> · WEEK <b>${save.world.week%save.world.order.length+1}</b> · RECORD <b>${pb.record.w}-${pb.record.l}</b> · PACKS <b>${pb.packsOpened}</b>`}</p>
+  m.innerHTML=`<div class="mwrap"><p class="big gold">CALL SHEET</p><button class="tbtn" id="driveChallenges">Drive Challenges</button><p class="statline">${picker?'CHOOSE YOUR PROGRAM':`${esc(specOf(save.team).name)} · SEASON <b>${save.world.season}</b> · WEEK <b>${save.world.week%save.world.order.length+1}</b> · RECORD <b>${pb.record.w}-${pb.record.l}</b> · PACKS <b>${pb.packsOpened}</b>`}</p>
     ${picker?`<div class="teams">${Object.entries(W.SPECS).map(([k,p])=>`<button class="tcard" data-team="${k}"><div class="tn">${esc(p.name)}</div><div class="ts" style="background:linear-gradient(90deg,${p.colors[0]},${p.colors[1]})"></div><div class="mini">${esc(identity(p))}<br>Coordinator ${esc(p.coach)}</div></button>`).join('')}</div>`
       :`<div class="box" style="text-align:left;margin:14px auto;max-width:720px"><h3>The league</h3>${standingsHTML()}<div class="mini" style="margin-top:6px">Tap a program to scout its playbook. AI programs open packs, cut cards and evolve plays every week too.</div></div>`}
     <div class="opts">${opt('mode','key','Key moments')}${opt('mode','snap','Every snap')}</div>
@@ -1530,6 +1608,7 @@ function title(){
     <div>${save.team?`<button class="btn go" id="play">${save.activeBattle?'RESUME GAME':save.world?.offseason?'SEASON FINALE →':`PLAY · vs ${esc(specOf(oppId()).name)}`}</button><button class="btn" id="rost">ROSTER</button><button class="btn" id="pbv" ${save.activeBattle?'disabled title="Finish the current game before editing"':''}>BUILD DECK</button><button class="btn" id="reset">NEW DYNASTY</button>`:''}</div>
     <p class="mini" style="margin-top:14px">Progress stays in this browser only.</p></div>`;
   m.classList.add('on');
+  $('#driveChallenges').onclick=challengeMenu;
   m.querySelectorAll('[data-team]').forEach(el=>el.onclick=()=>{S.init();save.team=el.dataset.team;save.playbook=P.newPlaybook();save.combos=[];save.games=0;save.world=W.newWorld(save.team,`w${Date.now()%1e6}`);writeSave();S.chime();title()});
   m.querySelectorAll('[data-prog]').forEach(el=>el.onclick=()=>{S.tick(6);playbookView(save.world.programs[el.dataset.prog].playbook,specOf(el.dataset.prog).name,el.dataset.prog)});
   m.querySelectorAll('[data-k]').forEach(el=>el.onclick=()=>{st[el.dataset.k]=el.dataset.v;writeSave();S.tick(5);title()});
@@ -1704,5 +1783,6 @@ FX.speed=save.settings.fast?.45:1;S.on=save.settings.sound!==false;FX.setMotion(
 PT.mount($('#fx'));
 // Test hook: lets automated checks drive the slice without pixel hunting.
 window.__slice={resumeBattle,seasonEndScreen,signingDayScreen,rosterView,howToPlay,get b(){return b},get req(){return req},get busy(){return busy},save:()=>save,go,startGame,title,evolutionScreen,leagueScreen,breakoutScreen,setWeather,scoutingReport};
-if(DYN)dynastyStart();else title();
+if(challengeFrame||(!DYN&&new URLSearchParams(window.location?.search||'').get('mode')==='challenges'))challengeMenu();
+else if(DYN)dynastyStart();else title();
 })();

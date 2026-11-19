@@ -12,11 +12,11 @@
 //   sim    — the coordinators play everything
 (function(root,factory){
   const node=typeof module==='object'&&module.exports;
-  const deps=node?[require('./data.js'),require('./resolver.js'),require('../../../rng.js'),require('../../../game-engine-v2.js')]
-    :[root.CallSheet.data,root.CallSheet.resolver,root.DynastyRng,root.DynastyGameEngineV2];
+  const deps=node?[require('./data.js'),require('./resolver.js'),require('../../../rng.js'),require('../../../game-engine-v2.js'),require('./roster.js')]
+    :[root.CallSheet.data,root.CallSheet.resolver,root.DynastyRng,root.DynastyGameEngineV2,root.CallSheet.roster];
   const api=factory(...deps);
   if(node)module.exports=api;else root.CallSheet.battle=api;
-})(typeof window==='object'?window:globalThis,function(D,R,DynastyRng,Engine){
+})(typeof window==='object'?window:globalThis,function(D,R,DynastyRng,Engine,Ro){
 'use strict';
 const VERSION=1;
 const other=s=>s==='home'?'away':'home';
@@ -752,13 +752,68 @@ function replayDrive(record){
   return b;
 }
 
+// Short, repeatable single-possession scenarios. The starting points are recorded as a
+// scoreboard snapshot, so the engine can audit subsequent scores without invented plays.
+const DRIVE_CHALLENGES=[
+  {id:'need_six',name:'Need Six',role:'off',situation:'Down 4 · 1:12 · Opp 38 · 1 timeout',objective:'Score a touchdown on this drive.',
+    home:'aerial',away:'ground',score:[20,24],clock:72,field:62,down:1,distance:10,timeouts:[1,2],seed:'need-six-9'},
+  {id:'goal_line_stand',name:'Goal-Line Stand',role:'def',situation:'Up 4 · 1:32 · 1st and goal at your 4',objective:'Keep the opponent out of the end zone on this drive.',
+    home:'ground',away:'tempo',score:[24,20],clock:92,field:96,down:1,distance:4,timeouts:[2,2],seed:'goal-line-11'},
+  {id:'four_minute_offense',name:'Four-Minute Offense',role:'off',situation:'Up 2 · 1:48 · 3rd and 3 · Defense has 1 timeout',objective:'Run out the clock, reach kneel-down range, or take a two-score lead.',
+    home:'ground',away:'aerial',score:[23,21],clock:108,field:42,down:3,distance:3,timeouts:[2,1],seed:'four-minute-1'}
+];
+function createChallenge(id){
+  const c=DRIVE_CHALLENGES.find(c=>c.id===id);
+  if(!c)throw new Error('Unknown drive challenge.');
+  const b=create({seed:'challenge:'+c.seed,home:Ro.preset(c.home),away:Ro.preset(c.away),user:'home',mode:'snap',coachingWindows:true});
+  const g=b.game;Engine.startGame(g);
+  const [home,away]=c.timeouts;
+  const state={...g.events.at(-1).state,period:4,clock:c.clock,elapsed:4*Engine.QUARTER_SECONDS-c.clock,
+    possession:c.role==='off'?'home':'away',fieldPosition:c.field,down:c.down,distance:c.distance,timeouts:{home,away},score:{home:0,away:0}};
+  Object.assign(g,state);g.events=[];
+  for(const [index,side] of ['home','away'].entries()){
+    g.score[side]=c.score[index];
+    g.events.push({seq:index+1,type:'challenge_opening_score',team:side,points:c.score[index],state:{...state,score:{...g.score},timeouts:{...state.timeouts}}});
+  }
+  b.period=4;b.challenge=id;b.replayDrive=possessionKey(g);
+  advance(b);return b;
+}
+function challengeResult(b){
+  if(!b?.challenge||!b.log.length)return null;
+  const g=b.game,last=b.log.at(-1),end=g.status==='final'||possessionKey(g)!==b.replayDrive;
+  let won=false,reason;
+  switch(b.challenge){
+    case 'need_six':
+      if(g.events.some(e=>e.type==='touchdown'&&e.team==='home')){won=true;reason='Touchdown on the final drive.';}
+      else if(end)reason=g.status==='final'?'Time expired before the touchdown.':'The drive ended without the touchdown.';
+      break;
+    case 'goal_line_stand':
+      if(g.events.some(e=>e.type==='touchdown'&&e.team==='away'))reason='The opponent scored a touchdown.';
+      else if(end){won=true;reason='The defense kept the opponent out of the end zone.';}
+      break;
+    case 'four_minute_offense': {
+      const lead=g.score.home-g.score.away;
+      if(lead>8){won=true;reason='The offense built a two-score lead.';}
+      else if(g.status==='final'&&lead>0){won=true;reason='Time expired with the lead.';}
+      else if(end)reason='The drive ended before the lead was secured.';
+      // Even with a stopped clock, three kneels from first down supply three 40-second
+      // windows. Each defensive timeout removes a window; allow field room for all knees.
+      else if(g.possession==='home'&&g.down===1&&g.fieldPosition>3&&lead>0&&g.clock<=40*(3-g.timeouts.away)){
+        won=true;reason='A first down left enough downs to kneel out the clock.';
+      }
+      break;
+    }
+  }
+  return reason?{won,reason,recap:last.text}:null;
+}
+
 // Run until a person must decide or the game ends. Returns the pending request or null.
 function advance(b){
   let guard=0;
   while(++guard<5000){
     const g=b.game;
     if(b.coachedDrive!=null&&(g.status==='final'||!coachingDrive(b)))delete b.coachedDrive;
-    if(b.replayDrive!=null&&(possessionKey(g)!==b.replayDrive||g.status==='final'))return null;
+    if(b.replayDrive!=null&&(possessionKey(g)!==b.replayDrive||g.status==='final'||challengeResult(b)))return null;
     if(b.pending)return b.pending;
     if(g.status==='pregame')Engine.startGame(g);
     if(g.status==='final'){finalize(b);return null}
@@ -1986,5 +2041,5 @@ function duelTally(b){
   }
   return out;
 }
-return{setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

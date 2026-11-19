@@ -24,6 +24,18 @@ test('bridge safely escapes names and renders absent legacy staff',async()=>{
  const {cg,me}=await setup();me.staff.OC.name='<OC>';assert.match(cg.connectionsHTML(),/&lt;OC&gt;/);assert.doesNotMatch(cg.connectionsHTML(),/<OC>/);
  delete me.staff.OC;assert.doesNotThrow(()=>cg.connectionsHTML());
 });
+test('a suspended weekly battle leaves Drive Challenges available in the Deck Room',async t=>{
+ const {cg,u}=await setup();
+ const previous=globalThis.CallSheetBundle;
+ t.after(()=>{if(previous===undefined)delete globalThis.CallSheetBundle;else globalThis.CallSheetBundle=previous});
+ globalThis.CallSheetBundle='<!doctype html>';
+ u.callSheet.activeBattle={seed:cg.launch().seed,battle:'{}'};
+ const before=JSON.stringify(u.callSheet),html=cg.cardProgramHTML();
+ assert.match(html,/<button[^>]*data-drive-challenges[^>]*aria-haspopup="dialog"[^>]*>Drive Challenges<\/button>/);
+ assert.match(html,/data-card-deck disabled/);
+ assert.match(html,/>Resume Battle<\/button>/);
+ assert.equal(JSON.stringify(u.callSheet),before);
+});
 test('Deck Room and Collection route to one saved playbook without moving cards or granting rewards',async()=>{
  const {cg,u}=await setup(),pb=u.callSheet.playbook,cs=globalThis.CallSheet;
  require('../forks/call-sheet/core/playbook-ui');

@@ -102,3 +102,38 @@ test('even a nearly complete collection receives an eligible discovery option',a
     assert.ok(P.rewardPack(pb,{seed}).cards.includes(missing));
   }
 });
+
+function stickerSession(storage) {
+  const fs = require('node:fs'), vm = require('node:vm');
+  const context = vm.createContext({localStorage: storage});
+  vm.runInContext(fs.readFileSync(require.resolve('../forks/call-sheet/slice/challenge-awards.js'), 'utf8'), context);
+  return context.ChallengeAwards;
+}
+
+test('Drive Challenges award distinct helmet stickers once across sessions without touching career saves', () => {
+  const db = new Map([['callsheet.slice.v1', 'career']]);
+  const storage = {getItem: key => db.get(key), setItem: (key, value) => db.set(key, value)};
+  const quick = stickerSession(storage), dynasty = stickerSession(storage);
+  assert.equal(quick.get('need_six'), null);
+  assert.equal(quick.earn('unknown'), false);
+  assert.equal(quick.earn('four_minute_offense'), true);
+  assert.equal(quick.earn('need_six'), true);
+  assert.equal(dynasty.get('need_six').name, 'Two-Minute Drill');
+  assert.equal(dynasty.earn('need_six'), false);
+  assert.equal(dynasty.earn('goal_line_stand'), true);
+  assert.deepEqual(Array.from(quick.list(), item => item.name), ['Two-Minute Drill','Brick Wall','Clock Killer']);
+  assert.deepEqual(Array.from(stickerSession(storage).list(), item => item.symbol), ['6','W','00']);
+  assert.equal(db.get('callsheet.slice.v1'), 'career');
+  assert.equal(db.size, 4);
+});
+
+test('a challenge sticker can be awarded once per session when browser storage is blocked', () => {
+  const denied = () => { throw Error('Storage unavailable'); };
+  for (const storage of [undefined, {getItem: denied, setItem: denied}, {getItem: () => null, setItem: denied}]) {
+    const awards = stickerSession(storage);
+    assert.equal(awards.earn('goal_line_stand'), true);
+    assert.equal(awards.earn('goal_line_stand'), false);
+    assert.equal(awards.list().length, 1);
+    assert.equal(awards.get('goal_line_stand').symbol, 'W');
+  }
+});

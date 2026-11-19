@@ -19,6 +19,60 @@ const auto=(b,req)=>req.kind==='fourth'?B.submit(b,{choice:req.recommended}):req
 
 console.log('Call Sheet battle tests');
 
+// Use only actions offered by the same pending requests that the game renders.
+function playChallenge(id,calls){
+  const b=B.createChallenge(id);
+  for(const call of calls){
+    const req=b.pending;
+    assert.ok(req,'drive ended before '+call);
+    if(req.kind==='fourth'){
+      assert.ok(req.options.includes(call));B.submit(b,{choice:call});
+    }else{
+      assert.ok(req.options.plays.some(p=>p.id===call&&!p.blocked&&p.cost<=req.options.command));
+      B.submit(b,{type:'call',play:call,tactics:[]});
+    }
+  }
+  const result=B.challengeResult(b);
+  assert.ok(result);assert.equal(result.recap,b.log.at(-1).text);
+  assert.equal(b.pending,null);const done=B.save(b);
+  assert.equal(B.advance(b),null);assert.equal(B.save(b),done);
+  assert.deepEqual(B.challengeResult(B.load(done)),result);
+  assert.ok(require('../../../game-engine-v2.js').validateGame(b.game));
+  return {b,result};
+}
+
+test('each drive challenge deals the same isolated opening state on a retry',()=>{
+  for(const c of B.DRIVE_CHALLENGES){
+    const b=B.createChallenge(c.id),opening=B.save(b);
+    assert.equal(b.pending.role,c.role);assert.equal(b.game.period,4);
+    assert.equal(B.challengeResult(b),null);B.submit(b,{type:'auto'});
+    assert.equal(B.save(B.createChallenge(c.id)),opening);
+  }
+});
+
+test('Need Six accepts a touchdown and ends immediately on a lost fumble',()=>{
+  const win=playChallenge('need_six',['quick_slant','outside_zone','deep_cross']);
+  assert.ok(win.result.won);assert.match(win.result.recap,/touchdown/);
+  const loss=playChallenge('need_six',['deep_cross']);
+  assert.equal(loss.result.won,false);assert.equal(loss.b.log.at(-1).turnover,'fumble');
+});
+
+test('Goal-Line Stand distinguishes a fourth-down stop from an allowed touchdown',()=>{
+  const win=playChallenge('goal_line_stand',['bear','cover1','sim_pressure','run_fit']);
+  assert.ok(win.result.won);assert.match(win.result.recap,/turnover on downs/);
+  const loss=playChallenge('goal_line_stand',['cover1']);
+  assert.equal(loss.result.won,false);assert.match(loss.result.recap,/touchdown/);
+});
+
+test('Four-Minute Offense can secure the clock or lose the ball on downs',()=>{
+  const win=playChallenge('four_minute_offense',['power']);
+  assert.ok(win.result.won);assert.equal(win.b.game.timeouts.away,0);assert.equal(win.b.game.clock,102);
+  // With a defensive timeout left, three kneels would burn only 80 seconds.
+  win.b.game.timeouts.away=1;assert.equal(B.challengeResult(win.b),null);
+  const loss=playChallenge('four_minute_offense',['quick_slant','go','outside_zone']);
+  assert.equal(loss.result.won,false);assert.match(loss.result.recap,/turnover on downs/);
+});
+
 test('simulated games finish with a valid engine record',()=>{
   for(let i=0;i<12;i++){
     const b=B.simulate({home:Ro.preset('aerial'),away:Ro.preset('tempo'),seed:`valid-${i}`});

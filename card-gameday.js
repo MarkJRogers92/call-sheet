@@ -1651,7 +1651,7 @@ function normalizeCallSheet(u){
     const coach=locked?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':postCoachHTML()||(coachableGame()?'<button type="button" class="cpn-link" data-coach-cards>Coach this game</button>':'');
     return`<div id="cardProgram" class="card cpn">
       <span class="eyebrow">CARDS &amp; DECK / CALL SHEET</span><h2>Deck Room</h2><p class="cpn-intro">Choose which cards from your collection to take into the next game.</p>
-      <div class="cpn-actions"><button type="button" class="cpn-btn" data-card-deck${locked?' disabled':''}>Build Deck</button>${coach}</div>
+      <div class="cpn-actions"><button type="button" class="cpn-btn" data-card-deck${locked?' disabled':''}>Build Deck</button>${coach}${globalThis.CallSheetBundle?'<button type="button" id="deckDriveChallenges" class="cpn-link" data-drive-challenges aria-haspopup="dialog">Drive Challenges</button>':''}</div>
       ${locked?'<p class="cpn-foot">Your deck is locked for the current battle. Finish it before editing.</p>':''}
       ${retoolHTML()}
       <h3>In your deck</h3><div class="cpn-bridge-grid">${active}</div><p class="cpn-foot"><b>Player signatures:</b> ${(pb?.signatures||[]).length}/${CS.signatures.SLOTS} across both sides</p>
@@ -2124,23 +2124,51 @@ function normalizeCallSheet(u){
   };
   if(typeof document!=='undefined')document.addEventListener('click',e=>{if(e.target.closest('[data-card-settings]'))openCardSettings();const trigger=e.target.closest('[data-card-deck]');if(trigger){const origin=trigger.closest('#cardBinder')?'#cardBinder':'#cardProgram';if(deckEditsLocked()){setStatus('Finish your current card battle before changing the deck.');return}CS.playbookUI.open(syncProgramCapacity(selected(),userPlaybook()),{maxStored:CALL_SHEET_RESERVE_LIMIT,maxUnusedSignatures:CALL_SHEET_UNUSED_SIGNATURE_LIMIT,team:CS.adapter.battleTeam(selected(),null,availabilityFor(selected())),practiceFilm:upcomingPracticeFilm(),onSave:pb=>{cardMeta().playbook=normalizeCardPlaybook(pb);autosaveAfter('game');paintCardProgram()},onClose:()=>document.querySelector(origin+' [data-card-deck]')?.focus()})}});
 
+  function driveDialog(trigger,id,title,backLabel,mode){
+    const dialog=document.createElement('dialog');
+    dialog.id=id;dialog.setAttribute('aria-label',title);
+    dialog.style.cssText='box-sizing:border-box;margin:auto;padding:0;width:100%;height:100dvh;max-width:none;max-height:none;border:0;background:#07090f;color:#f3f6ff';
+    const bar=document.createElement('div');
+    bar.style.cssText='height:48px;box-sizing:border-box;display:flex;align-items:center;padding:0 12px;border-bottom:1px solid #30394c;background:#111725';
+    const back=document.createElement('button');
+    back.type='button';back.textContent=backLabel;back.onclick=()=>dialog.close();bar.append(back);
+    back.style.cssText='height:40px;padding:0 14px;border:1px solid #57637a;border-radius:7px;background:#202a3a;color:inherit;font:600 14px system-ui;cursor:pointer';
+    const frame=document.createElement('iframe');
+    frame.dataset[mode]='true';frame.title=title;
+    frame.style.cssText='display:block;border:0;width:100%;height:calc(100% - 48px)';
+    dialog.addEventListener('close',()=>{
+      dialog.remove();
+      const returnTo=trigger?.id?document.getElementById(trigger.id):trigger;
+      returnTo?.focus();
+    },{once:true});
+    dialog.append(bar,frame);
+    return {dialog,back,frame};
+  }
+  function showDriveDialog(dialog,frame){
+    frame.srcdoc=globalThis.CallSheetBundle;
+    document.body.append(dialog);dialog.showModal();
+  }
   // Replays get a separate iframe and a read-only host. An active weekly game can stay suspended.
   function openClassicDrive(id,trigger){
     const game=universe.gameArchive?.find(row=>row.id===id);
     if(!game?.classicDrive?.battle||!globalThis.CallSheetBundle)return;
-    const dialog=document.createElement('dialog');
-    dialog.setAttribute('aria-label','Replay the final drive');
-    dialog.style.cssText='padding:0;width:100vw;height:100dvh;max-width:none;max-height:none;border:0;background:#07090f;color:white';
-    const back=document.createElement('button');back.type='button';back.textContent='Back to Game Center';back.onclick=()=>dialog.close();
-    const frame=document.createElement('iframe');frame.dataset.classicDrive='true';frame.title='Classic game final drive';
-    frame.style.cssText='display:block;border:0;width:100%;height:calc(100% - 42px)';
+    const {dialog,frame}=driveDialog(trigger,'classicDriveHost','Classic game final drive','Back to Game Center','classicDrive');
     const finalScore=`${game.away.name} ${game.score.away} · ${game.home.name} ${game.score.home}`;
     const config={classicDrive:game.classicDrive,finalScore,label:`${game.season} · Final drive`,userSide:game.classicDrive.side,seenHelp:true};
     globalThis.__callSheetClassic={launch:()=>config,close:()=>dialog.close()};
-    dialog.addEventListener('close',()=>{delete globalThis.__callSheetClassic;dialog.remove();trigger?.focus()},{once:true});
-    frame.srcdoc=globalThis.CallSheetBundle;dialog.append(back,frame);document.body.append(dialog);dialog.showModal();
+    dialog.addEventListener('close',()=>{delete globalThis.__callSheetClassic},{once:true});
+    showDriveDialog(dialog,frame);
+  }
+  function openDriveChallenges(trigger){
+    if(!globalThis.CallSheetBundle||document.getElementById('driveChallengeHost'))return;
+    const {dialog,back,frame}=driveDialog(trigger,'driveChallengeHost','Drive Challenges','Return to Dynasty','driveChallenges');
+    back.id='driveChallengeBack';
+    frame.addEventListener('closechallenge',()=>dialog.close(),{once:true});
+    showDriveDialog(dialog,frame);
   }
   document.addEventListener('click',event=>{
+    const challenge=event.target.closest?.('[data-drive-challenges]');
+    if(challenge){openDriveChallenges(challenge);return}
     const button=event.target.closest?.('[data-classic-drive]');
     if(button)openClassicDrive(button.dataset.classicDrive,button);
   });
