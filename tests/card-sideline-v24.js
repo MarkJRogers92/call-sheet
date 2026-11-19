@@ -38,7 +38,7 @@ function sheet(role,tactics,command=5){
     readMode:'auto',S:{init:noop,chime:noop,tick:noop,error:noop},FX:{shake:noop},
     document:{activeElement:null},$:()=>el,teamOf:side=>b.teams[side],refresh:noop,renderHand:noop,
     writeSave:noop,clearGlow:noop,present:async()=>{},decide:noop});
-  const names=['choosePlay','selectedTactics','tacticBlock','retainCallTactics','snapChoice','selCost','tacticClick','go'];
+  const names=['choosePlay','selectedTactics','tacticBlock','retainCallTactics','snapChoice','selCost','tacticClick','beginPlayback','go'];
   vm.runInContext(names.map(handlerSource).join('\n'),ctx);
   return ctx;
 }
@@ -199,4 +199,64 @@ test('switching to a pricier play prunes the over-budget pairing and rejects a p
   ctx.choosePlay('quick_slant');ctx.req.options.command=0;
   assert.equal(ctx.choosePlay('deep_cross'),false);
   assert.equal(ctx.sel.play,'quick_slant');assert.match(ctx.err,/Deep Cross.*1 Command.*0/);
+});
+
+
+test('staff playback gives the field the viewport and releases it before the next decision',async()=>{
+  for(const fullSheet of [true,false]){
+    const ctx=sheet('off',[]),classes=new Set(),fallback=ctx.$;
+    const root={scrollTop:540,classList:{add:name=>classes.add(name),remove:name=>classes.delete(name)}};
+    ctx.$=selector=>selector==='#root'?root:fallback(selector);
+    ctx.fullSheet=fullSheet;
+    ctx.save={settings:{sheetView:fullSheet?'full':'quick'}};
+    const before=JSON.stringify(ctx.save.settings);
+    let presentations=0,decisions=0;
+    ctx.present=async()=>{
+      presentations++;
+      assert.ok(classes.has('playback'),'field expands while the staff play runs');
+      assert.equal(root.scrollTop,0,'a coach who selected a card lower on a phone can see the play');
+      assert.equal(ctx.busy,true);
+    };
+    ctx.decide=()=>{
+      decisions++;
+      assert.equal(classes.has('playback'),false,'the decision can draw its call sheet');
+      assert.equal(ctx.busy,false);
+    };
+    await ctx.go({type:'auto'});
+    assert.equal(presentations,1);
+    assert.equal(decisions,1);
+    assert.equal(ctx.fullSheet,fullSheet);
+    assert.equal(JSON.stringify(ctx.save.settings),before);
+
+    assert.equal(ctx.req.kind,'snap');
+    root.scrollTop=200;
+    let refreshed=false;
+    ctx.refresh=()=>{refreshed=true};
+    await ctx.go({type:'info',tactic:'missing_tactic'});
+    assert.equal(refreshed,true);
+    assert.match(ctx.err,/not an information card/);
+    assert.equal(presentations,1,'rejected input never starts another playback');
+    assert.equal(decisions,1);
+    assert.equal(classes.has('playback'),false);
+    assert.equal(root.scrollTop,200,'validation stays at the original control');
+    assert.equal(ctx.fullSheet,fullSheet);
+    assert.equal(JSON.stringify(ctx.save.settings),before);
+  }
+});
+
+test('a new staff snap or kick clears the earlier matchup, and a final coached snap keeps its recap',async()=>{
+  const coached={type:'snap',userCalled:true};
+  for(const following of [null,{type:'snap'},{type:'kick'}]){
+    const log=following?[coached,following]:[coached],story={hidden:true},staff=[];
+    const showStaff=()=>staff.push(story.hidden);
+    const ctx=vm.createContext({
+      b:{log},seen:0,FX:{instant:true},renderBug:noop,
+      $:selector=>selector==='#matchupStory'?story:{classList:{add:noop}},
+      quick:e=>{if(e.userCalled)story.hidden=false;else showStaff()},quickKick:showStaff
+    });
+    vm.runInContext(handlerSource('present'),ctx);
+    await ctx.present();
+    assert.deepEqual(staff,following?[true]:[],'the current scoring play can show its own ticker');
+    assert.equal(story.hidden,Boolean(following));
+  }
 });

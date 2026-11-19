@@ -872,15 +872,23 @@ modal.addEventListener('keydown',ev=>{
 });
 
 // ================================================================ flow
+function beginPlayback(){
+  const root=$('#root');
+  root.classList.add('playback');
+  root.scrollTop=0;
+}
 async function go(action){
   if(busy&&action!==null)return;busy=true;$('#sheetToggle').hidden=true;$('#hand').classList.add('away');$('#hand').inert=true;err='';
   try{req=action===undefined||action===null?B.advance(b):B.submit(b,action)}
   catch(e){err=e.message;busy=false;S.error();refresh();return}
   clearGlow();const story=$('#matchupStory');if(story)story.hidden=true;
   sel={play:null,tac:[]};writeSave();
-  await present();
-  busy=false;FX.skipping=false;$('#skip').classList.remove('on');
-  decide();
+  beginPlayback();
+  try{await present()}finally{
+    $('#root').classList.remove('playback');
+    busy=false;FX.skipping=false;$('#skip').classList.remove('on');
+    decide();
+  }
 }
 function guidedDriveDone(){
   const m=$('#modal');m.innerHTML=`<div class="mwrap"><p class="big gold">DRIVE COMPLETE</p><p class="statline">You have called a full offensive drive. Keep every snap, or let the staff handle routine downs.</p><button class="btn go" id="guideKey">KEY MOMENTS</button><button class="btn" id="guideSnap">EVERY SNAP</button></div>`;m.classList.add('on');
@@ -909,6 +917,7 @@ async function present(){
   const entries=b.log.slice(seen);seen=b.log.length;
   if(entries.length>1||entries.some(e=>e.userCalled))$('#skip').classList.add('on');
   for(const e of entries){
+    const previousStory=$('#matchupStory');if(previousStory)previousStory.hidden=true;
     if(e.type==='halftime'){ticker('HALFTIME · tendencies cool off, decks reshuffle');await callout('HALFTIME','cool small',900);continue}
     if(e.type==='kick'){await quickKick(e);continue}
     if(e.type==='rest'||e.type==='penalty'){ticker(e.text);continue}
@@ -1004,7 +1013,7 @@ async function cinematic(e){
     await Promise.all([FX.anim(fo,[{transform:'translateX(-80vw)'},{transform:'translateX(10px)'},{transform:'none'}],{duration:340,easing:'ease-in'}),FX.anim(fd,[{transform:'translateX(80vw)'},{transform:'translateX(-10px)'},{transform:'none'}],{duration:340,easing:'ease-in'})]);
     S.clash();FX.shake(stage,.9);FX.anim($('#flash'),[{opacity:.55},{opacity:0}],180);
     const r=stage.getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+r.height*.42,{n:36,speed:9,colors:['#fff','#ffe066','#ff9a3c']});
-    FX.anim(vs,[{transform:'translateX(-50%) scale(2)',opacity:0},{transform:'translateX(-50%) scale(1)',opacity:1}],200);
+    FX.anim(vs,[{transform:'scale(1.2)',opacity:0},{transform:'scale(1)',opacity:1}],200);
     for(const [j,m] of [...clash.querySelectorAll('.dsum .add')].entries()){await FX.wait(110);S.tick(j*2+4);FX.anim(m,[{opacity:0,transform:'translateY(-8px)'},{opacity:1,transform:'none'}],{duration:200,easing:'cubic-bezier(.2,1.6,.4,1)'})}
     for(const t of clash.querySelectorAll('.dsum .dtotal'))FX.anim(t,[{opacity:0,transform:'scale(1.6)'},{opacity:1,transform:'none'}],{duration:240,easing:'cubic-bezier(.3,1.5,.5,1)'});await FX.wait(200);
     await FX.wait(260);
@@ -1064,10 +1073,10 @@ async function eventCallout(ev){
 async function callout(text,cls='',ms=1000,sub=''){
   const c=$('#callout');c.innerHTML=`<div class="co ${cls}">${esc(text)}${sub?`<span class="sub">${esc(sub)}</span>`:''}</div>`;
   const el=c.firstChild;
-  await FX.anim(el,[{opacity:0,transform:'skewX(-8deg) scale(2.6) rotate(-4deg)'},{opacity:1,transform:'skewX(-8deg) scale(.94)'},{opacity:1,transform:'skewX(-8deg) scale(1)'}],{duration:260,easing:'cubic-bezier(.2,1.4,.4,1)'});
+  await FX.anim(el,[{opacity:0,transform:'skewX(-8deg) translateY(6px) scale(.9)'},{opacity:1,transform:'skewX(-8deg) scale(.98)'},{opacity:1,transform:'skewX(-8deg) scale(1)'}],{duration:260,easing:'cubic-bezier(.2,1.4,.4,1)'});
   if(!cls.includes('small')&&!cls.includes('cool'))FX.shake($('#stage'),.8);
   await FX.wait(ms);
-  await FX.anim(el,[{opacity:1},{opacity:0,transform:'skewX(-8deg) translateY(-30px) scale(1.1)'}],220);
+  await FX.anim(el,[{opacity:1},{opacity:0,transform:'skewX(-8deg) translateY(-8px)'}],220);
   c.innerHTML='';
 }
 async function bigMoment(text,good,sub){
@@ -1721,6 +1730,7 @@ function dynastyStart(){
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);$('#ticker').innerHTML='';
   const begin=async()=>{
+    beginPlayback();
     for(const mv of DYN.moves||[]){
       if(mv.how==='ring'){$('#rays').classList.add('on');S.fanfare();await callout('RING OF HONOR','',1600,`${mv.name} · ${mv.exit||'graduated'} · his card retires`);$('#rays').classList.remove('on')}
       else if(mv.how==='arrived')await callout('SIGNATURE ARRIVES','cool small',1200,`${mv.name} · from ${mv.from} · his card follows him`);
@@ -1775,6 +1785,7 @@ function startGame(){
   seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);
   $('#ticker').innerHTML='';
+  beginPlayback();
   callout('KICKOFF','small',700,`${me.name} vs ${opp.name}`).then(()=>go(null));
 }
 $('#skip').onclick=()=>{FX.skipping=true};

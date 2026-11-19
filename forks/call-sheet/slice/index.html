@@ -546,6 +546,41 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   #hand .cmd{background:#192532;border-color:#445461}
 }
 
+/* While plays run, only the scoreboard, playing surface and live result occupy the viewport. */
+#root.playback{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+#root.playback #hand,#root.playback #side,#root.playback #look,#root.playback #scorebar button{display:none}
+#root.playback #stage{grid-area:2/1;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-rows:minmax(0,1fr) auto;background:radial-gradient(ellipse at center,#243c3b,#101b24 75%)}
+.playback #fieldWrap{grid-area:1/1/2/-1;position:relative;inset:auto;min-height:0;min-width:0}
+.playback #callout,.playback #yards,.playback #clash,.playback #wx,.playback #flash{grid-area:1/1/2/-1;inset:0}
+.playback #callout,.playback #yards{display:grid;place-items:center}
+.playback #callout{container-type:inline-size;padding:10px 18px}
+.playback .co{max-width:100%;font-size:clamp(26px,min(9cqw,13dvh),96px);overflow-wrap:anywhere;padding:5px clamp(10px,2vw,24px)}
+.playback .co.small{font-size:clamp(22px,min(6cqw,9dvh),54px)}
+.playback .co .sub{font-size:clamp(12px,.36em,27px);line-height:1.2}
+.playback #ticker,.playback #matchupStory{grid-area:2/1;position:static;inset:auto;transform:none;width:auto;max-width:none;margin:0;align-self:center;align-items:flex-start;min-width:0;padding:6px 12px;text-align:left;background:#111c26}
+.playback #ticker:empty,.playback #ticker .tick:not(:first-child),.playback #stage:has(#matchupStory:not([hidden])) #ticker{display:none}
+.playback #ticker .tick{max-width:100%;padding:0;border:0;background:none;text-align:left;white-space:normal;overflow-wrap:anywhere}
+.playback #skip{grid-area:2/2;position:static;align-self:center;margin:3px 8px;min-height:36px}
+.playback #clash{overflow:auto;overscroll-behavior:contain;pointer-events:auto}
+.playback .cl{flex:none;margin:auto;width:min(760px,98%);height:auto;min-height:0;padding:8px;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:6px}
+.playback .cl .lab,.playback .clashmath{position:static;grid-column:1/-1}
+.playback .cl .fighter{position:static;width:100%;height:auto;min-height:86px;overflow-wrap:anywhere}
+.playback .cl .vs{position:static;transform:none}
+.playback .cl .stamp{top:42px}
+@media(max-width:540px){
+  .playback .cl{gap:4px}
+  .playback .cl .fighter{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:3px 6px;padding:5px 7px}
+  .playback .cl .face{width:34px;height:34px}
+  .playback .cl .fighter>.gr{grid-area:1/2;margin:0}
+  .playback .cl .fighter>div:not(.gr){grid-column:1/-1}
+  .playback .cl .vs{font-size:20px}
+}
+@media(max-height:480px){
+  .playback .cl .fighter{min-height:0;padding:4px 8px}
+  .playback .cl .face{width:32px;height:32px}
+  .playback .cl .lab,.playback .cl .vs{font-size:18px}
+}
+
 .challenge-menu,.challenge-result{box-sizing:border-box;width:min(850px,100%);margin:auto;text-align:left;border:1px solid #43525d;border-top:3px solid #d6b661;border-radius:8px;padding:clamp(16px,4vw,36px);background:linear-gradient(120deg,#1a2935,#101923 78%);color:#f4f2e9;box-shadow:0 15px 40px #0005}
 .challenge-menu h1,.challenge-menu h2,.challenge-result h1,.challenge-result h2{font:800 clamp(30px,5vw,52px)/1 var(--cond);letter-spacing:.015em;margin:0 0 12px}
 .challenge-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(185px,100%),1fr));align-items:stretch;gap:10px;margin:18px 0}
