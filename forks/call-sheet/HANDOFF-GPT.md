@@ -1,5 +1,23 @@
 # Call Sheet: handoff
 
+## November 26, 2026 · V30 & V31 review fixes + card-battler upgrade
+
+Built on `claude/v29-own-the-drive` (`fcc6731`). Implements the V30 gameplay/UX review fixes and the V31 card-battler & parity upgrade.
+
+**V30 fixes.**
+- **Tendencies, scouting & Four-Minute Offense:** Core offensive families (`run`/`quick`/`deep`) and defensive coverage (`man`/`zone`) now decay `-0.5` when another core call is made; `heat` (`pressure`) resets on successful `screen`, `draw`, or any pressure punisher, and `deep` resets on a successful `run`. Added `covTendFor(b)` and surfaced `covTend` across `lookFor`, `blindLook`, `presumedCall`, `lookCertainty`, `callReason`, `coachingRead`, and Quick Calls. `tacticRead` ranks duel-changing tactics ahead of info cards under scouting fog without calling `publicRead` or emitting `"Projected ..."` text. `seal_block` text names `Inline Mauler TE`. `four_minute_offense` now gives the defense `2` timeouts (`timeouts: [2, 2]`) so winning requires multi-snap clock management and diverges from `stacked_box`.
+- **Verdicts & Dynasty opening drive:** `snapVerdict` and `matchupStory` credit Finish recovery on `[W, L, W]` (`success`) snaps and clarify `[W, W, W]` incomplete catches. `HEADSET_RULES` adds `openingDrive: true` by default and wires it into both Dynasty (`dynastyStart`) and Quick Battle (`startGame`), plus `Your drives` (`driveLogHTML`) on Dynasty final screens (without `#copyDriveLog`).
+- **Deck floor, Facility 90, progression & mobile/laptop UX:** Added `MIN_CAPACITY = { wrinkles: 6, tactics: 6 }` (`underMinimum`) enforced in `playbook-ui.js`; Facility `>= 90` unlocks a 4th active Signature slot (`pb.signatureSlots`, `SG.slotsFor`); standalone `evoReady`/`evolutionScreen` checks `save.world?.userLineup`; removed `i === 0 ? 2 : 0` OVR bias in `CL.prospects`; preserved legal `sel.play` on `#personnel` / `#backfield` changes; added inline `[data-cmd-personnel]` in Full Call Sheet `.cmd`; pinned `#root.full-snap #hand .cmd` sticky at bottom on phone (`max-width: 860px`) while keeping `.notch` visible; and tightened laptop (`min-width: 861px and max-height: 820px`) Full/Quick heights.
+
+**V31 card-battler & parity upgrades.**
+- **Check at the Line (`type: 'redraw'`):** Once per series, cycle current wrinkles/calls (`1 CMD`, or `0 CMD` with a `Field Architect` / `Rhythm Distributor` QB or `Traffic Director` MIKE) with strict card conservation across `hand + draw + discard + exhausted`.
+- **In-series momentum surges:** Coached snaps that sweep all 3 duels for positive yardage without resetting the series earn **Clean Execution (`+1 Command`)**; coached defensive snaps that win the Gate for `<= 0` yards earn **Stonewalled (`+1 Command`)** (capped at `seriesCommand`).
+- **New combos & card juice:** Added 4 football-grounded combos (`rhythm_and_bruise`, `change_of_pace`, `bait_the_throw`, `heat_check`), `setupProgress` `SET UP 1/2` pips, `.tactic-syn` badges (`+2 GATE`, `+2 PROT`, `+2 SEP`, etc.), `.coin.rebate` for `+1 CMD COMBO` plays, `BEATS THE BLITZ` notches, and staggered `.card.dealt` entrance animations.
+- **Quick Calls parity & modal clipping fix:** Added `.quick-bar` (confirmed tell chips, one-tap `Scout:` info buttons, `[data-quick-personnel]`, `.quick-badge` pills, and `↻ Check plays`) and switched `#modal` to `align-items: flex-start` with `margin: auto` on `.mwrap` + compact `@media (max-height: 820px)` / `@media (max-width: 600px)` rules so tall modals (`HOW TO PLAY`, `ROSTER`, `FINAL`) never clip at `390×844` or `1280×800`.
+- **Challenge alternates & Dynasty parity:** Added `Face another look` alternates to `need_six` (`prevent_umbrella`) and `goal_line_stand` (`spread_pylon`), fixed `createChallenge` to target `other(b.user)` with `aiBias`, gated `aiReps` evolutions in `world.js` on `prog.lineup`, and added `P.repairMinimum` in `normalizeCardPlaybook` and `sanitizePlaybook`.
+
+**Tests.** `tests/card-review-v30.js` (5 tests) and `tests/card-battler-v31.js` (5 tests) registered in `package.json` (`test` & `test:fast`), `forks/call-sheet/tests/battle.test.js` (25/25), `tests/card-people.js` (17/17), `tests/docs-consistency.js`, `tests/release-guard.js`, `node tools/lint.js` (0 errors), and Chromium verification at `1280×800` and `390×844`.
+
 ## November 19, 2026 · V29 own the drive (Claude)
 
 Built on `release/v28` at `90104b4`. Implements the first release from the November 18 development roadmap, with
