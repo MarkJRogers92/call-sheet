@@ -142,7 +142,7 @@ test('Key Moments headset delegates fourth downs and stops once per drive at the
   }
   const outside=setup({fieldPosition:74},{inside25:true});B.advance(outside);assert.ok(outside.telemetry.snaps>0);
   const old=setup({fieldPosition:75});delete old.headset;
-  const loaded=B.load(B.save(old));assert.deepEqual(loaded.headset,{fourth:true,inside25:false,defendLead:false,restStarters:true,readOption:false});
+  const loaded=B.load(B.save(old));assert.deepEqual(loaded.headset,{openingDrive:true,fourth:true,inside25:false,defendLead:false,restStarters:true,readOption:false});
   B.advance(loaded);assert.ok(loaded.telemetry.snaps>0);
 });
 

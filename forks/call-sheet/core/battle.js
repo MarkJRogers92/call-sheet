@@ -112,6 +112,7 @@ const FORM_SIGMA=.25;
 function formEdge(b,side){const f=b.form?.[side]||0;if(Math.abs(f)<.15)return[];const t=b.teams[side];return[{duel:'K',v:Math.max(-.5,Math.min(.5,f)),src:`${t?.short||t?.name||side} ${f>0?'sharp':'flat'} today`}]}
 function edgesFor(b,offSide){const def=other(offSide);return{offEdges:[...(b.teams[offSide]?.edges?.off||[]),...formEdge(b,offSide)],defEdges:[...(b.teams[def]?.edges?.def||[]),...formEdge(b,def)]}}
 const HEADSET_RULES=[
+  {id:'openingDrive',label:'Coach my opening offensive drive from 1st down',initial:true},
   {id:'fourth',label:'Call fourth downs on the sides I coach',initial:true},
   {id:'inside25',label:'On offense, call the first snap at or inside their 25',initial:false},
   {id:'defendLead',label:'Call defense when I lead by 1–8 points',initial:false},
@@ -149,6 +150,13 @@ function leanFor(b){ // the defense leans when the offense's tendency reaches it
   return bv>=disc?best:null;
 }
 function heatFor(b){return b.tend[defSide(b)].pressure>=3}
+function covTendFor(b){
+  const dt=b.tend[defSide(b)],disc=b.teams[offSide(b)]?.coach?.discipline??4;
+  if(!dt)return null;
+  const man=dt.man||0,zone=dt.zone||0;
+  if(Math.max(man,zone)<disc||man===zone)return null;
+  return man>zone?'man':'zone';
+}
 // How close the offense is to drawing a lean: its most-called family against the coordinator's public discipline.
 // Only the offense's own call counts and the defense's scouted temperament are used, never the hidden next call.
 function leanMeter(b){
@@ -292,23 +300,24 @@ function lookFor(b,defCommit){
   const call=D.CALLS[defCommit.play],off=b.teams[offSide(b)],qb=off.lineup.off.QB,disguised=defCommit.tactics.includes('disguise');
   const qbSig=D.SIGNATURES[qb?.archetype]?.look,qbSees=(R.traitGrade(qb,'iq')>=8||qbSig==='shell')&&qbSig!=='noShell';
   const shownShell=disguised?(call.shell===2?1:2):call.shell;
-  const lean=leanFor(b);
+  const lean=leanFor(b),covTend=covTendFor(b);
   return{
     box:{value:call.box,confirmed:true},
     shell:{value:shownShell,confirmed:qbSees&&!disguised},
     pressure:{value:call.look.pressureShown,confirmed:false},
     coverage:{value:null,confirmed:false},
     lean:{value:lean,confirmed:!!off.coach.film},
+    covTend,
     heat:heatFor(b)
   };
 }
 function blindLook(b){
-  return{box:{value:'normal',confirmed:false},shell:{value:1,confirmed:false},pressure:{value:heatFor(b),confirmed:false},coverage:{value:null,confirmed:false},lean:{value:leanFor(b),confirmed:true},heat:heatFor(b)};
+  return{box:{value:'normal',confirmed:false},shell:{value:1,confirmed:false},pressure:{value:heatFor(b),confirmed:false},coverage:{value:null,confirmed:false},lean:{value:leanFor(b),confirmed:true},covTend:covTendFor(b),heat:heatFor(b)};
 }
 // What the offense believes the call is: a pseudo-call built only from the Look.
 function presumedCall(look,confirmedLeanOnly=false){
   const shell=look.shell.value===0?0:look.shell.value;
-  const coverage=look.coverage?.confirmed?look.coverage.value:(shell===2?'zone':'man');
+  const coverage=look.coverage?.confirmed?look.coverage.value:(look.covTend||(shell===2?'zone':'man'));
   const pressure=look.pressure.confirmed&&Number.isFinite(look.pressure.realLevel)?look.pressure.realLevel:(look.pressure.value?1:0);
   return{id:'presumed',box:look.box.value,shell,coverage,pressure,counters:look.lean.value&&(!confirmedLeanOnly||look.lean.confirmed)?[look.lean.value]:[],look:{}};
 }
@@ -762,8 +771,8 @@ const DRIVE_CHALLENGES=[
     home:'aerial',away:'ground',score:[20,24],clock:72,field:62,down:1,distance:10,timeouts:[1,2],seed:'need-six-9'},
   {id:'goal_line_stand',name:'Goal-Line Stand',role:'def',situation:'Up 4 · 1:32 · 1st and goal at your 4',objective:'Keep the opponent out of the end zone on this drive.',
     home:'ground',away:'tempo',score:[24,20],clock:92,field:96,down:1,distance:4,timeouts:[2,2],seed:'goal-line-11'},
-  {id:'four_minute_offense',name:'Four-Minute Offense',role:'off',situation:'Up 2 · 1:48 · 3rd and 3 · Defense has 1 timeout',objective:'Run out the clock, reach kneel-down range, or take a two-score lead.',
-    home:'ground',away:'aerial',score:[23,21],clock:108,field:42,down:3,distance:3,timeouts:[2,1],seed:'four-minute-1',
+  {id:'four_minute_offense',name:'Four-Minute Offense',role:'off',situation:'Up 2 · 1:48 · 3rd and 3 · Defense has 2 timeouts',objective:'Run out the clock, reach kneel-down range, or take a two-score lead.',
+    home:'ground',away:'aerial',score:[23,21],clock:108,field:42,down:3,distance:3,timeouts:[2,2],seed:'four-minute-1',
     // Same clock, down, distance, field position, rosters and seed. Only the opposing coordinator's behavior changes.
     alternate:{id:'stacked_box',name:'Face another look',change:'Their coordinator keeps a loaded box on every snap. Expect run fits and run blitzes, not two deep safeties.',defense:{box:'loaded'}}}
 ];
@@ -934,6 +943,7 @@ function lookCertainty(look){
     ['shell',look.shell,shell],
     ['pressure',look.pressure,v=>v?'pressure shown':'no pressure shown'],
     ['coverage',look.coverage,v=>v?`${v} coverage`:'coverage'],
+    ['covTend',!look.coverage?.confirmed&&look.covTend?{value:look.covTend,confirmed:true}:null,v=>`${v} tendency`],
     ['lean',look.lean,v=>v?`leaning ${v}`:null]
   ];
   const known=[],guess=[];
@@ -956,14 +966,15 @@ function snapVerdict(e,side=e?.offSide){
   if(!e||e.penalty||e.category==='kick'||!e.duelResults?.length||!e.duels?.length)return null;
   const offense=side===e.offSide,sign=offense?1:-1;
   const reachedN=e.duelResults[0].won?Math.min(3,e.duelResults.length,e.duels.length):1;
-  const failed=e.duelResults.slice(0,reachedN).findIndex(r=>!r.won),i=failed<0?reachedN-1:failed;
+  const wlw=reachedN>=3&&e.duelResults[0].won&&!e.duelResults[1].won&&e.duelResults[2].won;
+  const failed=e.duelResults.slice(0,reachedN).findIndex(r=>!r.won),i=wlw?2:failed<0?reachedN-1:failed;
   const d=e.duels[i];if(!d)return null;
   const offWon=!!e.duelResults[i].won,mineWon=offense?offWon:!offWon;
   const label=x=>String(x?.label||'The matchup'),names=a=>(a||[]).filter(Boolean).join(' & ');
   // Whose player is whose, from the side reading it: "their safety beat your receiver".
   const own=(mine,list)=>{const n=names(list);return n?`${mine?'your':'their'} ${n}`:mine?'your side':'their side'};
   const winner=own(mineWon,offWon?d.offNames:d.defNames),loser=own(!mineWon,offWon?d.defNames:d.offNames);
-  const decisive=`${label(d)}: ${winner} beat ${loser}.`;
+  const decisive=wlw?`${label(d)}: ${winner} beat ${loser}, recovering after losing ${label(e.duels[1])}.`:`${label(d)}: ${winner} beat ${loser}.`;
   const tactics=[];
   for(const id of (offense?e.offTactics:e.defTactics)||[]){
     const T=D.TACTICS[id];if(!T||T.info)continue;
@@ -986,7 +997,7 @@ function snapVerdict(e,side=e?.offSide){
     else if(lead.credit==='none')text=`${lead.name} did not change a matchup on this play. ${decisive}`;
     else text=`${lead.name} cost a step on this play. ${decisive}`;
   }
-  if(e.kind==='inc'&&e.duelResults.slice(0,reachedN).every(r=>r.won))text+=' The pass still fell incomplete.';
+  if(e.kind==='inc'&&e.duelResults.slice(0,reachedN).every(r=>r.won))text+=' The pass still fell incomplete — receiver could not finish the catch.';
   return{text,won:mineWon,decisive:{key:d.key,label:d.label,won:mineWon},tactics};
 }
 
@@ -1326,8 +1337,16 @@ function resolveSnap(b){
   const hurried=s.off.tactics.includes('hurry_up')&&s.def.tactics.length>0;
   b.telemetry.snaps++;b.seriesSnap++;
   const lineKey=`${play.id}${s.off.tactics.length?'+'+[...s.off.tactics].sort().join('+'):''}`;b.telemetry.lineCounts[lineKey]=(b.telemetry.lineCounts[lineKey]||0)+1;
-  // Tendencies move whether or not a flag flies.
-  b.tend[off][play.family]++;b.tend[def][call.family==='pressure'?'pressure':call.coverage]++;
+  // Tendencies move whether or not a flag flies, and decay when calling another core family.
+  if(['run','quick','deep'].includes(play.family)){
+    for(const f of ['run','quick','deep'])b.tend[off][f]=f===play.family?(b.tend[off][f]||0)+1:Math.max(0,(b.tend[off][f]||0)-0.5);
+  }
+  const defBucket=call.family==='pressure'?'pressure':call.coverage;
+  b.tend[def][defBucket]=(b.tend[def][defBucket]||0)+1;
+  if(defBucket==='man'||defBucket==='zone'){
+    const other=defBucket==='man'?'zone':'man';
+    b.tend[def][other]=Math.max(0,(b.tend[def][other]||0)-0.5);
+  }
   const pen=g.period>4?null:rollPenalty(b,play);
   const lineups={off:Object.fromEntries(Object.entries(b.teams[off].lineup.off).map(([r,p])=>[r,p.id])),def:Object.fromEntries(Object.entries(b.teams[def].lineup.def).map(([r,p])=>[r,p.id]))};
   const result={drive:dkey,lineups,...(s.twoDown?{twoDown:true}:{}),...(snap.edgeAssignment?{edgeAssignment:snap.edgeAssignment,meshChoice:play.carrier==='QB'?'keep':'give'}:{}),primaryTarget:play.target||null,bracketRole:snap.bracketRole,grouping:s.grouping||groupingFor(b,off),userCalled:!!s.userCalled,sit,offSide:off,defSide:def,play:play.id,call:call.id,offTactics:[...s.off.tactics],defTactics:[...s.def.tactics],offInfo:[...s.offInfo],defInfo:[...s.defInfo],lean,heat,duels:snap.duels,look:s.look};
@@ -1395,7 +1414,8 @@ function resolveSnap(b){
     if(['success','explosive'].includes(out.category)){
       if(play.punishes==='run'&&lean==='run'){b.tend[off].run=0;result.reset='run'}
       if(play.id==='vertical_shot'&&lean==='quick'){b.tend[off].quick=0;result.reset='quick'}
-      if(play.id==='screen'&&heat){b.tend[def].pressure=0;result.reset='pressure'}
+      if(play.family==='run'&&lean==='deep'){b.tend[off].deep=0;result.reset='deep'}
+      if((play.id==='screen'||play.id==='draw'||play.punishes==='pressure')&&heat){b.tend[def].pressure=0;result.reset='pressure'}
     }
   }
   result.after=situation(b);result.score={...g.score};
@@ -1638,14 +1658,14 @@ function callReason(req,c){
     return '';
   }
   if(c.quickKick||c.id==='spike')return '';
-  const box=known('box'),shell=known('shell'),rush=known('pressure'),coverage=known('coverage'),lean=known('lean');
+  const box=known('box'),shell=known('shell'),rush=known('pressure'),coverage=known('coverage')||(!req.look?.coverage?.confirmed?req.look?.covTend:null),lean=known('lean');
   const origin=c.evolvedFrom||c.upgradeOf||c.id;
   if(origin==='qb_sneak')return box==='loaded'?'The box is loaded. Your center and guards must move the interior front.':box==='light'?'The light box helps your line clear a yard or two for the QB.':'The QB follows the center for a short gain.';
   if(lean&&c.punishes===lean)return `${leanRead(lean)}. That helps this counter at the Key.`;
   const match=(c.matchups||[]).find(m=>({pressure:rush===true,shell1:shell===1,shell2:shell===2,man:coverage==='man',zone:coverage==='zone',loaded:box==='loaded',light:box==='light'})[m.when]);
   if(match){
-    const tell={pressure:'rush',shell1:'single-high shell',shell2:'two-high shell',man:'man coverage',zone:'zone coverage',loaded:'loaded box',light:'light box'}[match.when];
-    return `The confirmed ${tell} gives this design ${match.v>0?'help':'trouble'} on ${c.duels[match.duel].label.toLowerCase()}.`;
+    const tell={pressure:'confirmed rush',shell1:'confirmed single-high shell',shell2:'confirmed two-high shell',man:known('coverage')?'confirmed man coverage':'man-coverage tendency',zone:known('coverage')?'confirmed zone coverage':'zone-coverage tendency',loaded:'confirmed loaded box',light:'confirmed light box'}[match.when];
+    return `The ${tell} gives this design ${match.v>0?'help':'trouble'} on ${c.duels[match.duel].label.toLowerCase()}.`;
   }
   if(c.family==='run'&&box==='light')return 'The light box helps your blockers at the Gate.';
   if(c.family==='run'&&box==='loaded')return 'The loaded box gives your blockers a tougher Gate.';
@@ -1653,7 +1673,7 @@ function callReason(req,c){
   if(c.family==='deep'&&shell===0)return 'No deep safety helps your receiver at the Key.';
   if(origin==='pa_boot'&&box==='loaded')return 'Crowded linebackers give the run fake help at the Key.';
   if(origin==='screen'&&rush===true)return 'The confirmed rush helps the screen at the Gate.';
-  if(c.family==='quick'&&coverage==='man')return 'Tight man coverage makes the release harder at the Gate.';
+  if(c.family==='quick'&&coverage==='man')return `${known('coverage')?'Tight man coverage':'Their man-coverage tendency'} makes the release harder at the Gate.`;
   if(rush===true&&Object.values(c.duels||{}).some(d=>d.protect))return 'Confirmed pressure gives your blockers less time to protect the passer.';
   if(c.family==='deep'&&req.situation?.field>=80)return 'Inside the 20, there is less room to get open deep.';
   return '';
@@ -1666,7 +1686,7 @@ function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=fa
   if(!card)return null;
   const play=off?R.targetedPlay(card,primaryTarget,lineup):card;
   // On a live battle without scouting fog, suggest the affordable tactic that moves the public projection most.
-  // Hand order is only the fallback, so an information card no longer outranks a tactic that changes the duel.
+  // Under fog, never call publicRead/buildSnap; rank duel-changing tactics ahead of info cards in the fallback loop.
   const base=b?.game&&off&&!fog&&!selected.length?publicRead(b,req,p.id,false,primaryTarget,[],read):null;
   if(base){
     let best=null;
@@ -1683,7 +1703,7 @@ function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=fa
       let effect=`Projected yards ${before.yards.toFixed(1)} → ${after.yards.toFixed(1)}.`;
       if(Math.round(after.first*100)>Math.round(before.first*100))effect=`Projected first down ${pct(before.first)} → ${pct(after.first)}.`;
       else if(Math.round(after.turnover*100)<Math.round(before.turnover*100))effect=`Projected turnover risk ${pct(before.turnover)} → ${pct(after.turnover)}.`;
-      return{id:best.t.id,name:best.tc.name,cost:best.t.cost,reason:why+' '+effect,selected:false};
+      return{id:best.t.id,name:best.tc.name,cost:best.t.cost,reason:fog?why:why+' '+effect,selected:false};
     }
   }
   const l=req.look||{},family=req.offLook?.family,duels=Object.values(play.duels||{});
@@ -1705,7 +1725,8 @@ function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=fa
     }
   }
   const hand=o.tactics||[],isSelected=selected.length>0;
-  for(const t of (isSelected?selected.map(i=>hand.find(t=>t.slot===i)).filter(Boolean):hand)){
+  const ordered=isSelected?selected.map(i=>hand.find(t=>t.slot===i)).filter(Boolean):[...hand].sort((a,c)=>((a.card||D.TACTICS[a.id])?.info?1:0)-((c.card||D.TACTICS[c.id])?.info?1:0));
+  for(const t of ordered){
     const card=t.card||D.TACTICS[t.id];if(!card)continue;
     const blocked=R.signatureBlocked(card,lineup)||(off&&!card.info&&R.tacticBlocked(card,play,lineup));
     if(!isSelected&&(blocked||p.cost+t.cost>o.command||play.quickKick||play.id==='spike'))continue;
@@ -1797,6 +1818,7 @@ function coachingRead(req,playId){
     else if(l.pressure.value||l.heat)cues.push(`${l.pressure.confirmed?'Confirmed pressure':l.heat?'Repeated pressure on film':'Pressure shown, not confirmed'}: protection or a screen may help.`);
     if(l.shell.confirmed&&l.shell.value===2)cues.push('Two deep safeties: deep routes face a tougher Key duel.');
     if(l.shell.confirmed&&l.shell.value===0)cues.push('No deep safety: a deep shot has help at the Key, if protection holds.');
+    if(!l.coverage?.confirmed&&l.covTend)cues.push(`${l.covTend==='man'?'Man':'Zone'} coverage tendency on film.`);
     if(cues.length===(play?1:0))cues.push('No clear tell yet. Motion can confirm coverage; an unconfirmed shell may be a disguise.');
   }else{
     const f=req.offLook?.family;
@@ -1827,7 +1849,8 @@ function explainSnap(e){
 function matchupStory(e){
   if(!e||e.penalty||e.category==='kick'||!e.duelResults?.length)return null;
   const reached=e.duelResults[0].won?e.duelResults.slice(0,3):e.duelResults.slice(0,1);
-  const failed=reached.findIndex(r=>!r.won),i=failed<0?reached.length-1:failed,d=e.duels?.[i];
+  const wlw=reached.length>=3&&reached[0].won&&!reached[1].won&&reached[2].won;
+  const failed=reached.findIndex(r=>!r.won),i=wlw?2:failed<0?reached.length-1:failed,d=e.duels?.[i];
   if(!d)return null;
   const offWon=!!reached[i].won,winnerSide=offWon?e.offSide:e.defSide;
   const names=(offWon?d.offNames:d.defNames)||[],losers=(offWon?d.defNames:d.offNames)||[];
@@ -1845,7 +1868,8 @@ function matchupStory(e){
     else if(sign*ratingEdge>0)detail='The winner had the player-rating edge in the traits this duel tested.';
   }
   // A duel is not the same as a catch: outcome tables can still produce an incompletion.
-  if(e.kind==='inc'&&reached.every(r=>r.won))detail+=' All reached duels went the offense’s way, but the pass still fell incomplete.';
+  if(e.kind==='inc'&&reached.every(r=>r.won))detail+=' All reached duels went the offense’s way, but the receiver could not finish the catch.';
+  else if(wlw)detail=`${d.label} recovered the play after losing ${e.duels[1].label.toLowerCase()}. ${detail}`;
   return{summary:`${d.label}: ${names.filter(Boolean).join(' & ')||'The winner'} beat ${losers.filter(Boolean).join(' & ')||'the matchup'}.`,detail,defense:defenseNote(e,d,offWon),key:d.key,winnerSide,winnerRoles:offWon?d.offRoles:d.defRoles,loserRoles:offWon?d.defRoles:d.offRoles,offWon,ratingEdge,setupEdge};
 }
 // After the snap the defense's call is public. Name it with the scheme and situation edges that helped the winner of
@@ -2320,5 +2344,5 @@ function duelTally(b){
   }
   return out;
 }
-return{driveSummary,delegatedRecap,driveLog,setupCue,lookCertainty,snapVerdict,DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{driveSummary,delegatedRecap,driveLog,covTendFor,setupCue,lookCertainty,snapVerdict,DRIVE_CHALLENGES,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

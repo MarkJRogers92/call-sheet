@@ -453,7 +453,7 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   #hand .fan .card{width:100%;height:auto;min-height:76px;display:block;overflow:hidden;margin:0;padding:9px 10px;transform:none;touch-action:pan-y}
   #hand .fan .card .cname{display:block;padding-right:26px;margin:0 0 2px;font-size:17px}
   #hand .fan .card .cost{top:4px;right:4px;width:22px;height:22px;font-size:14px}
-  #hand .fan .card .art,#hand .fan .card .shine,#hand .fan .card .origin,#hand .fan .card .rar,#hand .fan .card .finish,#hand .fan .card .notch,#hand .fan .card .setup-ready{display:none}
+  #hand .fan .card .art,#hand .fan .card .shine,#hand .fan .card .origin,#hand .fan .card .rar,#hand .fan .card .finish,#hand .fan .card .setup-ready{display:none}
   #hand .fan .card .ctype{font-size:11px}
   #hand .fan .card .ctext{display:block;font-size:13px;line-height:1.35;color:#d4dbe5;margin-top:3px}
   #hand .fan .card .cwhy{position:static;display:block;font-size:12px}
@@ -552,6 +552,13 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   #hand .fan .card:not(.k-tactic) .art{display:block;margin:4px 0;height:38px}
   #hand .fan .card .setup-ready{display:block}
   #hand .cmd{background:#192532;border-color:#445461}
+  #root.full-snap #hand .cmd{position:sticky;bottom:0;z-index:10;box-shadow:0 -4px 16px #060a12cc}
+}
+@media(min-width:861px) and (max-height:820px){
+  .quick-snap #hand{max-height:54vh;padding:8px 14px 10px}
+  #root.full-snap .sheet-cards{max-height:38dvh}
+  #root.full-snap #hand .fan .card{min-height:132px;padding-bottom:12px}
+  #root.full-snap #hand .fan .card .art{height:42px}
 }
 
 .call-forecast{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 12px;padding:4px 9px;border-left:2px solid #88b8be;background:#172632;color:#e6edef;text-align:left;font:600 14px/1.2 var(--cond)}

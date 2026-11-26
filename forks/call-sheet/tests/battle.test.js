@@ -118,10 +118,16 @@ test('Goal-Line Stand distinguishes a fourth-down stop from an allowed touchdown
 });
 
 test('Four-Minute Offense can secure the clock or lose the ball on downs',()=>{
-  const win=playChallenge('four_minute_offense',['power']);
-  assert.ok(win.result.won);assert.equal(win.b.game.timeouts.away,0);assert.equal(win.b.game.clock,102);
-  // With a defensive timeout left, three kneels would burn only 80 seconds.
-  win.b.game.timeouts.away=1;assert.equal(B.challengeResult(win.b),null);
+  const b=B.createChallenge('four_minute_offense');
+  assert.equal(b.game.timeouts.away,2);
+  // One first down still leaves 2 defensive timeouts and >100s, so the game is not over after one conversion.
+  B.submit(b,{type:'call',play:'power',tactics:[]});
+  assert.equal(B.challengeResult(b),null);
+  // Continuing to move the chains puts the offense in kneel-down range even with 2 defensive timeouts.
+  let guard=0;
+  while(!B.challengeResult(b)&&guard++<12)B.submit(b,{type:'call',play:'inside_zone',tactics:[]});
+  const res=B.challengeResult(b);
+  assert.ok(res?.won);
   const loss=playChallenge('four_minute_offense',['quick_slant','go','outside_zone']);
   assert.equal(loss.result.won,false);assert.match(loss.result.recap,/turnover on downs/);
 });

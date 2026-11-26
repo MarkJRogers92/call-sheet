@@ -36,6 +36,7 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
   pb.reserve=Object.fromEntries(['off','def'].map(side=>[side,{wrinkles:ids(pb.reserve?.[side]?.wrinkles,CALL_SHEET_RESERVE_LIMIT).filter(id=>legal(id,side,false)),tactics:ids(pb.reserve?.[side]?.tactics,CALL_SHEET_RESERVE_LIMIT).filter(id=>legal(id,side,true))}]));
   pb.achievements=[...new Set(ids(pb.achievements,30))].filter(id=>CS.packs.ACHIEVEMENTS.some(a=>a.id===id));
   pb.capacity={wrinkles:int(pb.capacity?.wrinkles,10,30,14),tactics:int(pb.capacity?.tactics,10,30,14)};
+  if(pb.signatureSlots!==undefined)pb.signatureSlots=int(pb.signatureSlots,3,4,3);
   pb.legendaries=ids(pb.legendaries,20);pb.record={w:int(pb.record?.w,0,9999,0),l:int(pb.record?.l,0,9999,0)};
   pb.packsOpened=int(pb.packsOpened,0,99999,0);pb.gamesPlayed=int(pb.gamesPlayed,0,99999,0);
   if(pb.lastSignatureGame!==undefined)pb.lastSignatureGame=int(pb.lastSignatureGame,0,99999,0);
@@ -49,7 +50,7 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
     if(!Object.hasOwn(D.OFF_ROLES,x.role)&&!Object.hasOwn(D.DEF_ROLES,x.role))return false;
     if(CS.signatures.templateFor({role:x.role,archetype:x.archetype})!==x.template)return false;
     const built=CS.signatures.build(x);return x.side===built.side&&x.pile===(built.kind==='tactic'?'tactics':'wrinkles');
-  };pb.signatures=objs(pb.signatures,maxSignatures).filter(validSignature);pb.reserveSignatures=objs(pb.reserveSignatures,CALL_SHEET_UNUSED_SIGNATURE_LIMIT).filter(validSignature);pb.ringOfHonor=objs(pb.ringOfHonor,200);
+  };pb.signatures=objs(pb.signatures,Math.max(maxSignatures,pb.signatureSlots||3)).filter(validSignature);pb.reserveSignatures=objs(pb.reserveSignatures,CALL_SHEET_UNUSED_SIGNATURE_LIMIT).filter(validSignature);pb.ringOfHonor=objs(pb.ringOfHonor,200);
   for(const spec of [...pb.signatures,...pb.reserveSignatures,...pb.ringOfHonor])if(spec.provenance)spec.provenance=CS.signatures.cardHistory(spec.provenance);
   for(const r of pb.ringOfHonor)if(r.cardCareer!==undefined){const c=cleanCardCareer(r.cardCareer);if(c)r.cardCareer=c;else delete r.cardCareer}
   if(Array.isArray(pb.deferredEvolutions))pb.deferredEvolutions=[...new Set(ids(pb.deferredEvolutions,20))].filter(id=>Object.hasOwn(CS.evolution.TREE,id)&&!pb.evolved[id]);else delete pb.deferredEvolutions;
@@ -205,7 +206,7 @@ function normalizeCallSheet(u){
           target.signatures??=[];target.reserveSignatures??=[];
           if(![...target.signatures,...target.reserveSignatures].some(x=>String(x.playerId)===id)){
             CS.signatures.remember(incoming,`${universe.year} · Transferred from ${team.name} to ${owner.team.name}.`);
-            (target.signatures.length<(owner.team.id===me.id?CS.signatures.SLOTS:2)?target.signatures:target.reserveSignatures).push(incoming);CS.signatures.register(incoming);
+            (target.signatures.length<(owner.team.id===me.id?(CS.signatures.slotsFor?CS.signatures.slotsFor(target):CS.signatures.SLOTS):2)?target.signatures:target.reserveSignatures).push(incoming);CS.signatures.register(incoming);
             (target.history??=[]).push({id:incoming.id,kind:'transfer-in',side:incoming.side,from:team.name});
           }
           (pb.history??=[]).push({id:sg.id,kind:'departed',side:sg.side,to:owner.team.name});
@@ -290,7 +291,7 @@ function normalizeCallSheet(u){
     }});
 
   // The facilities rating is already earned through Dynasty Lab's building projects.
-  const FACILITY_LINK=registerCardIntegration({id:'facility-playbook',label:'Facilities support the playbook',about:'Facilities 75 unlock 16 play/tactic slots; 90 unlock 18. Earned capacity stays unlocked.',
+  const FACILITY_LINK=registerCardIntegration({id:'facility-playbook',label:'Facilities support the playbook',about:'Facilities 75 unlock 16 play/tactic slots; 90 unlock 18 and a 4th active signature slot. Earned capacity stays unlocked.',
     hooks:{launch(ctx){syncProgramCapacity(ctx.me,userPlaybook());ctx.cfg.playbook=userPlaybook()},weekTick(){syncProgramCapacity(selected(),userPlaybook())},offseason(){syncProgramCapacity(selected(),userPlaybook())}}});
   function syncProgramCapacity(team,pb){if(team&&pb&&integrationOn(FACILITY_LINK))CS.program.syncCapacity(pb,team);return pb}
   function trainingFor(team,pb){
@@ -719,7 +720,7 @@ function normalizeCallSheet(u){
       const legacy={playerId:legendId,name:String(entry.name||'a legend').slice(0,60),last:CS.signatures.lastName(entry.name||'Legend'),number:entry.number??null};
       const spec=CS.signatures.specFor(CS.adapter.toBattlePlayer(heir,slot[0]),{legacy,earned:`Legacy of #${entry.number??''} ${legacy.last}`,season:universe.year,provenance:[`${universe.year} · ${heir.name} inherited the retired number of ${legacy.name} at ${me.name}.`]});
       pb.signatures??=[];pb.reserveSignatures??=[];
-      (pb.signatures.length<CS.signatures.SLOTS?pb.signatures:pb.reserveSignatures).push(spec);CS.signatures.register(spec);
+      (pb.signatures.length<(CS.signatures.slotsFor?CS.signatures.slotsFor(pb):CS.signatures.SLOTS)?pb.signatures:pb.reserveSignatures).push(spec);CS.signatures.register(spec);
       (pb.history??=[]).push({id:spec.id,kind:'legacy',side:spec.side});pb.legacies.push(legendId);carded.add(String(heir.id));
       rewardMoment(`${heir.name} inherits the legacy of #${entry.number??''} ${legacy.name}: a Legacy signature card.`);
     }
@@ -892,7 +893,7 @@ function normalizeCallSheet(u){
     const pb=userPlaybook(),role=roleFor(p,team);if(!role)return null;
     const spec=CS.signatures.specFor(CS.adapter.toBattlePlayer(p,role),{season:universe.year,provenance:[`${universe.year} · ${team.name} · ${info.earned||why}.`],...info});
     pb.signatures??=[];pb.reserveSignatures??=[];
-    (pb.signatures.length<CS.signatures.SLOTS?pb.signatures:pb.reserveSignatures).push(spec);CS.signatures.register(spec);
+    (pb.signatures.length<(CS.signatures.slotsFor?CS.signatures.slotsFor(pb):CS.signatures.SLOTS)?pb.signatures:pb.reserveSignatures).push(spec);CS.signatures.register(spec);
     (pb.history??=[]).push({id:spec.id,kind:info.legacy?'legacy':'signature',side:spec.side,why});return spec;
   }
   const hasCard=(pb,id)=>[...(pb.signatures||[]),...(pb.reserveSignatures||[])].some(x=>String(x.playerId)===String(id));
@@ -1654,7 +1655,7 @@ function normalizeCallSheet(u){
       <div class="cpn-actions"><button type="button" class="cpn-btn" data-card-deck${locked?' disabled':''}>Build Deck</button>${coach}${globalThis.CallSheetBundle?'<button type="button" id="deckDriveChallenges" class="cpn-link" data-drive-challenges aria-haspopup="dialog">Drive Challenges</button>':''}</div>
       ${locked?'<p class="cpn-foot">Your deck is locked for the current battle. Finish it before editing.</p>':''}
       ${retoolHTML()}
-      <h3>In your deck</h3><div class="cpn-bridge-grid">${active}</div><p class="cpn-foot"><b>Player signatures:</b> ${(pb?.signatures||[]).length}/${CS.signatures.SLOTS} across both sides</p>
+      <h3>In your deck</h3><div class="cpn-bridge-grid">${active}</div><p class="cpn-foot"><b>Player signatures:</b> ${(pb?.signatures||[]).length}/${CS.signatures.slotsFor?CS.signatures.slotsFor(pb):CS.signatures.SLOTS} across both sides</p>
       <p class="cpn-foot">Facilities increase pile capacity. A normal series draws up to three plays and four tactics. Filling extra slots spreads those draws across more cards.</p>
       <p class="cpn-foot"><b>Opening script:</b> ${pb?.off.openingScript?escH(cardName(pb.off.openingScript)):'Normal draw'}</p>
       ${seasonRecapHTML()}

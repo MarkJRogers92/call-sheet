@@ -46,7 +46,7 @@ function prospects(programId,role,pos,season,winPct,n=3){
   const archs=[...D.STYLES[pos]];
   for(let i=0;i<n;i++){
     const arch=archs.length?archs.splice(rng.int(0,archs.length-1),1)[0]:rng.pick(D.STYLES[pos]);
-    const q=Math.round(66+(winPct-.5)*10+rng.gauss()*6+(i===0?2:0));
+    const q=Math.round(66+(winPct-.5)*10+rng.gauss()*6);
     const p=Ro.makePlayer(rng,role,pos,arch,q-4); // arrives a little raw
     p.id=`${programId}-${role}-s${season}-${i}`;p.year=1;p.career=blankCareer();p.stars=stars(q);p.potential=q;
     out.push(p);

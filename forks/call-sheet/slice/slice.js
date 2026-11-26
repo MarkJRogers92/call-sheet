@@ -708,10 +708,11 @@ function renderSide(){
   if(req?.kind==='snap'&&sel.play){
     const featured=matchupHTML();if(featured)$('#coachingRead')?.insertAdjacentHTML('afterbegin',featured);
   }
-  const personnel=$('#personnel');if(personnel)personnel.onchange=()=>{if(busy)return;try{req=B.setGrouping(b,req.side,personnel.value)||b.pending;sel={play:null,tac:[]};writeSave();setFormation(sitNow(),0);refresh();$('#personnel')?.focus({preventScroll:true})}catch(e){err=e.message;renderHand()}};
+  const keepSel=prev=>{const ok=prev.play&&req?.options?.plays?.some(x=>x.id===prev.play&&!x.blocked);return ok?{play:prev.play,tac:prev.tac.filter(slot=>req.options.tactics.some(t=>t.slot===slot))}:{play:null,tac:[]}};
+  const personnel=$('#personnel');if(personnel)personnel.onchange=()=>{if(busy)return;try{const prev=sel;req=B.setGrouping(b,req.side,personnel.value)||b.pending;sel=keepSel(prev);writeSave();setFormation(sitNow(),0);refresh();$('#personnel')?.focus({preventScroll:true})}catch(e){err=e.message;renderHand()}};
   const backfield=$('#backfield');if(backfield)backfield.onchange=()=>{
     if(busy)return;
-    try{req=B.setBackfield(b,req.side,backfield.value);writeSave();sel={play:null,tac:[]};err='';hideTip();const f=formation(sitNow());if(f)ensureDots(f);refresh()}catch(e){err=e.message;renderHand()}
+    try{const prev=sel;req=B.setBackfield(b,req.side,backfield.value);writeSave();sel=keepSel(prev);err='';hideTip();const f=formation(sitNow());if(f)ensureDots(f);refresh()}catch(e){err=e.message;renderHand()}
   };
   $('#bHelp').onclick=()=>howToPlay();
   $('#bFast').onclick=()=>{save.settings.fast=!save.settings.fast;FX.speed=save.settings.fast?.45:1;writeSave();renderSide()};
@@ -741,6 +742,7 @@ function renderLook(){
     tags.push(['box',`BOX: ${l.box.value}`,l.box.confirmed]);tags.push(['shell',`SHELL: ${shell(l.shell.value)}`,l.shell.confirmed]);
     tags.push(['pressure',`PRESSURE: ${l.pressure.value?'SHOWN':'NONE SHOWN'}`,l.pressure.confirmed]);
     if(l.coverage.confirmed)tags.push(['coverage',`COVERAGE: ${l.coverage.value}`,true]);
+    else if(l.covTend)tags.push(['covTend',`TENDENCY: ${l.covTend.toUpperCase()}`,true,'lean']);
     if(l.lean.value&&l.lean.confirmed)tags.push(['lean',B.leanRead(l.lean.value),true,'lean']);
     if(l.heat)tags.push(['heat','🔥 BLITZ-HAPPY',true,'lean']);
     if(req.leanMeter){const text=leanMeterText(req);if(text)tags.push(['meter',text,true,'lean'])}
@@ -853,7 +855,10 @@ function renderHand(){
   const cost=selCost(),total=Math.max(D.RULES.seriesCommand,o.command);
   let coins='';for(let i=0;i<total;i++){const gone=i>=o.command,spend=!gone&&i>=o.command-cost;coins+=`<span class="coin ${gone?'gone':''} ${spend?'spend':''}"></span>`}
   const over=cost>o.command,why=play&&(play.blocked||blockedSelection(play));
-  cmd.innerHTML=`${sel.play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}</strong>`:''}${assignmentHTML()}${role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
+  const grpOpts=role==='off'&&B.groupingOptions?B.groupingOptions(b,req.side):null;
+  const grpMode=b.grouping?.[req.side]||'auto';
+  const grpHTML=grpOpts?`<label class="assignment cmd-personnel"><span>Personnel</span><select data-cmd-personnel>${grpOpts.map(p=>`<option value="${esc(p.id)}" ${p.id===grpMode?'selected':''} ${p.available===false?'disabled':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
+  cmd.innerHTML=`${sel.play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}</strong>`:''}${grpHTML}${assignmentHTML()}${role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
     ${callForecastHTML()}<button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
@@ -869,6 +874,8 @@ function renderHand(){
   cards.style.setProperty('--tactics',Math.max(1,o.tactics.length)+'fr');
   cards.append(fanP,fanT);h.append(cards,cmd);cards.scrollTop=previousScroll;
   bindAssignment(h);bindTwoDown(h);
+  const cmdPers=h.querySelector('[data-cmd-personnel]');
+  if(cmdPers)cmdPers.onchange=()=>{if(busy)return;try{const prev=sel;req=B.setGrouping(b,req.side,cmdPers.value)||b.pending;const ok=prev.play&&req?.options?.plays?.some(x=>x.id===prev.play&&!x.blocked);sel=ok?{play:prev.play,tac:prev.tac.filter(slot=>req.options.tactics.some(t=>t.slot===slot))}:{play:null,tac:[]};writeSave();setFormation(sitNow(),0);refresh();$('[data-cmd-personnel]')?.focus({preventScroll:true})}catch(e){err=e.message;renderHand()}};
   if(err)cmd.insertAdjacentHTML('afterbegin',`<span class="sheet-error" role="status">${esc(err)}</span>`);
   $('#snapBtn').onclick=()=>snap();
   $('#autoBtn').onclick=()=>{S.whoosh();go({type:'auto'})};
@@ -1185,7 +1192,7 @@ async function cinematic(e){
   else if(firstDown)await callout('FIRST DOWN!',goodFor(true)?'':'bad',1000);
   else if(e.yards<=0)await callout('STUFFED!',goodFor(false)?'':'bad small',800);
   if(goodFor(true)&&(td||e.yards>=20||firstDown))S.crowd(td?2:1.2,td?.55:.35);
-  if(e.reset)await callout('DEFENSE BACKS OFF','hotc small',1000,{run:'They stop committing to the run',quick:'They stop sitting on short passes',pressure:'They back off the repeated pressure'}[e.reset]);
+  if(e.reset)await callout('DEFENSE BACKS OFF','hotc small',1000,{run:'They stop committing to the run',quick:'They stop sitting on short passes',deep:'They stop playing two-deep on every snap',pressure:'They back off the repeated pressure'}[e.reset]);
   for(const ev of e.events||[])await eventCallout(ev);
   ticker(e.text);
 }
@@ -1391,11 +1398,11 @@ function refreshMilestone(){const box=$('#milestoneReward');if(box){box.outerHTM
 // Playtest record of this game's possessions: who called them, where the first coached decision came and with how
 // much Command, setup cues offered or used, and whether the coach asked for the next drive.
 function driveLogHTML(){
-  if(DYN||!b.driveCoach)return'';
+  if(!b.driveCoach)return'';
   const drives=B.driveLog(b);if(!drives.length)return'';
   const who=d=>d.coached==='opening'?'Opening drive · you':d.coached==='next'?'You (next drive)':d.coached==='chosen'?'You (sideline)':d.userCalls?'Key Moments':'Staff';
   const nth=['','1st','2nd','3rd','4th'];
-  return`<details class="drive-log" id="driveLog"><summary>Your drives · ${drives.filter(d=>d.coached).length} coached of ${drives.length}</summary><ol>${drives.map(d=>`<li><b>${esc(who(d))}</b> · ${d.plays} plays, ${d.yards} yd, ${esc(d.result.replace(/_/g,' '))}${d.firstDecision?` · first call ${nth[d.firstDecision.down]} down, ${d.firstDecision.command} Command`:''}${d.cuesShown.length?` · setup ${d.cuesUsed.length?'used':'offered'}`:''}</li>`).join('')}</ol><button type="button" class="tbtn" id="copyDriveLog">Copy playtest log</button></details>`;
+  return`<details class="drive-log" id="driveLog"><summary>Your drives · ${drives.filter(d=>d.coached).length} coached of ${drives.length}</summary><ol>${drives.map(d=>`<li><b>${esc(who(d))}</b> · ${d.plays} plays, ${d.yards} yd, ${esc(d.result.replace(/_/g,' '))}${d.firstDecision?` · first call ${nth[d.firstDecision.down]} down, ${d.firstDecision.command} Command`:''}${d.cuesShown.length?` · setup ${d.cuesUsed.length?'used':'offered'}`:''}</li>`).join('')}</ol>${DYN?'':'<button type="button" class="tbtn" id="copyDriveLog">Copy playtest log</button>'}</details>`;
 }
 function finalScreen(){
   if(b._packPicked){const over=P.overCapacity(save.playbook);if(over)cutScreen(over);else afterPack();return}
@@ -1550,7 +1557,7 @@ async function cutScreen(over,added){
   };g.appendChild(w)});
 }
 // In a dynasty, branches unlock with the players who run them (the battle's real lineup). The sandbox has no gates.
-const evoReady=pb=>EV.ready(pb,{lineup:DYN&&b?b.teams[b.user].lineup:null}).filter(x=>!(DYN&&pb.deferredEvolutions?.includes(x.rootId))&&x.options.some(id=>!x.locks?.[id]));
+const evoReady=pb=>EV.ready(pb,{lineup:DYN&&b?b.teams[b.user].lineup:save.world?.userLineup||null}).filter(x=>!(DYN&&pb.deferredEvolutions?.includes(x.rootId))&&x.options.some(id=>!x.locks?.[id]));
 async function afterPack(){
   await FX.wait(900);
   const r=evoReady(save.playbook);
@@ -1598,7 +1605,8 @@ async function breakoutScreen(won){
   await FX.anim($('#boFace'),[{opacity:0,transform:'scale(.3) rotate(-10deg)'},{opacity:1,transform:'none'}],{duration:500,easing:'cubic-bezier(.2,1.4,.4,1)'});
   S.clash();FX.shake(m,1.6);FX.anim($('#boName'),[{opacity:0,transform:'scale(2.4)'},{opacity:1,transform:'none'}],{duration:300,easing:'cubic-bezier(.2,1.4,.4,1)'});
   await FX.wait(700);
-  const full=(pb.signatures||[]).length>=SG.SLOTS;
+  const sigLimit=SG.slotsFor?SG.slotsFor(pb):SG.SLOTS;
+  const full=(pb.signatures||[]).length>=sigLimit;
   SG.register(spec);
   const holder=$('#boCard'),cel=card(spec.id,{});holder.appendChild(cel);
   $('#boMsg').style.opacity=1;S.fanfare();
@@ -1607,7 +1615,7 @@ async function breakoutScreen(won){
   $('#rays').classList.remove('on');
   const done=()=>{b._breakoutResolved=true;writeSave();$('#boBtns').innerHTML=`<button class="btn go" id="toPack">${won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>${bankButton()}`;bindBank();$('#toPack').onclick=()=>packScreen(won)};
   if(!full){SG.add(pb,spec);done();return}
-  $('#boSlots').innerHTML=`<p class="statline">ALL ${SG.SLOTS} SIGNATURE SLOTS ARE FULL. <b>Replace one</b>, or let this card go.</p><div class="pbgrid" id="boOld"></div><button class="btn" id="boSkip">LET IT GO</button>`;
+  $('#boSlots').innerHTML=`<p class="statline">ALL ${sigLimit} SIGNATURE SLOTS ARE FULL. <b>Replace one</b>, or let this card go.</p><div class="pbgrid" id="boOld"></div><button class="btn" id="boSkip">LET IT GO</button>`;
   pb.signatures.forEach((sg,i)=>{const w=document.createElement('div');w.className='cutme';w.appendChild(card(sg.id,{small:true}));w.onclick=()=>{S.burn();SG.add(pb,spec,i);$('#boSlots').innerHTML=`<p class="statline">${esc(sg.name)}'s card retires. <b>${esc(p.name)}</b> takes the slot.</p>`;done()};$('#boOld').appendChild(w)});
   $('#boSkip').onclick=()=>{pb.lastSignatureGame=pb.record.w+pb.record.l;$('#boSlots').innerHTML='';done()};
 }
@@ -1803,7 +1811,7 @@ function playbookView(pb,name,progId){
   m.innerHTML=`<div class="mwrap"><p class="big gold" style="font-size:clamp(36px,6vw,72px)">${esc(name.toUpperCase())}</p>
     ${spec?`<p class="statline">${esc(identity(spec))} · coordinator ${esc(spec.coach)} · record <b>${save.world.programs[progId].record.w}-${save.world.programs[progId].record.l}</b></p>`:''}
     ${group('OFFENSE · CALL SHEET',pb.off.base)}${group(`OFFENSE · PLAY PILE (max ${pb.capacity.wrinkles})`,pb.off.wrinkles)}${group(`OFFENSE · TACTICS (max ${pb.capacity.tactics})`,pb.off.tactics)}
-    ${(pb.signatures||[]).length?group(`SIGNATURE CARDS (max ${SG.SLOTS})`,pb.signatures.map(s=>s.id)):''}
+    ${(pb.signatures||[]).length?group(`SIGNATURE CARDS (max ${SG.slotsFor?SG.slotsFor(pb):SG.SLOTS})`,pb.signatures.map(s=>s.id)):''}
     ${(pb.ringOfHonor||[]).length?group('RING OF HONOR · retired with their players',pb.ringOfHonor.map(s=>s.id)):''}
     ${group('DEFENSE · CALL SHEET',pb.def.base)}${group(`DEFENSE · CALL PILE (max ${pb.capacity.wrinkles})`,pb.def.wrinkles)}${group(`DEFENSE · TACTICS (max ${pb.capacity.tactics})`,pb.def.tactics)}
     <button class="btn go" id="back">BACK</button></div>`;
@@ -1855,7 +1863,7 @@ function evolutionScreen(r){
       m.querySelectorAll('.branch').forEach(x=>{if(x!==w)FX.anim(x,[{opacity:1},{opacity:0,transform:'scale(.7) translateY(40px)'}],400)});
       FX.anim($('#evoRoot'),[{opacity:1,filter:'brightness(1)'},{opacity:0,filter:'brightness(3)',transform:'scale(1.3)'}],450);
       await FX.anim(w,[{transform:'none'},{transform:'scale(1.25) translateY(-20px)'}],{duration:500,easing:'cubic-bezier(.2,1.4,.4,1)'});
-      EV.evolve(pb,from,w.dataset.b,{lineup:DYN&&b?b.teams[b.user].lineup:null});writeSave();
+      EV.evolve(pb,from,w.dataset.b,{lineup:DYN&&b?b.teams[b.user].lineup:save.world?.userLineup||null});writeSave();
       w.insertAdjacentHTML('beforeend','<div class="evostamp">EVOLVED</div>');
       await FX.wait(1300);$('#rays').classList.remove('on');
       const more=evoReady(pb);if(more.length)evolutionScreen(more[0]);else afterWeek();
@@ -1893,7 +1901,7 @@ function dynastyStart(){
   const AD=window.CallSheet.adapter;
   const opp=DYN.oppPlaybook?sanitizePlaybook(DYN.oppPlaybook):null;if(opp)SG.registerAll(opp);
   const deckFor=side=>DYN.userSide===side?P.decksOf(save.playbook):(opp?P.decksOf(opp):null);
-  b=B.create({coachingWindows:true,home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
+  b=B.create({coachingWindows:true,openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
     classicSide:DYN.userSide,user:DYN.userSide,mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:DYN.seed,weather:DYN.weather||'clear',rivalry:!!DYN.rivalry,conditions:DYN.conditions||null});
   b._trainingRates=DYN.trainingRates||{};
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
@@ -1948,7 +1956,7 @@ function resumeBattle(){
 }
 function startGame(){
   const oid=oppId(),me=W.teamFor(save.team,save.playbook,save.world.userLineup),opp=W.teamFor(oid,save.world.programs[oid].playbook,save.world.programs[oid].lineup);
-  b=B.create({coachingWindows:true,openingDrive:true,home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
+  b=B.create({coachingWindows:true,openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
   if(save.settings.guidedDrivePending)O.start(b);
   setWeather(b.weather);
   seen=0;staffFrom=0;staffRecaps=[];sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};

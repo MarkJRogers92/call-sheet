@@ -190,7 +190,7 @@ const TACTICS={
   hard_count:{id:'hard_count',side:'off',name:'Hard Count',cost:1,info:true,icon:'!',text:'Confirms whether the shown pressure is real. A shaky center (composure 5 or less) risks a false start.'},
   max_protect:{id:'max_protect',side:'off',name:'Max Protect',cost:1,icon:'⛨',text:'+2 on a Protection duel. One fewer route: Finish −1.',needs:{protection:true}},
   route_adjust:{id:'route_adjust',side:'off',name:'Route Adjustment',cost:1,icon:'↱',text:'+1 on the target\'s separation or release duel; +1 more if Motion confirmed the coverage this snap.',needs:{pass:true,targetIq:6}},
-  seal_block:{id:'seal_block',side:'off',name:'Seal Block',cost:1,icon:'▮',text:'+2 on the Gate of Outside Zone, Read Option or Power.',needs:{plays:['outside_zone','read_option','power']}},
+  seal_block:{id:'seal_block',side:'off',name:'Seal Block',cost:1,icon:'▮',text:'+2 on the Gate of Outside Zone, Read Option or Power (requires Inline Mauler TE).',needs:{plays:['outside_zone','read_option','power']}},
   check_with_me:{id:'check_with_me',side:'off',name:'Check-With-Me',cost:2,info:true,icon:'✓',text:'Confirms every fact in the Look before you call.'},
   film_tell:{id:'film_tell',side:'def',name:'Film Tell',cost:1,info:true,icon:'◉',text:'Confirms the offense\'s play family (run, quick, deep or constraint).'},
   identify_protection:{id:'identify_protection',side:'def',name:'Identify Protection',cost:1,info:true,icon:'⌖',text:'Confirms whether they kept extra blockers in. Your pressure Gate +1 this snap.'},

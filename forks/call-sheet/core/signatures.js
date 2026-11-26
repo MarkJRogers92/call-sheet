@@ -196,12 +196,13 @@ function candidate(b,side,pb){
   const have=new Set([...(pb.signatures||[]),...(pb.reserveSignatures||[])].map(s=>s.playerId));
   return breakouts(b,side).find(t=>!have.has(t.p.id))||null;
 }
+function slotsFor(pb){return Math.max(SLOTS,Number(pb?.signatureSlots)||SLOTS)}
 function add(pb,spec,replaceIndex){
   pb.signatures??=[];
-  if(pb.signatures.length>=SLOTS){if(replaceIndex==null)return{full:true};pb.signatures.splice(replaceIndex,1)}
+  if(pb.signatures.length>=slotsFor(pb)){if(replaceIndex==null)return{full:true};pb.signatures.splice(replaceIndex,1)}
   pb.signatures.push(spec);register(spec);pb.lastSignatureGame=pb.gamesPlayed??((pb.record?.w||0)+(pb.record?.l||0));(pb.history??=[]).push({id:spec.id,kind:'signature',side:spec.side});
   return{full:false};
 }
 
-return{BREAKOUT,breakoutGoal,deckFit,SLOTS,COOLDOWN,templateFor,build,buildAny,describe,register,registerAll,specFor,cardHistory,remember,breakoutCard,breakouts,candidate,add,lastName};
+return{BREAKOUT,breakoutGoal,deckFit,SLOTS,slotsFor,COOLDOWN,templateFor,build,buildAny,describe,register,registerAll,specFor,cardHistory,remember,breakoutCard,breakouts,candidate,add,lastName};
 });

@@ -304,7 +304,8 @@ function previewPlan(pb,side,key,maxStored=Infinity){
 function deckCounts(pb,side){
   const group=pile=>({active:pb[side][pile].length,limit:pb.capacity[pile],stored:pb.reserve?.[side]?.[pile]?.length||0});
   const plays=group('wrinkles'),tactics=group('tactics');
-  const signatures={active:pb.signatures?.length||0,limit:root.CallSheet.signatures.SLOTS,stored:pb.reserveSignatures?.length||0};
+  const sigLimit=root.CallSheet.signatures.slotsFor?root.CallSheet.signatures.slotsFor(pb):root.CallSheet.signatures.SLOTS;
+  const signatures={active:pb.signatures?.length||0,limit:sigLimit,stored:pb.reserveSignatures?.length||0};
   const sides=['off','def'],regularCount=s=>pb[s].base.length+pb[s].wrinkles.length+pb[s].tactics.length;
   const sideLimit=4+plays.limit+tactics.limit,teamActive=sides.reduce((n,s)=>n+regularCount(s),signatures.active);
   const teamStored=sides.reduce((n,s)=>n+(pb.reserve?.[s]?.wrinkles?.length||0)+(pb.reserve?.[s]?.tactics?.length||0),signatures.stored);
@@ -378,7 +379,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
   const dialog=document.createElement('dialog');dialog.id='deckEditor';dialog.setAttribute('aria-labelledby','de-title');
   dialog.innerHTML=`<style>${EDITOR_CSS}</style><div class="de-head"><div class="de-top"><div><div class="de-kicker">DECK ROOM</div><h2 id="de-title">Choose your cards</h2></div>
     <div class="de-side-nav" role="group" aria-label="Choose a side"><button type="button" data-side="off">Offense</button><button type="button" data-side="def">Defense</button></div></div>
-    <p class="de-intro">Keep 4 base calls on each side. All other slots are optional. Cards you remove stay in your collection.</p>
+    <p class="de-intro">Keep 4 base calls, at least ${P.MIN_CAPACITY?.wrinkles||6} plays, and at least ${P.MIN_CAPACITY?.tactics||6} tactics on each side. Cards you remove stay in your collection.</p>
     <p class="de-type-legend">IN DECK / LIMIT</p><div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div>${staged?`<p class="de-suggest" data-suggested-swap><b>Staged from last game:</b> −1 ${esc(staged.removeName||staged.remove)}, +1 ${esc(staged.addName||staged.add)}. ${esc(staged.why||'')} Save deck to keep it, or Cancel to change nothing.</p>`:''}</div>
     <div class="de-body"></div><div class="de-foot"><div data-deck-status role="status" aria-live="polite"></div>
     <div class="de-save-actions"><button type="button" data-cancel>Cancel</button><button type="button" data-save>Save deck</button></div></div>`;
@@ -407,6 +408,10 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
       const n=draft[over.side][over.pile].length-draft.capacity[over.pile];
       return{side:over.side,category:over.pile,msg:`Remove ${n} ${nounOf[over.pile]}${n===1?'':'s'} before saving. This type is over its deck limit.`};
     }
+    const under=P.underMinimum?.(draft);if(under){
+      const n=under.min-draft[under.side][under.pile].length;
+      return{side:under.side,category:under.pile,msg:`Add ${n} ${under.side==='off'?'offensive':'defensive'} ${nounOf[under.pile]}${n===1?'':'s'} before saving. Minimum ${under.min} ${nounOf[under.pile]}s per side.`};
+    }
     for(const s of ['off','def']){
       const pile=storageBlock(draft.reserve[s],maxStored);if(pile){const n=draft.reserve[s][pile].length-maxStored;
         return{side:s,category:pile,msg:`Add ${n} ${s==='off'?'offensive':'defensive'} ${nounOf[pile]}${n===1?'':'s'} to the deck before saving. Only ${maxStored} copies of this type can stay outside it.`};}
@@ -425,7 +430,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
     const full=g.active>=g.limit,noun=nounOf[category],unused=group[category].stored||0;
     const note=category==='base'?'Exactly 4 different calls, always available. Swap a call below; its old card takes the new card’s place. Keep one free call with no special requirements.':
       shared?`Pick up to ${g.limit} across the whole team. These use no regular slots. You can only play a signature when its player is on the field.`:
-      `Pick up to ${g.limit} ${adjective} ${titleOf[category].toLowerCase()}. Each copy uses one slot. ${category==='wrinkles'?'Extra copies make a play more likely to turn up.':'A larger pile gives you more options but dilutes each draw.'}`;
+      `Pick ${P.MIN_CAPACITY?.[category]||6} to ${g.limit} ${adjective} ${titleOf[category].toLowerCase()}. Each copy uses one slot. ${category==='wrinkles'?'Extra copies make a play more likely to turn up.':'A larger pile gives you more options but dilutes each draw.'}`;
     const wrong=invalidDraft();
     const warning=wrong&&wrong.category===category&&(shared||side===wrong.side)?wrong.msg:full&&unused>0&&noun?`All ${g.limit} slots are in use. Remove one ${noun} from the deck before adding another.`:'';
     const help=`<h3 id="de-list-title" tabindex="-1">${heading}</h3><p class="de-sub">${note}</p>${warning?`<p class="de-banner" id="de-limit-note">${esc(warning)}</p>`:''}`;

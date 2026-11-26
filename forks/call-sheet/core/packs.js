@@ -30,6 +30,7 @@ function invalidFilmNote(c){
 }
 
 const CAPACITY={wrinkles:14,tactics:14};
+const MIN_CAPACITY={wrinkles:6,tactics:6};
 function newPlaybook(){
   return{version:2,reserve:{off:{wrinkles:[],tactics:[]},def:{wrinkles:[],tactics:[]}},achievements:[],off:clone(D.DEFAULT_DECKS.off),def:clone(D.DEFAULT_DECKS.def),capacity:clone(CAPACITY),legendaries:[],record:{w:0,l:0},history:[],packsOpened:0,mastery:{},signatures:[]};
 }
@@ -314,6 +315,13 @@ function overCapacity(pb){
   }
   return null;
 }
+function underMinimum(pb){
+  for(const side of ['off','def']){
+    if(pb[side].wrinkles.length<MIN_CAPACITY.wrinkles)return{side,pile:'wrinkles',min:MIN_CAPACITY.wrinkles};
+    if(pb[side].tactics.length<MIN_CAPACITY.tactics)return{side,pile:'tactics',min:MIN_CAPACITY.tactics};
+  }
+  return null;
+}
 function cut(pb,side,pile,index){
   const list=pb[side][pile];if(index<0||index>=list.length)throw new Error('No card at that slot.');
   const [id]=list.splice(index,1);
@@ -397,5 +405,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,cut,cardDef};
+return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,MIN_CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,underMinimum,cut,cardDef};
 });

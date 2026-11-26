@@ -4,9 +4,12 @@
 const rootOf=c=>c.evolvedFrom||c.upgradeOf||c.id;
 const clamp=(n,a,b)=>Math.max(a,Math.min(b,n));
 function facilityCapacity(team){const rating=Number(team.facilities)||0;return rating>=90?18:rating>=75?16:14}
+function signatureCapacity(team){return (Number(team.facilities)||0)>=90?4:3}
 function syncCapacity(pb,team){
   const n=facilityCapacity(team);pb.capacity??={wrinkles:14,tactics:14};
   for(const pile of ['wrinkles','tactics'])pb.capacity[pile]=Math.max(pb.capacity[pile]||14,n);
+  const sigs=signatureCapacity(team);
+  if(sigs>3||(pb.signatureSlots!=null))pb.signatureSlots=Math.max(pb.signatureSlots||3,sigs);
   return pb.capacity;
 }
 const fitCache=new WeakMap();
@@ -89,5 +92,5 @@ function developmentImpact(p,role,pb){
   const helps=plays.filter(c=>Object.values(c.duels).some(d=>(d.off.includes(role)&&d.ot.includes(trait))||(d.def.includes(role)&&d.dt.includes(trait)))).slice(0,3).map(c=>c.name);
   return{year:receipt.year,phase:receipt.phase,trait,gain,plays:helps};
 }
-return{facilityCapacity,syncCapacity,prospectFit,prospectJobs,trainingRates,developmentImpact};
+return{facilityCapacity,signatureCapacity,syncCapacity,prospectFit,prospectJobs,trainingRates,developmentImpact};
 });

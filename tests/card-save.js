@@ -10,13 +10,13 @@ const P=require('../forks/call-sheet/core/packs.js');
   let u={callSheet:{version:1,playbook:pb,combos:['establish'],settings:{mode:'snap',control:'both',fast:true,sound:false},games:3,seenHelp:true}};
   u=JSON.parse(JSON.stringify(u));n(u);
   assert.deepEqual(u.callSheet.playbook.off.wrinkles,pb.off.wrinkles);assert.equal(u.callSheet.playbook.mastery.inside_zone,12);
-  assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false,integrations:{},replays:'all',headset:{fourth:true,inside25:false,defendLead:false,restStarters:true,readOption:false}});assert.equal(u.callSheet.games,3);
+  assert.deepEqual(u.callSheet.settings,{mode:'snap',control:'both',fast:true,sound:false,integrations:{},replays:'all',headset:{openingDrive:true,fourth:true,inside25:false,defendLead:false,restStarters:true,readOption:false}});assert.equal(u.callSheet.games,3);
   for(const view of ['full','quick','bogus']){
     const copy={callSheet:{settings:{sheetView:view}}};
     n(copy);assert.equal(copy.callSheet.settings.sheetView,view==='bogus'?undefined:view);
   }
   const headsetSave={callSheet:{settings:{headset:{fourth:false,inside25:true,defendLead:'true',extra:true}}}};
-  n(headsetSave);assert.deepEqual(headsetSave.callSheet.settings.headset,{fourth:false,inside25:true,defendLead:false,restStarters:true,readOption:false});
+  n(headsetSave);assert.deepEqual(headsetSave.callSheet.settings.headset,{openingDrive:true,fourth:false,inside25:true,defendLead:false,restStarters:true,readOption:false});
   assert.equal(u.callSheet.playbook.off.openingScript,'draw');
   for(const stale of ['inside_zone','fake_punt','unknown',{},'__proto__']){
     const badScript=JSON.parse(JSON.stringify(u));badScript.callSheet.playbook.off.openingScript=stale;n(badScript);

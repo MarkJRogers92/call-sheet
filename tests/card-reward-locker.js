@@ -83,8 +83,8 @@ async function finishedDynasty(stage){
 }
 test('a recorded bowl can be banked on resume with a full signature roster, claimed once, and never blocks the next stage',async()=>{
   const {postgameFrame}=require('./helpers/postgame-frame'),{e,cg,host,b,CS}=await finishedDynasty('bowl');
-  const getPb=()=>e.universe.callSheet.playbook,lu=b.teams[b.user].lineup.off;
-  for(const p of [lu.QB,lu.X,lu.TE])CS.signatures.add(getPb(),CS.signatures.specFor(p));
+  const getPb=()=>e.universe.callSheet.playbook,lu=b.teams[b.user].lineup.off,slots=CS.signatures.slotsFor?CS.signatures.slotsFor(getPb()):CS.signatures.SLOTS;
+  for(const p of [lu.QB,lu.X,lu.TE,lu.LT].slice(0,slots))CS.signatures.add(getPb(),CS.signatures.specFor(p));
   let closes=0;const entry={...host,close:()=>closes++};
   const frame=postgameFrame(entry),snap=JSON.stringify(frame.api.b._gamePack);assert.match(frame.get('#modal').innerHTML,/id="bankPack"/);
   const resumed=postgameFrame(entry);assert.equal(JSON.stringify(resumed.api.b._gamePack),snap);assert.equal(e.universe.callSheet.games,1);
@@ -92,7 +92,7 @@ test('a recorded bowl can be banked on resume with a full signature roster, clai
   resumed.api.b._breakout={p:lu.RB,wins:17,duels:19,fire:2};
   const bank=resumed.get('#bankPack').onclick;bank();bank();
   assert.equal(closes,1);assert.equal(e.universe.callSheet.activeBattle,null);assert.equal(e.universe.callSheet.games,1);
-  assert.equal(getPb().reserveSignatures.filter(s=>s.id==='sig_'+lu.RB.id).length,1);assert.equal(getPb().signatures.length,3);
+  assert.equal(getPb().reserveSignatures.filter(s=>s.id==='sig_'+lu.RB.id).length,1);assert.equal(getPb().signatures.length,slots);
   const [offer]=getPb().gamePacks;assert.equal(JSON.stringify(offer),snap);assert.equal(getPb().packsOpened,0);assert.ok(!getPb().evolved?.inside_zone);
   const phase=e.universe.phase;e.simPlayoff();assert.notEqual(e.universe.phase,phase);
   const normalized=JSON.parse(JSON.stringify({callSheet:e.universe.callSheet}));e.normalizeCallSheet(normalized);
