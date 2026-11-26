@@ -1,22 +1,38 @@
-<section id="titleScreen" class="title-screen" aria-labelledby="titleGameName">
-  <div class="title-screen-art" aria-hidden="true"></div>
-  <div class="title-screen-shade" aria-hidden="true"></div>
-  <div class="title-trophy" aria-hidden="true"><span class="trophy-turn"><span class="trophy-frame"></span><span class="trophy-frame trophy-next"></span></span></div>
+<section id="titleScreen" class="title-screen" role="main" aria-labelledby="titleGameName">
+  <div class="title-screen-art" aria-hidden="true">
+    <img src="assets/call-sheet-tunnel.webp" width="1672" height="941" alt="" fetchpriority="high">
+  </div>
   <div class="title-screen-content">
     <header class="title-brand">
-      <h1 id="titleGameName" aria-label="Dynasty Lab"><img class="dynasty-logo dynasty-logo-wide" src="assets/brand/dynasty-lab-primary-v1.png" alt="Dynasty Lab" width="1774" height="887" fetchpriority="high"></h1>
-      <p>Build the program. Own the era.</p>
+      <p class="title-genre"><span class="title-route" aria-hidden="true"></span>College football card battler</p>
+      <h1 id="titleGameName">Call <span>Sheet</span></h1>
+      <p class="title-intro">Build a playbook around your roster, read the defense, and call the game one snap at a time.</p>
     </header>
 
     <div class="title-menu-shell">
       <nav id="titleMainMenu" class="title-menu" aria-label="Main menu">
-        <button id="titleContinue" class="title-action title-action--primary" type="button" disabled>
-          <span><strong>Continue Dynasty</strong><small id="titleContinueMeta">Checking for a saved dynasty…</small></span><i aria-hidden="true">›</i>
-        </button>
-        <button id="titleNew" class="title-action" type="button"><span><strong>New Dynasty</strong><small>Choose a program and begin in 2027</small></span><i aria-hidden="true">›</i></button>
-        <button id="titleLoad" class="title-action" type="button"><span><strong>Load Dynasty</strong><small>Saved dynasty or exported JSON</small></span><i aria-hidden="true">›</i></button>
-        <button id="titleOptions" class="title-action" type="button"><span><strong>Options</strong><small>Motion and broadcast playback</small></span><i aria-hidden="true">›</i></button>
-        <button id="titleHowTo" class="title-action title-action--quiet" type="button"><span><strong>How to Play</strong><small>Your first season in three steps</small></span><i aria-hidden="true">›</i></button>
+        <div class="title-career">
+          <button id="titleContinue" class="title-action" type="button" disabled hidden>
+            <span><strong>Continue Dynasty</strong><small id="titleContinueMeta"></small></span><i class="title-arrow" aria-hidden="true"></i>
+          </button>
+          <button id="titleNew" class="title-action title-action--primary" type="button">
+            <span><strong>New Dynasty</strong><small>Recruit a roster and build your program.</small></span><i class="title-arrow" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="title-play">
+          <button id="titleQuickBattle" class="title-action" type="button" aria-haspopup="dialog" data-quick-battle>
+            <span><strong>Quick Battle</strong><small>Pick a team and play.</small></span><i class="title-arrow" aria-hidden="true"></i>
+          </button>
+          <button id="titleDriveChallenges" class="title-action" type="button" aria-haspopup="dialog" data-drive-challenges>
+            <span><strong>Drive Challenges</strong><small>Coach one or three drives.</small></span><i class="title-arrow" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="title-utilities">
+          <button id="titleLoad" type="button" aria-controls="titleLoadPanel">Load Dynasty</button>
+          <button id="titleOptions" type="button" aria-controls="titleOptionsPanel">Options</button>
+          <button id="titleHowTo" type="button" aria-controls="titleHowPanel">How to Play</button>
+          <button id="titleAbout" type="button" aria-controls="titleAboutPanel">About</button>
+        </div>
       </nav>
 
       <section id="titleNewPanel" class="title-subpanel" aria-labelledby="titleNewHeading" hidden>
@@ -32,25 +48,54 @@
         <label class="title-field">Save slot<select id="titleSaveSlot" aria-label="Save slot"></select></label>
         <button id="titleLoadBrowser" class="title-panel-choice" type="button" disabled><strong>Load saved dynasty</strong><small id="titleLoadMeta">Checking this device…</small></button>
         <div class="title-slot-name"><input id="titleSlotName" type="text" maxlength="40" aria-label="Save slot name"><button id="titleRenameSlot" type="button">Rename</button></div>
-        <button id="titleImport" class="title-panel-choice" type="button"><strong>Import exported save</strong><small>Choose a Dynasty Lab backup (.json or .json.gz)</small></button>
+        <button id="titleImport" class="title-panel-choice" type="button"><strong>Import exported save</strong><small>Choose a save backup (.json or .json.gz)</small></button>
       </section>
 
       <section id="titleOptionsPanel" class="title-subpanel" aria-labelledby="titleOptionsHeading" hidden>
-        <div class="title-panel-head"><div><span>OPTIONS</span><h2 id="titleOptionsHeading">Presentation</h2></div><button type="button" data-title-back aria-label="Back to main menu">Back</button></div>
-        <label class="title-toggle"><span><strong>Title &amp; Watch motion</strong><small>Atmosphere and broadcast animation</small></span><input id="titleMotion" type="checkbox" checked></label>
-        <label class="title-toggle"><span><strong>Sound</strong><small>Crowd, whistle, fight-song sting and ceremonies</small></span><input id="titleSound" type="checkbox" checked></label>
-        <label class="title-field">Sound volume<input id="titleVolume" type="range" min="0" max="100" step="5" value="60"></label>
-        <label class="title-field">Default Watch Mode speed<select id="titleWatchSpeed"><option value="1400">Slow</option><option value="850">Normal</option><option value="400">Fast</option></select></label>
-        <button id="titleSaveOptions" class="title-panel-primary" type="button">Save Options</button>
+        <div class="title-panel-head"><h2 id="titleOptionsHeading">Game &amp; Presentation</h2><button type="button" data-title-back aria-label="Back to main menu">Back</button></div>
+        <div class="title-settings">
+          <label class="title-setting"><span><strong>Interface motion</strong><small>Menu transitions and Watch Mode animation</small></span><input id="titleMotion" type="checkbox" checked></label>
+          <label class="title-setting"><span><strong>Watch Mode pace</strong><small>Time between plays in the broadcast</small></span><select id="titleWatchSpeed"><option value="1400">Slow</option><option value="850">Normal</option><option value="400">Fast</option></select></label>
+          <label class="title-setting"><span><strong>Sound</strong><small>Crowd, whistle, fight-song sting and ceremonies</small></span><input id="titleSound" type="checkbox" checked></label>
+          <label class="title-setting"><strong>Sound volume</strong><input id="titleVolume" type="range" min="0" max="100" step="5" value="60"></label>
+        </div>
+        <div class="title-settings-actions">
+          <button id="titleResetOptions" type="button">Reset Motion &amp; Pace</button>
+          <button id="titleSaveOptions" class="title-panel-primary" type="button">Save &amp; Return</button>
+        </div>
       </section>
 
       <section id="titleHowPanel" class="title-subpanel" aria-labelledby="titleHowHeading" hidden>
-        <div class="title-panel-head"><div><span>HOW TO PLAY</span><h2 id="titleHowHeading">Build your era</h2></div><button type="button" data-title-back aria-label="Back to main menu">Back</button></div>
-        <ol class="title-how-list"><li><b>1</b><span><strong>Set the program</strong><small>Shape the roster, roles, staff and weekly plan.</small></span></li><li><b>2</b><span><strong>Own Saturdays</strong><small>Sim instantly or watch your game unfold play by play.</small></span></li><li><b>3</b><span><strong>Build the legacy</strong><small>Recruit, develop, survive expectations and chase titles.</small></span></li></ol>
+        <div class="title-panel-head"><h2 id="titleHowHeading">How to Play</h2><button type="button" data-title-back aria-label="Back to main menu">Back</button></div>
+        <ol class="title-how-list">
+          <li><strong>Build your call sheet</strong><span>Pair plays and tactics with the players who can execute them.</span></li>
+          <li><strong>Read the matchup</strong><span>Use the scout read and yardage estimate to weigh the risks. A well-timed tactic can turn a duel.</span></li>
+          <li><strong>Coach the drive</strong><span>Manage Command and establish tendencies. Set up a call that exploits what the opponent expects next.</span></li>
+        </ol>
+      </section>
+
+      <section id="titleAboutPanel" class="title-subpanel" aria-labelledby="titleAboutHeading" hidden>
+        <div class="title-panel-head"><h2 id="titleAboutHeading">About Call Sheet</h2><button type="button" data-title-back aria-label="Back to main menu">Back</button></div>
+        <p>Call Sheet is a college football card battler set in Dynasty Lab’s fictional universe.</p>
+        <dl class="title-about-facts">
+          <div><dt>Version</dt><dd data-about-version></dd></div>
+          <div><dt>Battle build</dt><dd data-about-battle-build></dd></div>
+        </dl>
+        <div class="title-about-detail">
+          <h3 data-about-save-heading>Browser slots + complete exports</h3>
+          <p>Dynasty saves use named slots on this device. Export a JSON backup to restore a dynasty or move it to another device.</p>
+        </div>
+        <div class="title-about-detail" data-about-report>
+          <h3>Report a problem</h3>
+          <p>Copy the game version and recent errors for a bug report. Your dynasty save stays on this device.</p>
+          <div class="title-about-actions"><button type="button" data-about-copy-report>Copy problem details</button><a href="https://github.com/MarkJRogers92/call-sheet/issues/new" target="_blank" rel="noopener">Open an issue ↗</a></div>
+          <p data-about-report-status role="status"></p>
+        </div>
+        <p class="title-credits" data-about-credits>Barlow Condensed by The Barlow Project Authors, SIL Open Font License 1.1. The championship trophy and team helmets were modeled with Meshy.</p>
       </section>
     </div>
 
-    <footer class="title-footer"><span id="titleStatus" role="status" aria-live="polite">Preparing the main menu…</span><span>Dynasty Lab <b data-title-version>v—</b></span></footer>
+    <footer class="title-footer"><span id="titleStatus" role="status">Checking save slots…</span><b data-title-version>v—</b></footer>
   </div>
 </section>
 
@@ -58,7 +103,7 @@
   <div class="setup-backdrop" aria-hidden="true"></div>
   <div class="setup-frame">
     <header class="setup-header">
-      <div class="setup-brand"><img class="dynasty-logo dynasty-logo-wide setup-brand-logo" src="assets/brand/dynasty-lab-primary-v1.png" alt="Dynasty Lab" width="1774" height="887"><small>NEW DYNASTY</small></div>
+      <div class="setup-brand"><span class="setup-call-sheet">Call Sheet</span><small>NEW DYNASTY</small></div>
       <div id="setupProgress" class="setup-progress" aria-label="Setup progress"></div>
       <button id="setupExit" class="setup-exit" type="button">Exit Setup</button>
     </header>

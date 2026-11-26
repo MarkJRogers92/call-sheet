@@ -14,7 +14,7 @@
     if(!line){
       line=document.createElement('div');
       line.id='storageUsage';line.className='storage-usage';
-      const anchor=panel.querySelector('#titleSaveOptions');
+      const anchor=panel.querySelector('.title-settings-actions');
       if(anchor)anchor.insertAdjacentElement('beforebegin',line);else panel.append(line);
     }
     return fillUsage(line);

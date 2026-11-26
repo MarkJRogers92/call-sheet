@@ -31,20 +31,23 @@ const {startNewDynasty}=require('./helpers/start-new-dynasty');
     assert.equal(image.alt,'Dynasty Lab',`${name}: accessible brand name`);
     assert.ok(image.width>50&&image.left>=0&&image.right<=viewport.width+1,`${name}: logo fits screen`);
    };
+   const checkTitle=async()=>{
+    assert.equal((await page.locator('#titleGameName').textContent()).trim(),'Call Sheet');
+    assert.equal(await page.$eval('.title-screen-art img',async img=>{await img.decode();return img.naturalWidth>0}),true,`${name}: tunnel artwork loads`);
+   };
    const capture=async(label)=>{if(screenshots)await page.screenshot({path:path.join(screenshots,`${name}-${label}.png`),fullPage:true})};
    await page.goto(testPageURL());
    await page.waitForFunction(()=>document.querySelector('#titleTeam')?.options.length===120,null,{timeout:60000});
-   await checkLogo('#titleGameName img');
-   assert.equal(await page.locator('#titleGameName').getAttribute('aria-label'),'Dynasty Lab');
+   await checkTitle();
    await capture('title');
    await page.click('#titleAbout');
-   await checkLogo('.title-about-logo');
+   assert.equal(await page.locator('#titleAboutHeading').textContent(),'About Call Sheet');
    await capture('about');
-   await page.click('[data-title-about-back]');
+   await page.click('#titleAboutPanel [data-title-back]');
    await page.click('#titleNew');
-   await checkLogo('.setup-brand-logo');
+   assert.equal(await page.locator('.setup-call-sheet').textContent(),'Call Sheet');
    const layout=await page.evaluate(()=>{
-    const logo=document.querySelector('.setup-brand-logo').getBoundingClientRect();
+    const logo=document.querySelector('.setup-call-sheet').getBoundingClientRect();
     const progress=document.querySelector('.setup-progress').getBoundingClientRect();
     const exit=document.querySelector('#setupExit').getBoundingClientRect();
     return {logoRight:logo.right,logoBottom:logo.bottom,progressTop:progress.top,exitLeft:exit.left};
@@ -54,7 +57,7 @@ const {startNewDynasty}=require('./helpers/start-new-dynasty');
    await capture('setup');
    await page.click('#setupExit');
    assert.ok(await page.locator('#titleMainMenu').isVisible(),`${name}: setup returns to title`);
-   await checkLogo('#titleGameName img');
+   await checkTitle();
    await startNewDynasty(page,{beginSeason:false});
    if(viewport.width<=860)await page.click('.client-nav-toggle');
    await checkLogo('.client-rail-logo');
@@ -62,7 +65,7 @@ const {startNewDynasty}=require('./helpers/start-new-dynasty');
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),`${name}: no horizontal overflow`);
    assert.deepEqual(errors,[],`${name}: no console or page errors`);
    await page.close();
-   console.log(`PASS ${name}: logo loads in title, About, setup and navigation; re-entry works`);
+   console.log(`PASS ${name}: title art, setup and navigation branding fit; re-entry works`);
   }
  }finally{await browser.close()}
 })().catch(error=>{console.error(error);process.exit(1)});

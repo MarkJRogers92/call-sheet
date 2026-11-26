@@ -2350,7 +2350,7 @@ function normalizeCallSheet(u){
     back.type='button';back.textContent=backLabel;back.onclick=()=>dialog.close();bar.append(back);
     back.style.cssText='height:40px;padding:0 14px;border:1px solid #57637a;border-radius:7px;background:#202a3a;color:inherit;font:600 14px system-ui;cursor:pointer';
     const frame=document.createElement('iframe');
-    frame.dataset[mode]='true';frame.title=title;
+    frame.dataset[mode]='true';frame.dataset.returnLabel=backLabel;frame.title=title;
     frame.style.cssText='display:block;border:0;width:100%;height:calc(100% - 48px)';
     dialog.addEventListener('close',()=>{
       dialog.remove();
@@ -2377,12 +2377,20 @@ function normalizeCallSheet(u){
   }
   function openDriveChallenges(trigger){
     if(!globalThis.CallSheetBundle||document.getElementById('driveChallengeHost'))return;
-    const {dialog,back,frame}=driveDialog(trigger,'driveChallengeHost','Drive Challenges','Return to Dynasty','driveChallenges');
+    const backLabel=trigger.closest('#titleScreen')?'Back to Title':'Return to Dynasty';
+    const {dialog,back,frame}=driveDialog(trigger,'driveChallengeHost','Drive Challenges',backLabel,'driveChallenges');
     back.id='driveChallengeBack';
     frame.addEventListener('closechallenge',()=>dialog.close(),{once:true});
     showDriveDialog(dialog,frame);
   }
+  function openQuickBattle(trigger){
+    if(!globalThis.CallSheetBundle||document.getElementById('quickBattleHost'))return;
+    const {dialog,frame}=driveDialog(trigger,'quickBattleHost','Quick Battle','Back to Title','quickBattle');
+    showDriveDialog(dialog,frame);
+  }
   document.addEventListener('click',event=>{
+    const quickBattle=event.target.closest?.('[data-quick-battle]');
+    if(quickBattle){openQuickBattle(quickBattle);return}
     const challenge=event.target.closest?.('[data-drive-challenges]');
     if(challenge){openDriveChallenges(challenge);return}
     const button=event.target.closest?.('[data-classic-drive]');

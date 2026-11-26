@@ -22,7 +22,7 @@ const {startNewDynasty}=require('./helpers/start-new-dynasty');
    await page.waitForFunction(()=>/copied|Select and copy/.test(document.querySelector('[data-about-report-status]').textContent));
    assert.match(await page.locator('[data-about-credits]').innerText(),/SIL Open Font License/);
    assert.match(await page.locator('[data-about-report] a').getAttribute('href'),/\/issues\/new$/);
-   await page.click('[data-title-about-back]');
+   await page.click('#titleAboutPanel [data-title-back]');
    await startNewDynasty(page,{beginSeason:false});
    assert.equal(await page.locator('#crashGuard').count(),0,'a healthy start shows no crash screen');
    assert.deepEqual(await page.evaluate(()=>window.DynastyCrashGuard.log()),[],'a healthy start records nothing');

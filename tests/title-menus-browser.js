@@ -20,17 +20,34 @@ const expectedVersion = 'v' + fs.readFileSync(path.join(__dirname, '..', 'VERSIO
       page.on('pageerror',error=>errors.push(String(error)));
 
       await page.goto('file://' + path.join(__dirname, '..', 'index.html'));
-      await page.waitForFunction(()=>document.querySelector('#titleTeam')?.options.length>0,{timeout:60000});
+      await page.waitForFunction(()=>document.querySelector('#titleTeam')?.options.length>0,null,{timeout:60000});
+
+      assert.equal(await page.locator('#titleGameName').textContent(),'Call Sheet',`[${label}] Call Sheet title`);
+      assert.equal(await page.locator('#titleContinue').isHidden(),true,`[${label}] empty save slots offer New Dynasty`);
+      const battle=page.locator('#titleQuickBattle');
+      await battle.click();
+      const quick=page.frameLocator('#quickBattleHost iframe');
+      await quick.locator('[data-team]').first().waitFor();
+      assert.match(await quick.locator('#modal').innerText(),/Quick Battle/i);
+      await page.getByRole('button',{name:'Back to Title',exact:true}).click();
+      assert.equal(await page.evaluate(()=>document.activeElement.id),'titleQuickBattle',`[${label}] Quick Battle restores focus`);
+      await page.locator('#titleDriveChallenges').click();
+      const challenges=page.frameLocator('#driveChallengeHost iframe');
+      await challenges.getByRole('heading',{name:'Drive Challenges'}).waitFor();
+      assert.equal(await challenges.locator('#beginChallengeRun').isVisible(),true,`[${label}] three-drive run is available`);
+      await challenges.getByRole('button',{name:'Back to Title',exact:true}).click();
+      assert.equal(await page.evaluate(()=>document.activeElement.id),'titleDriveChallenges',`[${label}] challenge menu returns to title`);
 
       assert.equal(await page.locator('#titleAbout').isVisible(),true,`[${label}] About entry is visible`);
       await page.click('#titleAbout');
       assert.equal(await page.locator('#titleAboutPanel').isVisible(),true,`[${label}] About panel opens`);
       assert.equal((await page.textContent('[data-about-version]')).trim(),expectedVersion,`[${label}] About shows current version`);
-      assert.match(await page.textContent('#titleAboutPanel'),/Fictional college football dynasty simulator/i,`[${label}] About identifies the game`);
+      assert.match(await page.textContent('#titleAboutPanel'),/college football card battler/i,`[${label}] About identifies the game`);
       assert.match(await page.textContent('#titleAboutPanel'),/Browser slots \+ complete exports/i,`[${label}] About explains save model`);
       assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),true,`[${label}] About does not overflow viewport`);
-      await page.click('[data-title-about-back]');
+      await page.keyboard.press('Escape');
       assert.equal(await page.locator('#titleMainMenu').isVisible(),true,`[${label}] About returns to main menu`);
+      assert.equal(await page.evaluate(()=>document.activeElement.id),'titleAbout',`[${label}] Escape restores focus`);
 
       await page.click('#titleOptions');
       assert.equal(await page.locator('#titleOptionsPanel').isVisible(),true,`[${label}] Options panel opens`);
@@ -58,7 +75,7 @@ const expectedVersion = 'v' + fs.readFileSync(path.join(__dirname, '..', 'VERSIO
 
       assert.deepEqual(errors,[],`[${label}] title menus produce no console/page errors`);
       await page.close();
-      console.log(`PASS ${label} Options/About title menus`);
+      console.log(`PASS ${label} Call Sheet title, Quick Battle, Drive Challenges, Options and About`);
     }
   } finally {
     await browser.close();
