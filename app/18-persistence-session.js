@@ -150,23 +150,29 @@ function renderSaveSlotControls(){
 }
 function renderTitleState(){
  const current=universe?{universe,userTeam:$('#userTeam').value}:null,continuation=current||titleBrowserSave,summary=titleSummary(continuation),has=!!summary;
- $('#titleContinue').disabled=!has;$('#titleContinueMeta').textContent=has?summary:`No saved dynasty found ${storageLocation()}`;
+ $('#titleContinue').hidden=!has;$('#titleContinue').disabled=!has;$('#titleContinueMeta').textContent=summary;
  const slot=activeSlotMeta();$('#titleLoadBrowser').disabled=!titleBrowserSave;$('#titleLoadMeta').textContent=slotStorageError(slot)?'Recovery needs attention':titleBrowserSave?titleSummary(titleBrowserSave):'This slot is empty';
  $('#titleContinue').classList.toggle('title-action--primary',has);$('#titleNew').classList.toggle('title-action--primary',!has);
 }
-function showTitlePanel(id=null){
- $('#titleMainMenu').hidden=!!id;for(const panel of $$('.title-subpanel'))panel.hidden=panel.id!==id;
- const target=id?$('#'+id)?.querySelector('button,select,input'):($('#titleContinue').disabled?$('#titleNew'):$('#titleContinue'));target?.focus();
+function showTitlePanel(id=null,shouldFocus=true){
+ const previous=$('.title-subpanel:not([hidden])');
+ $('#titleMainMenu').hidden=!!id;
+ for(const panel of $$('.title-subpanel'))panel.hidden=panel.id!==id;
+ const launchButton=previous&&$(`#titleMainMenu [aria-controls="${previous.id}"]`);
+ const primary=$('#titleContinue').disabled?$('#titleNew'):$('#titleContinue');
+ const target=id?$('#'+id)?.querySelector('[data-title-back]'):launchButton||primary;
+ if(shouldFocus)target?.focus({preventScroll:true});
+ $('#titleScreen').scrollTop=0;
 }
-function showTitleScreen(){
- $('#app').hidden=true;$('#dynastySetup')&&($('#dynastySetup').hidden=true);$('#titleScreen').hidden=false;document.body.classList.remove('dynasty-open','setup-open');renderTitleState();showTitlePanel();setTitleStatus(universe?'Current session is ready to resume.':slotStorageError()||(titleBrowserSave?`${storageKind()==='desktop'?'Desktop save':'Browser save'} ready ${storageLocation()}.`:'Choose New Dynasty or load a save.'));window.scrollTo?.(0,0);
+function showTitleScreen(shouldFocus=true){
+ $('#app').hidden=true;$('#dynastySetup')&&($('#dynastySetup').hidden=true);$('#titleScreen').hidden=false;document.body.classList.remove('dynasty-open','setup-open');renderTitleState();showTitlePanel(null,shouldFocus);if(shouldFocus)setTitleStatus(slotStorageError()||'');window.scrollTo?.(0,0);
 }
 function enterDynasty(){if(!universe)return;$('#titleScreen').hidden=true;$('#dynastySetup')&&($('#dynastySetup').hidden=true);$('#app').hidden=false;document.body.classList.remove('setup-open');document.body.classList.add('dynasty-open');render();window.scrollTo?.(0,0);$('#app .topbar')?.focus?.()}
 function populateTitleTeams(){
  $('#titleTeam').innerHTML='';schools.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(s=>{const o=document.createElement('option');o.value=s.name;o.textContent=`${s.name} · ${s.conference}`;$('#titleTeam').appendChild(o)});$('#titleTeam').value='Chicago Metropolitan';
 }
 async function refreshTitleSave(){
- try{titleSaveSlots=await browserStore.listSlots();titleBrowserSave=loadableSlotMeta();renderSaveSlotControls();renderTitleState();setTitleStatus(slotStorageError()||(titleBrowserSave?`${storageKind()==='desktop'?'Desktop save':'Browser save'} ready ${storageLocation()}.`:'This slot is empty. Start a new dynasty when you are ready.'))}
+ try{titleSaveSlots=await browserStore.listSlots();titleBrowserSave=loadableSlotMeta();renderSaveSlotControls();renderTitleState();setTitleStatus(slotStorageError()||'')}
  catch(e){titleBrowserSave=null;renderTitleState();setTitleStatus(e.message||`The ${savedDynastyLabel()} could not be read. You can still import a backup.`)}
 }
 async function chooseSaveSlot(slot){setActiveSaveSlot(slot);await refreshTitleSave()}
@@ -194,7 +200,11 @@ $$('.tabs button').forEach(b=>b.onclick=()=>{$$('.tabs button').forEach(x=>x.cla
  $('#applyProgramEdit').onclick=()=>commissionerMode()?applyProgramEdit():setStatus('Institutional editing is locked in Dynasty Mode.');
  $('#saveBrowser').onclick=saveBrowser;$('#loadBrowser').onclick=loadBrowser;$('#exportSave').onclick=exportSave;$('#importSave').onclick=()=>$('#importFile').click();$('#importFile').onchange=async e=>{const file=e.target.files[0];if(!file)return;const fromTitle=!$('#titleScreen').hidden,ok=await importSave(file);e.target.value='';if(ok&&fromTitle)enterDynasty();else if(!ok&&fromTitle)setTitleStatus($('#saveStatus').textContent)};
  $('#saveSlot').onchange=e=>{chooseSaveSlot(e.target.value);setStatus(`Active save slot: ${activeSlotMeta()?.label||e.target.value}.`)};
- $('#newUniverse').onclick=showTitleScreen;
- $('#titleContinue').onclick=continueTitleDynasty;$('#titleNew').onclick=openNewDynastySetup;$('#titleLoad').onclick=()=>showTitlePanel('titleLoadPanel');$('#titleOptions').onclick=()=>showTitlePanel('titleOptionsPanel');$('#titleHowTo').onclick=()=>showTitlePanel('titleHowPanel');
+ $('#newUniverse').onclick=()=>showTitleScreen();
+ $('#titleContinue').onclick=continueTitleDynasty;$('#titleNew').onclick=openNewDynastySetup;
+ $$('#titleMainMenu [aria-controls]').forEach(button=>button.onclick=()=>showTitlePanel(button.getAttribute('aria-controls')));
+ $('#titleScreen').addEventListener('keydown',event=>{
+  if(event.key==='Escape'&&$('#titleMainMenu').hidden){event.preventDefault();showTitlePanel()}
+ });
  $('#titleStart').onclick=startTitleDynasty;$('#titleLoadBrowser').onclick=loadTitleDynasty;$('#titleSaveSlot').onchange=e=>chooseSaveSlot(e.target.value);$('#titleRenameSlot').onclick=renameSaveSlot;$('#titleImport').onclick=()=>$('#importFile').click();$('#titleSaveOptions').onclick=saveTitlePreferences;$$('[data-title-back]').forEach(b=>b.onclick=()=>showTitlePanel());
 }

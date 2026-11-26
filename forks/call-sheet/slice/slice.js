@@ -10,9 +10,11 @@ const STORE='callsheet.slice.v1';
 // ================================================================ persistence (per-viewer, optional)
 // Dynasty mode: when Dynasty Lab opens the battle (an iframe on the same origin), the host supplies the real teams,
 // the program's playbook and settings, records the result into the season, and stores the playbook in the save.
-const challengeFrame=window.frameElement?.dataset?.driveChallenges==='true';
+const frameData=window.frameElement?.dataset;
+const challengeFrame=frameData?.driveChallenges==='true';
+const quickBattleFrame=frameData?.quickBattle==='true';
 let campaignSave=null,activeChallenge=null,challengeRun=null;
-const HOST=(()=>{try{return !challengeFrame&&window.parent!==window&&(window.frameElement?.dataset?.classicDrive?window.parent.__callSheetClassic:window.parent.__callSheetDynasty)||null}catch(e){return null}})();
+const HOST=(()=>{try{return !challengeFrame&&!quickBattleFrame&&window.parent!==window&&(frameData?.classicDrive?window.parent.__callSheetClassic:window.parent.__callSheetDynasty)||null}catch(e){return null}})();
 const DYN=HOST?HOST.launch():null;
 function loadSave(){
   if(DYN)return{team:null,world:null,playbook:DYN.playbook?JSON.parse(JSON.stringify(DYN.playbook)):P.newPlaybook(),settings:DYN.settings||null,activeBattle:DYN.activeBattle||null,combos:[...(DYN.combos||[])],games:DYN.games||0,seenHelp:!!DYN.seenHelp};
@@ -2104,7 +2106,8 @@ function challengeMenu(){
     const practice=alt&&(progress||earned)?`<div class="challenge-alt"><button class="tbtn" type="button" data-challenge-alt="${esc(c.id)}" aria-label="Face another look in ${esc(c.name)}">Face another look</button>${challengeProgressHTML(awards.progress(c.id,alt.id),true)}</div>`:'';
     return `<article class="challenge-entry"><button type="button" class="challenge-option" data-challenge="${esc(c.id)}"><small>${c.role==='off'?'OFFENSE':'DEFENSE'}</small><strong>${esc(c.name)}</strong><span>${esc(c.situation)}</span><span class="challenge-objective">${esc(c.objective)}</span>${earned?challengeSticker(earned):''}${challengeProgressHTML(progress,true)}</button>${practice}</article>`;
   }).join('');
-  m.innerHTML=`<section class="challenge-menu"><h1>Drive Challenges</h1><p>Coach one possession or play three drives in a row.</p><p class="statline">Helmet stickers · ${awards.list().length} / ${awards.catalog.length}</p><div class="challenge-list">${runEntry}${options}</div><button class="tbtn" id="challengeBack">${challengeFrame?'Return to Dynasty':'Back to Quick Battle'}</button></section>`;
+  const backLabel=challengeFrame?frameData.returnLabel||'Return to Dynasty':'Back to Quick Battle';
+  m.innerHTML=`<section class="challenge-menu"><h1>Drive Challenges</h1><p>Coach one possession or play three drives in a row.</p><p class="statline">Helmet stickers · ${awards.list().length} / ${awards.catalog.length}</p><div class="challenge-list">${runEntry}${options}</div><button class="tbtn" id="challengeBack">${esc(backLabel)}</button></section>`;
   m.classList.add('on');m.scrollTop=0;
   $('#beginChallengeRun').onclick=()=>startChallengeRun();
   for(const option of m.querySelectorAll('[data-challenge]'))option.onclick=()=>startChallenge(option.dataset.challenge);
@@ -2221,7 +2224,7 @@ function title(){
   const m=$('#modal'),pb=save.playbook,st=save.settings;
   const opt=(k,v,l)=>`<button class="opt ${st[k]===v?'on':''}" data-k="${k}" data-v="${v}">${l}</button>`;
   const picker=!save.team;
-  m.innerHTML=`<div class="mwrap"><p class="big gold">CALL SHEET</p><button class="tbtn" id="driveChallenges">Drive Challenges</button><p class="statline">${picker?'CHOOSE YOUR PROGRAM':`${esc(specOf(save.team).name)} · SEASON <b>${save.world.season}</b> · WEEK <b>${save.world.week%save.world.order.length+1}</b> · RECORD <b>${pb.record.w}-${pb.record.l}</b> · PACKS <b>${pb.packsOpened}</b>`}</p>
+  m.innerHTML=`<div class="mwrap"><p class="big gold">${quickBattleFrame?'QUICK BATTLE':'CALL SHEET'}</p><button class="tbtn" id="driveChallenges">Drive Challenges</button><p class="statline">${picker?'CHOOSE YOUR PROGRAM':`${esc(specOf(save.team).name)} · SEASON <b>${save.world.season}</b> · WEEK <b>${save.world.week%save.world.order.length+1}</b> · RECORD <b>${pb.record.w}-${pb.record.l}</b> · PACKS <b>${pb.packsOpened}</b>`}</p>
     ${picker?`<div class="teams">${Object.entries(W.SPECS).map(([k,p])=>`<button class="tcard" data-team="${k}"><div class="tn">${esc(p.name)}</div><div class="ts" style="background:linear-gradient(90deg,${p.colors[0]},${p.colors[1]})"></div><div class="mini">${esc(identity(p))}<br>Coordinator ${esc(p.coach)}</div></button>`).join('')}</div>`
       :`<div class="box" style="text-align:left;margin:14px auto;max-width:720px"><h3>The league</h3>${standingsHTML()}<div class="mini" style="margin-top:6px">Tap a program to scout its playbook. AI programs open packs, cut cards and evolve plays every week too.</div></div>`}
     <div class="opts">${opt('mode','key','Key moments')}${opt('mode','snap','Every snap')}</div>

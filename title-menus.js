@@ -1,150 +1,46 @@
-(function(){
+(function () {
   'use strict';
 
-  const titleScreen=document.querySelector('#titleScreen');
-  const mainMenu=document.querySelector('#titleMainMenu');
-  const menuShell=document.querySelector('.title-menu-shell');
-  const optionsPanel=document.querySelector('#titleOptionsPanel');
-  if(!titleScreen||!mainMenu||!menuShell||!optionsPanel||titleScreen.dataset.menuPolish==='1')return;
-  titleScreen.dataset.menuPolish='1';
+  const motion = document.querySelector('#titleMotion');
+  const pace = document.querySelector('#titleWatchSpeed');
+  const titleStatus = document.querySelector('#titleStatus');
+  document.querySelector('#titleResetOptions').addEventListener('click', () => {
+    motion.checked = !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    pace.value = '850';
+    titleStatus.textContent = 'Motion and pace reset. Save to keep these settings.';
+    motion.focus();
+  });
 
-  const status=document.querySelector('#titleStatus');
-  const titleVersion=()=>document.querySelector('[data-title-version]')?.textContent?.trim()||'v—';
-  const setStatus=text=>{if(status)status.textContent=text};
-  const systemReducedMotion=()=>!!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-
-  function showPanel(id=null){
-    mainMenu.hidden=!!id;
-    titleScreen.querySelectorAll('.title-subpanel').forEach(panel=>{panel.hidden=panel.id!==id});
-    const target=id?document.querySelector(`#${id} button, #${id} select, #${id} input`):(document.querySelector('#titleContinue')?.disabled?document.querySelector('#titleNew'):document.querySelector('#titleContinue'));
-    target?.focus?.();
+  const about = document.querySelector('#titleAboutPanel');
+  const version = document.querySelector('[data-title-version]').textContent.trim();
+  about.querySelector('[data-about-version]').textContent = version;
+  about.querySelector('[data-about-battle-build]').textContent =
+    document.querySelector('meta[name="call-sheet-build"]')?.content || 'Development';
+  if (window.DynastyStorage?.kind === 'desktop') {
+    about.querySelector('[data-about-save-heading]').textContent = 'Desktop saves + complete exports';
   }
 
-  function polishOptions(){
-    optionsPanel.classList.add('title-options-polished');
-    const heading=optionsPanel.querySelector('#titleOptionsHeading');
-    if(heading)heading.textContent='Game & Presentation';
-
-    const menuCopy=document.querySelector('#titleOptions small');
-    if(menuCopy)menuCopy.textContent='Presentation, pace and accessibility';
-
-    const head=optionsPanel.querySelector('.title-panel-head');
-    const motion=document.querySelector('#titleMotion');
-    const speed=document.querySelector('#titleWatchSpeed');
-    const save=document.querySelector('#titleSaveOptions');
-    const motionRow=motion?.closest('label');
-    const speedRow=speed?.closest('label');
-    if(!head||!motion||!speed||!save||!motionRow||!speedRow)return;
-
-    motionRow.classList.add('title-setting-row','title-setting-toggle');
-    const motionTitle=motionRow.querySelector('strong');
-    const motionHelp=motionRow.querySelector('small');
-    if(motionTitle)motionTitle.textContent='Interface motion';
-    if(motionHelp)motionHelp.textContent='Menu transitions and Watch Mode broadcast animation.';
-
-    speedRow.classList.add('title-setting-row','title-setting-select');
-    const speedSelect=speed;
-    speedRow.replaceChildren();
-    const speedCopy=document.createElement('span');
-    speedCopy.className='title-setting-copy';
-    speedCopy.innerHTML='<strong>Watch Mode pace</strong><small>Sets the default delay between plays when you watch a game.</small>';
-    speedRow.append(speedCopy,speedSelect);
-
-    const intro=document.createElement('p');
-    intro.className='title-options-intro';
-    intro.textContent='Presentation preferences are stored on this device and apply across your dynasty saves. They do not change simulation results.';
-
-    const settings=document.createElement('section');
-    settings.className='title-settings-card';
-    settings.setAttribute('aria-labelledby','titlePresentationSettings');
-    const settingsHead=document.createElement('div');
-    settingsHead.className='title-settings-card-head';
-    settingsHead.innerHTML='<div><span>PRESENTATION</span><strong id="titlePresentationSettings">How Dynasty Lab moves and plays back games</strong></div>';
-    settings.append(settingsHead,motionRow,speedRow);
-
-    const systemNote=document.createElement('div');
-    systemNote.className='title-settings-meta';
-    systemNote.innerHTML=`
-      <div><span>DEVICE DEFAULT</span><strong>${systemReducedMotion()?'Reduced motion':'Standard motion'}</strong><small>On first launch, Dynasty Lab follows your device motion preference.</small></div>
-      <div><span>SCOPE</span><strong>This browser</strong><small>These presentation choices are local preferences, not dynasty save data.</small></div>`;
-
-    const actions=document.createElement('div');
-    actions.className='title-settings-actions';
-    const reset=document.createElement('button');
-    reset.id='titleResetOptions';
-    reset.type='button';
-    reset.className='title-settings-reset';
-    reset.textContent='Restore Defaults';
-    reset.addEventListener('click',()=>{
-      motion.checked=!systemReducedMotion();
-      speed.value='850';
-      setStatus('Recommended defaults restored in this panel. Save Options to keep them.');
-      motion.focus();
-    });
-    save.textContent='Save & Return';
-    actions.append(reset,save);
-
-    head.insertAdjacentElement('afterend',intro);
-    intro.insertAdjacentElement('afterend',settings);
-    settings.insertAdjacentElement('afterend',systemNote);
-    systemNote.insertAdjacentElement('afterend',actions);
-  }
-
-  function addAbout(){
-    if(document.querySelector('#titleAbout'))return;
-    const aboutButton=document.createElement('button');
-    aboutButton.id='titleAbout';
-    aboutButton.className='title-action title-action--quiet';
-    aboutButton.type='button';
-    aboutButton.innerHTML='<span><strong>About Dynasty Lab</strong><small>Version, game info and save model</small></span><i aria-hidden="true">›</i>';
-    mainMenu.appendChild(aboutButton);
-
-    const panel=document.createElement('section');
-    panel.id='titleAboutPanel';
-    panel.className='title-subpanel title-about-panel';
-    panel.setAttribute('aria-labelledby','titleAboutHeading');
-    panel.hidden=true;
-    const desktopStorage=window.DynastyStorage?.kind==='desktop';
-    const storageSummary=desktopStorage?'Desktop saves + complete exports':'Browser slots + complete exports';
-    const storageCopy=desktopStorage?'Named desktop save slots handle everyday play. Exported JSON provides a complete backup you can keep separately and import later.':'Named browser save slots handle everyday play. Exported JSON provides a complete backup you can keep separately and import later.';
-    panel.innerHTML=`
-      <div class="title-panel-head"><div><span>ABOUT</span><h2 id="titleAboutHeading">Dynasty Lab</h2></div><button type="button" data-title-about-back aria-label="Back to main menu">Back</button></div>
-      <div class="title-about-hero">
-        <img class="dynasty-logo title-about-logo" src="assets/brand/dynasty-lab-stacked-v1.png" alt="Dynasty Lab" width="1254" height="1254">
-        <div><div class="title-about-kicker">FICTIONAL COLLEGE FOOTBALL DYNASTY SIMULATOR</div><h3>Build the program. Own the era.</h3><p>Run a program across seasons, recruiting classes, coaching changes, player development and Game Day — then live with the history you create.</p></div>
-      </div>
-      <div class="title-about-facts" aria-label="Build information">
-        <div><span>VERSION</span><strong data-about-version>${titleVersion()}</strong></div>
-        <div><span>BATTLE BUILD</span><strong data-about-battle-build></strong></div>
-        <div><span>UNIVERSE</span><strong>Fictional</strong></div>
-        <div><span>SAVES</span><strong>${desktopStorage?'Desktop + JSON':'Browser + JSON'}</strong></div>
-      </div>
-      <div class="title-about-grid">
-        <section class="title-about-card"><span>DYNASTY MODE</span><h3>One program, one career</h3><p>Control a single program and move only through career opportunities earned inside the dynasty.</p></section>
-        <section class="title-about-card"><span>COMMISSIONER MODE</span><h3>Run the whole universe</h3><p>Switch programs and edit institutional details when you want broader sandbox control.</p></section>
-        <section class="title-about-card title-about-card--wide"><span>YOUR SAVE DATA</span><h3>${storageSummary}</h3><p>${storageCopy}</p></section>
-        ${desktopStorage?'':`<section class="title-about-card title-about-card--wide" data-about-desktop><span>DESKTOP APP</span><h3>Play offline on Mac or Windows</h3><p>The desktop alpha runs on Apple silicon and Intel Macs and on Windows, with saves on your computer. Each release page explains the one-time step to open it on a Mac.</p><a class="title-about-link" href="https://github.com/MarkJRogers92/Football/releases" target="_blank" rel="noopener">Download the desktop app</a></section>`}
-        <section class="title-about-card title-about-card--wide" data-about-report><span>REPORT A PROBLEM</span><h3>Tell us what went wrong</h3><p>Copy the details below into a new issue. They hold the version, your browser and the last errors the game recorded on this device. Nothing is sent automatically, and your dynasty is not included.</p><div class="title-about-actions"><button type="button" data-about-copy-report>Copy problem details</button><a class="title-about-link" href="https://github.com/MarkJRogers92/Football/issues/new" target="_blank" rel="noopener">Open a new issue</a></div><p class="title-about-note" data-about-report-status role="status"></p></section>
-        <section class="title-about-card title-about-card--wide" data-about-credits><span>CREDITS</span><h3>Made with</h3><p>Display type is Barlow Condensed, © The Barlow Project Authors, used under the SIL Open Font License 1.1. The championship trophy and the team helmets were generated as 3D models with Meshy and rendered for this game. Every school, nickname, player and coach is fictional; any resemblance to a real program or person is coincidental.</p></section>
-      </div>`;
-    panel.addEventListener('click',async event=>{
-      if(!event.target.closest('[data-about-copy-report]'))return;
-      const status=panel.querySelector('[data-about-report-status]'),text=window.DynastyCrashGuard?.report?.()||`Dynasty Lab ${titleVersion()}\n${navigator.userAgent}`;
-      try{await navigator.clipboard.writeText(text);status.textContent='Details copied. Paste them into the issue.'}
-      catch{let area=panel.querySelector('[data-about-report-text]');if(!area){area=document.createElement('textarea');area.dataset.aboutReportText='';area.readOnly=true;area.setAttribute('aria-label','Problem details');area.className='title-about-report-text';status.insertAdjacentElement('afterend',area)}area.value=text;area.focus();area.select();status.textContent='Select and copy the details below.'}
-    });
-    menuShell.appendChild(panel);
-
-    aboutButton.addEventListener('click',()=>{
-      const version=panel.querySelector('[data-about-version]');
-      if(version)version.textContent=titleVersion();
-      showPanel('titleAboutPanel');
-      setStatus(`Dynasty Lab ${titleVersion()} · game and build information.`);
-    });
-    panel.querySelector('[data-about-battle-build]').textContent=document.querySelector('meta[name="call-sheet-build"]')?.content||'Development';
-    panel.querySelector('[data-title-about-back]')?.addEventListener('click',()=>showPanel());
-  }
-
-  polishOptions();
-  addAbout();
+  const reportButton = about.querySelector('[data-about-copy-report]');
+  const reportStatus = about.querySelector('[data-about-report-status]');
+  reportButton.addEventListener('click', async () => {
+    const report = window.DynastyCrashGuard?.report?.() || `Call Sheet ${version}\n${navigator.userAgent}`;
+    try {
+      await navigator.clipboard.writeText(report);
+      reportStatus.textContent = 'Details copied. Paste them into the issue.';
+    } catch {
+      let field = about.querySelector('[data-about-report-text]');
+      if (!field) {
+        field = document.createElement('textarea');
+        field.dataset.aboutReportText = '';
+        field.readOnly = true;
+        field.setAttribute('aria-label', 'Problem details');
+        field.className = 'title-about-report-text';
+        reportStatus.after(field);
+      }
+      field.value = report;
+      field.focus();
+      field.select();
+      reportStatus.textContent = 'Select and copy the details below.';
+    }
+  });
 })();

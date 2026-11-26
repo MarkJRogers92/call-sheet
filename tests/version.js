@@ -36,7 +36,7 @@ try {
   assert.equal((changelog.match(/^# Changelog$/gm) || []).length, 1, 'CHANGELOG.md must have one top-level heading');
   assert.doesNotMatch(body, /data-(?:title-)?version>v\d+\.\d+\.\d+</,
     'body.html must use neutral version placeholders rather than a stale release');
-  assert.match(html, new RegExp(`<title>Dynasty Lab v${v}<\\/title>`), 'document title must use VERSION.txt');
+  assert.match(html, new RegExp(`<title>Call Sheet v${v}<\\/title>`), 'Call Sheet document title must use VERSION.txt');
   assert.match(html, new RegExp(`data-title-version>v${v}<\\/b>`), 'title-screen label must use VERSION.txt');
   assert.match(html, new RegExp(`data-app-version>v${v}<\\/span>`), 'in-game header label must use VERSION.txt');
 
