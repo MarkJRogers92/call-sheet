@@ -65,6 +65,26 @@ function cleanThirdDownFilm(counts){
   return Object.fromEntries(Object.entries(counts).filter(([id,n])=>
     /^[a-z0-9_]{1,64}$/i.test(id)&&!Object.hasOwn(Object.prototype,id)&&Number.isInteger(n)&&n>0&&n<=999).slice(0,64));
 }
+function cleanProtectionSample(sample){
+  if(!sample||!Number.isInteger(sample.attempts)||sample.attempts<0||sample.attempts>500)return null;
+  const {attempts,lost,sacks,prepared}=sample;
+  if(![lost,sacks,prepared].every(n=>Number.isInteger(n)&&n>=0&&n<=attempts))return null;
+  return{attempts,lost,sacks,prepared,planned:sample.planned===true||prepared>0};
+}
+function cleanRunDefenseSample(sample){
+  if(!sample||!Number.isInteger(sample.attempts)||sample.attempts<0||sample.attempts>500)return null;
+  const {attempts,yards,explosives,prepared}=sample;
+  if(!Number.isInteger(yards)||Math.abs(yards)>attempts*99||
+    ![explosives,prepared].every(n=>Number.isInteger(n)&&n>=0&&n<=attempts))return null;
+  return{attempts,yards,explosives,prepared,planned:sample.planned===true||prepared>0};
+}
+const CARD_FILM_SAMPLES={protection:cleanProtectionSample,runDefense:cleanRunDefenseSample};
+function cleanCardFilmReview(kind,review){
+  const clean=CARD_FILM_SAMPLES[kind];
+  const sample=clean(review);if(!sample)return null;
+  const before=clean(review.before),fromWeek=review.fromWeek;
+  return before&&Number.isInteger(fromWeek)&&fromWeek>0&&fromWeek<=99?{...sample,before,fromWeek}:sample;
+}
 function cleanRivalryPlay(x){
   if(!x||typeof x.id!=='string'||!x.id||typeof x.name!=='string'||!x.name||
     !['X','Z','SLOT','TE','RB'].includes(x.role)||!['third','fourth','touchdown','explosive'].includes(x.kind)||!Array.isArray(x.snaps))return null;
@@ -128,6 +148,12 @@ function normalizeCallSheet(u){
   cs.honors=Object.fromEntries(Object.entries(cs.honors&&typeof cs.honors==='object'?cs.honors:{}).filter(([k,v])=>k.length<64&&Number.isFinite(Number(v))).slice(0,200).map(([k,v])=>[k,ci(v)]));
   cs.schemeGrants=cleanStaffCards(cs.schemeGrants);
   cs.installFocus=typeof cs.installFocus==='string'&&cs.installFocus.length<60?cs.installFocus:null;
+  for(const kind of Object.keys(CARD_FILM_SAMPLES)){
+    const key=kind+'Film',film=cs[key],review=cleanCardFilmReview(kind,film);
+    if(review&&typeof film.teamId==='string'&&typeof film.gameId==='string'&&Number.isInteger(film.year)&&Number.isInteger(film.week)){
+      cs[key]={...review,teamId:film.teamId.slice(0,64),gameId:film.gameId.slice(0,120),year:film.year,week:film.week};
+    }else delete cs[key];
+  }
   cs.filmLog=(Array.isArray(cs.filmLog)?cs.filmLog:[]).filter(x=>x&&typeof x==='object').slice(-3).map(x=>({year:ci(x.year),week:ci(x.week),plays:Object.fromEntries(Object.entries(x.plays&&typeof x.plays==='object'?x.plays:{}).filter(([k,v])=>k.length<60&&Number.isFinite(Number(v))).slice(0,60).map(([k,v])=>[k,ci(v)]))}));
   cs.lastWeekNews=(Array.isArray(cs.lastWeekNews)?cs.lastWeekNews:[]).filter(x=>x&&typeof x==='object'&&typeof x.team==='string').slice(0,60);
   // Season call ledgers for the recap: at most two seasons, bounded maps of counts.
@@ -170,7 +196,7 @@ function normalizeCallSheet(u){
   }
 
   // Program edges: scheme fit (per side), this week's prep, home crowd, coordinator play-calling.
-  registerCardIntegration({id:'program-edges',label:'Program edges',about:'Your schemes, weekly prep, home crowd and play-callers give labeled bonuses in the duels.',
+  const PROGRAM_EDGES=registerCardIntegration({id:'program-edges',label:'Program edges',about:'Your schemes, weekly prep, home crowd and play-callers give labeled bonuses in the duels.',
     hooks:{launch(ctx){
       const info=(team,opp,home)=>{
         const fam=side=>{try{const f=schemeFamiliarity(team,side);return Number.isFinite(Number(f))?Number(f):100}catch(err){return 100}};
@@ -290,6 +316,73 @@ function normalizeCallSheet(u){
       launch(ctx){ctx.cfg.practiceReps=practiceReps(ctx.me,ctx.opp)}, // a coached game: the battle adds them
       afterGame(ctx){if(ctx.coached)return;const pb=userPlaybook();for(const [root,n] of Object.entries(practiceReps(ctx.me,ctx.opp)))CS.evolution?.addReps(pb,root,n)}
     }});
+
+  const FILM_PREP={
+    protection:{
+      focus:'pass_protection',name:'Pass Protection',title:'Protection film',area:'pass protection',archive:'cardProtection',
+      trouble:s=>!!s&&(s.sacks>=2||s.attempts>=4&&s.lost>=3&&s.lost/s.attempts>=.4),
+      evidence(s){
+        const sacks=`${s.sacks} ${s.sacks===1?'sack':'sacks'}`;
+        return s.attempts?`${s.lost}/${s.attempts} protection duels lost (${Math.round(s.lost/s.attempts*100)}%) and ${sacks}`:'no protection duels';
+      },
+      effect:opp=>`+1 on Protection duels against ${opp}`,
+      mastery:'Deep Cross and PA Boot also earn +5 mastery reps each.',
+      noSnaps:'No protection duels were played.',
+    },
+    runDefense:{
+      focus:'run_fits',name:'Run Fits',title:'Run defense film',area:'run defense',archive:'cardRunDefense',
+      trouble:s=>!!s&&s.attempts>=8&&(s.yards/s.attempts>=4.5||s.explosives>=2),
+      evidence:s=>s.attempts?`${s.attempts} designed ${s.attempts===1?'run':'runs'} for ${s.yards} yards (${(s.yards/s.attempts).toFixed(1)} per carry), with ${s.explosives} gains of 10+`:'no designed runs',
+      effect:opp=>`+1 on the defensive Gate against designed runs by ${opp}`,
+      mastery:'Run Fit and Cover 3 also earn +5 mastery reps each.',
+      noSnaps:'No Run Fits bonus was applied.',
+    }
+  };
+  function filmReviewText(kind,raw){
+    const review=cleanCardFilmReview(kind,raw);if(!review)return '';
+    const info=FILM_PREP[kind];
+    const applied=review.prepared?`${info.name} prep applied on ${review.prepared} ${review.prepared===1?'snap':'snaps'}.`:`${info.name} prep was in the plan.`;
+    if(review.before)return `${applied} Week ${review.fromWeek} had ${info.evidence(review.before)}. This game had ${info.evidence(review)}.`;
+    if(review.prepared)return `${applied} ${info.evidence(review)}.`;
+    if(review.planned)return `${applied} ${info.noSnaps}`;
+    return info.trouble(review)?`Film flagged ${info.area}. ${info.evidence(review)}.`:'';
+  }
+  // Keep the latest samples available when old game archives haven't been loaded yet.
+  function recordCardFilm(record,film){
+    const me=selected();
+    if(!record?.id||!me)return {};
+    const meta=cardMeta(),reviews={};
+    for(const [kind,info] of Object.entries(FILM_PREP)){
+      const sample=CARD_FILM_SAMPLES[kind](film?.own?.[kind]);if(!sample)continue;
+      const key=kind+'Film',last=meta[key];
+      if(last?.gameId!==record.id){
+        const consecutive=last?.year===record.season&&last.teamId===String(me.id)&&last.week<record.week&&
+          !(me.schedule||[]).some(g=>g.played&&g.week>last.week&&g.week<record.week);
+        const review=sample.planned&&consecutive&&info.trouble(last)?{...sample,before:CARD_FILM_SAMPLES[kind](last),fromWeek:last.week}:sample;
+        record[info.archive]=review;
+        meta[key]={...review,gameId:record.id,teamId:String(me.id),year:record.season,week:record.week};
+      }
+      reviews[kind+'Review']=filmReviewText(kind,meta[key]);
+    }
+    return reviews;
+  }
+  function filmPrepChoice(kind){
+    if(!Object.hasOwn(FILM_PREP,kind))return null;
+    const info=FILM_PREP[kind],film=universe.callSheet?.[kind+'Film'],me=selected(),g=findUserGame();
+    if(!g||!me||!info.trouble(film)||!integrationOn(PROGRAM_EDGES)||film.year!==universe.year||film.teamId!==String(me.id)||film.week>=g.week)return null;
+    if((me.schedule||[]).some(game=>game.played&&game.week>film.week&&game.week<g.week))return null;
+    const opp=T(g.home===me.name?g.away:g.home);if(!opp)return null;
+    const focuses=v0102WeeklyApi.normalizeFocuses(v0102WeeklyPrepFor(me,opp.name)?.focuses);
+    const already=focuses.includes(info.focus),full=focuses.length>=v0102WeeklyApi.MAX_POINTS;
+    const locked=!!(universe.liveGameDay||v2InteractiveGameDay||universe.callSheet.activeBattle?.seed===battleSeed(g));
+    return{me,opp,focuses,already,full,locked};
+  }
+  function applyFilmPrep(kind){
+    const choice=filmPrepChoice(kind);
+    if(!choice||choice.already||choice.full||choice.locked)return false;
+    if(!v0102SetWeeklyPrep(choice.me,choice.opp,[...choice.focuses,FILM_PREP[kind].focus]))return false;
+    autosaveAfter('game');return true;
+  }
 
   // The facilities rating is already earned through Dynasty Lab's building projects.
   const FACILITY_LINK=registerCardIntegration({id:'facility-playbook',label:'Facilities support the playbook',about:'Facilities 75 unlock 16 play/tactic slots; 90 unlock 18 and a 4th active signature slot. Earned capacity stays unlocked.',
@@ -515,22 +608,22 @@ function normalizeCallSheet(u){
       const g=findUserGame();if(g&&!g.played){try{sim=simulateCardGame();sim.week=g.week;sim.ranks=rankSnapshot(sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home);options={...options,externalState:sim.b.game}}catch(err){console.error('Card simulation failed; using the standard simulation.',err);sim=null}}
     }
     const out=recordGameBase(options);
-    if(sim&&out?.ok){completeSimCardGame(sim);try{markArchive(out.result?.gameId,{classic:simClassic(sim),moments:CS.battle.decidingMoments(sim.b)})}catch(err){console.error(err)}if(!options.advancingWeek)try{autosaveAfter('game')}catch(err){console.error(err)}}
+    if(sim&&out?.ok){completeSimCardGame(sim,out.record);try{markArchive(out.result?.gameId,{classic:simClassic(sim),moments:CS.battle.decidingMoments(sim.b)})}catch(err){console.error(err)}if(!options.advancingWeek)try{autosaveAfter('game')}catch(err){console.error(err)}}
     return out;
   };
-  function completeSimCardGame(sim){
-      const pb=userPlaybook(),breakout=CS.signatures.candidate(sim.b,sim.cfg.userSide,pb),me=selected(),opp=sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home;
+  function completeSimCardGame(sim,record){
+      const pb=userPlaybook(),breakout=CS.signatures.candidate(sim.b,sim.cfg.userSide,pb),me=selected(),oppSide=sim.cfg.userSide==='home'?'away':'home',opp=sim.cfg[oppSide];
       CS.evolution.recordReps(pb,sim.b.log,sim.cfg.userSide,sim.cfg.trainingRates||{});pb.gamesPlayed=(pb.gamesPlayed||0)+1;cardMeta().games++;
       const won=sim.b.game.score[sim.cfg.userSide]>sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];pb.record[won?'w':'l']++;
       CS.packs.awardAchievements(pb,sim.b,sim.cfg.userSide);
       // Sim delegates the pick to the same scheme-aware coordinator used by AI programs.
-      const pack=CS.packs.openPack(pb,{won,rivalry:sim.cfg.rivalry,stage:sim.cfg.stage||null,favor:won?sim.cfg.packFavor:null,favorWhy:sim.cfg.packFavorWhy,seed:sim.cfg.seed,oppTendency:sim.b.tend[sim.cfg.userSide==='home'?'away':'home'],worldTaken:takenLegendaries()});
+      const pack=CS.packs.openPack(pb,{won,rivalry:sim.cfg.rivalry,stage:sim.cfg.stage||null,favor:won?sim.cfg.packFavor:null,favorWhy:sim.cfg.packFavorWhy,seed:sim.cfg.seed,oppTendency:CS.battle.tendencyCounts(sim.b,oppSide),worldTaken:takenLegendaries()});
       let picked=null;if(pack.cards.length){const spec=aiSpec(me),pick=CS.world.aiPick(spec,pack,pb,DynastyRng.create(`${sim.cfg.seed}:pick`));picked=pick;CS.packs.applyPick(pb,pick);
         for(let over=CS.packs.overCapacity(pb);over;over=CS.packs.overCapacity(pb))CS.world.aiCut(spec,pb,over)}
-      if(breakout){const sg=CS.signatures.breakoutCard(sim.b,sim.cfg.userSide,breakout,{season:universe.year,colors:sim.b.teams[sim.cfg.userSide].colors});if(pb.signatures.length<CS.signatures.SLOTS)CS.signatures.add(pb,sg);else{(pb.reserveSignatures??=[]).push(sg);pb.lastSignatureGame=pb.gamesPlayed;CS.signatures.register(sg)}}
+      if(breakout){const sg=CS.signatures.breakoutCard(sim.b,sim.cfg.userSide,breakout,{season:universe.year,colors:sim.b.teams[sim.cfg.userSide].colors});if(CS.signatures.add(pb,sg).full){(pb.reserveSignatures??=[]).push(sg);pb.lastSignatureGame=pb.gamesPlayed;CS.signatures.register(sg)}}
       (cardMeta().moments??=[]).push({year:universe.year,week:sim.week,kind:'reward',text:`${sim.cfg.label}: ${pack.title}${picked?' — '+(CS.packs.cardDef(picked.id)?.name||picked.id)+' added to the collection':''}.`});
       try{addCardCareer(CS.battle.duelTally(sim.b),sim.week)}catch(err){console.error(err)}
-      try{const oppSide=sim.cfg.userSide==='home'?'away':'home';recordOppFilm(sim.cfg[oppSide]?.id,CS.battle.callFilm(sim.b,sim.cfg.userSide),sim.week,CS.battle.duelTally(sim.b))}catch(err){console.error(err)}
+      try{const film=CS.battle.callFilm(sim.b,sim.cfg.userSide);recordOppFilm(opp?.id,film,sim.week,CS.battle.duelTally(sim.b));recordCardFilm(record,film)}catch(err){console.error(err)}
       try{noteUsage(sim.b.game,sim.cfg.userSide)}catch(err){console.error(err)}
       {const us=sim.b.game.score[sim.cfg.userSide],them=sim.b.game.score[sim.cfg.userSide==='home'?'away':'home'];programAwards({won,us,them,postseason:!!sim.postseason,ranks:sim.ranks,oppName:opp?.name,opp})}
       runHook('afterGame',{b:sim.b,userSide:sim.cfg.userSide,me,opp,coached:false});
@@ -572,7 +665,7 @@ function normalizeCallSheet(u){
       for(const side of ['home','away'])cfg.program[side]={...cfg.program[side],...availabilityFor(cfg[side])};
       const sim=simulateCardGame(cfg);sim.week=week;sim.postseason=true;sim.ranks=rankSnapshot(opp);
       const out=postseasonRecordBase(home,away,{...options,externalState:sim.b.game});
-      if(out?.ok){completeSimCardGame(sim);out.record.cardBattle=true;const classic=simClassic(sim);if(classic)out.record.classicDrive=classic;try{out.record.cardMoments=cleanMoments(CS.battle.decidingMoments(sim.b))}catch(err){console.error(err)}}return out;
+      if(out?.ok){completeSimCardGame(sim,out.record);out.record.cardBattle=true;const classic=simClassic(sim);if(classic)out.record.classicDrive=classic;try{out.record.cardMoments=cleanMoments(CS.battle.decidingMoments(sim.b))}catch(err){console.error(err)}}return out;
       }catch(err){v2PostseasonStageRestore(snapshot);throw err}
     };
     if(globalThis.__DL_TEST__)globalThis.__DL_TEST__.v2PostseasonRecordMatch=v2PostseasonRecordMatch;
@@ -591,6 +684,7 @@ function normalizeCallSheet(u){
         const meta=cardMeta();if(out?.record){out.record.cardBattle=true;out.record.cardCoached=true;if(p.classic)out.record.classicDrive=p.classic;if(p.moments?.length)out.record.cardMoments=p.moments}
         try{addCardCareer(p.tally,options.week)}catch(err){console.error(err)}
         try{recordOppFilm(String(home.id)===String(selected().id)?away.id:home.id,p.film,options.week,p.tally)}catch(err){console.error(err)}
+        try{recordCardFilm(out?.record,p.film)}catch(err){console.error(err)}
         const side=String(home.id)===String(selected().id)?'home':'away',us=Number(p.state?.score?.[side])||0,them=Number(p.state?.score?.[side==='home'?'away':'home'])||0;
         try{noteUsage(p.state,side)}catch(err){console.error(err)}
         programAwards({won:us>them,us,them,postseason:true,ranks:p.ranks,oppName:p.oppName,opp:side==='home'?away:home});
@@ -605,7 +699,15 @@ function normalizeCallSheet(u){
       v2PostseasonLastError=null;v2PostseasonPauseForUser=true;
       try{STAGE_RUN[g.stage]?.()}catch(err){console.error(err);v2PostseasonLastError=err}finally{v2PostseasonPauseForUser=false}
       const meta=cardMeta(); // a rolled-back stage replaces the universe object
-      if(meta.recordedBattleSeed===seed){try{paintCardProgram()}catch(err){}return{ok:true,result:{gameId:meta.lastPostseasonGameId||null}}}
+      if(meta.recordedBattleSeed===seed){
+        const gameId=meta.lastPostseasonGameId||null;
+        const reviews=Object.fromEntries(Object.keys(FILM_PREP).map(kind=>{
+          const film=meta[kind+'Film'];
+          return[kind+'Review',film?.gameId===gameId?filmReviewText(kind,film):''];
+        }));
+        try{paintCardProgram()}catch(err){}
+        return{ok:true,result:{gameId},...reviews};
+      }
       return{ok:false,error:v2PostseasonLastError?.message||`The ${g.label} could not be recorded.`};
     }
     // While a postseason card battle is open, the stage waits for it: the battle records the user's game itself.
@@ -1041,8 +1143,13 @@ function normalizeCallSheet(u){
     gameSummaryHTML=function gameSummaryWithDuels(g){
       let html=gameSummaryBase(g);
       if(g?.classicDrive?.battle)html=`<p><button type="button" data-classic-drive="${escH(g.id)}">Replay the final drive</button> · Coach the original matchup from the spot where the drive began.</p>`+html;
-      if(!g?.cardMoments?.length)return html;
-      return html+`<h3>Card battle${g.cardCoached?' · coached':''}</h3>`+g.cardMoments.map(t=>`<p class="cs-duel-moment">${escH(t)}</p>`).join('');
+      const film=Object.entries(FILM_PREP).map(([kind,info])=>{
+        const review=filmReviewText(kind,g?.[info.archive]);
+        return review?`<p class="cs-duel-moment"><strong>${info.title}</strong> · ${escH(review)}</p>`:'';
+      }).join('');
+      if(!g?.cardMoments?.length&&!film)return html;
+      return html+`<h3>Card battle${g.cardCoached?' · coached':''}</h3>`+
+        (g.cardMoments||[]).map(t=>`<p class="cs-duel-moment">${escH(t)}</p>`).join('')+film;
     };
   }
   // Albums: themed sets across your collection. Evolved and upgraded cards count for the card they grew from.
@@ -1640,6 +1747,24 @@ function normalizeCallSheet(u){
     const r=CS.battle.seasonRecap?.(universe.callSheet?.seasonCalls?.[String(universe.year)]);if(!r)return'';
     return`<section class="cpn-season" id="seasonRecap"><h3>${universe.year} in calls</h3>${r.lines.map(l=>`<p class="cpn-foot">${escH(l)}</p>`).join('')}</section>`;
   }
+  function filmPrepHTML(kind){
+    const info=FILM_PREP[kind],film=universe.callSheet?.[kind+'Film'],me=selected();
+    if(!film||film.teamId!==String(me?.id)||film.year!==universe.year)return '';
+    const review=filmReviewText(kind,film);if(!review)return '';
+    const choice=filmPrepChoice(kind);
+    let action='';
+    if(choice){
+      const mastery=integrationOn(PRACTICE_LINK)?' '+info.mastery:'';
+      const effect=`Use 1 weekly prep point for ${info.effect(choice.opp.name)}.${mastery}`;
+      if(choice.already)action=`<p tabindex="-1" data-film-prep-confirmed="${kind}"><strong>${info.name} is in your weekly prep.</strong> ${escH(effect)}</p>`;
+      else if(choice.locked)action='<p>Weekly prep is locked for the game in progress.</p>';
+      else if(choice.full)action=`<p>${escH(effect)} Your prep points are allocated.</p><button type="button" class="cpn-link" data-card-dynasty-tab="gamelab">Review weekly prep</button>`;
+      else action=`<p>${escH(effect)}</p><button type="button" class="cpn-btn" data-film-prep="${kind}">Practice ${info.name}</button>`;
+    }else if(info.trouble(film)&&integrationOn(PROGRAM_EDGES)&&universe.phase==='regular'&&!findUserGame()&&universe.week<11){
+      action='<p>Advance the week to apply this film to your next matchup.</p>';
+    }
+    return `<section class="cpn-film-prep" aria-labelledby="${kind}FilmTitle"><h3 id="${kind}FilmTitle">${info.title}</h3><p>${escH(review)}</p>${action}</section>`;
+  }
   function cardProgramHTML(){
     const cs=universe.callSheet,pb=cs.playbook,on=INTEGRATIONS.filter(integrationOn).length;
     const stat=(k,v)=>`<div><span>${k}</span><b>${v}</b></div>`;
@@ -1647,16 +1772,17 @@ function normalizeCallSheet(u){
       +stat('Ready to evolve',CS.evolution.ready({...pb}).length)+stat('Ring of Honor',(pb.ringOfHonor||[]).length):'<p class="muted">Play a card game to start your playbook.</p>';
     const teaching=pb&&integrationOn(STAFF_LINK)?trainingFor(selected(),pb):{},maxTeach=Math.round(Math.max(0,...Object.values(teaching))*100);
     // Match the editor's facility-adjusted limits without writing to the playbook on a read-only visit.
-    const limits=pb?syncProgramCapacity(selected(),{capacity:{...pb.capacity}}).capacity:{};
-    const active=pb?['off','def'].map(side=>`<article><b>${side==='off'?'Offense':'Defense'}</b><p>${pb[side].base.length}/4 base calls · ${pb[side].wrinkles.length}/${limits.wrinkles} plays · ${pb[side].tactics.length}/${limits.tactics} tactics</p><small>Base calls: ${pb[side].base.map(id=>escH(cardName(id))).join(' · ')}</small></article>`).join(''):'';
+    const limits=pb?syncProgramCapacity(selected(),{capacity:{...pb.capacity},signatureSlots:pb.signatureSlots}):{};
+    const active=pb?['off','def'].map(side=>`<article><b>${side==='off'?'Offense':'Defense'}</b><p>${pb[side].base.length}/4 base calls · ${pb[side].wrinkles.length}/${limits.capacity.wrinkles} plays · ${pb[side].tactics.length}/${limits.capacity.tactics} tactics</p><small>Base calls: ${pb[side].base.map(id=>escH(cardName(id))).join(' · ')}</small></article>`).join(''):'';
     const locked=deckEditsLocked();
     const coach=locked?'<button type="button" class="cpn-btn" data-coach-cards>Resume Battle</button>':postCoachHTML()||(coachableGame()?'<button type="button" class="cpn-link" data-coach-cards>Coach this game</button>':'');
     return`<div id="cardProgram" class="card cpn">
       <span class="eyebrow">CARDS &amp; DECK / CALL SHEET</span><h2>Deck Room</h2><p class="cpn-intro">Choose which cards from your collection to take into the next game.</p>
       <div class="cpn-actions"><button type="button" class="cpn-btn" data-card-deck${locked?' disabled':''}>Build Deck</button>${coach}${globalThis.CallSheetBundle?'<button type="button" id="deckDriveChallenges" class="cpn-link" data-drive-challenges aria-haspopup="dialog">Drive Challenges</button>':''}</div>
       ${locked?'<p class="cpn-foot">Your deck is locked for the current battle. Finish it before editing.</p>':''}
+      ${Object.keys(FILM_PREP).map(filmPrepHTML).join('')}
       ${retoolHTML()}
-      <h3>In your deck</h3><div class="cpn-bridge-grid">${active}</div><p class="cpn-foot"><b>Player signatures:</b> ${(pb?.signatures||[]).length}/${CS.signatures.slotsFor?CS.signatures.slotsFor(pb):CS.signatures.SLOTS} across both sides</p>
+      <h3>In your deck</h3><div class="cpn-bridge-grid">${active}</div><p class="cpn-foot"><b>Player signatures:</b> ${(pb?.signatures||[]).length}/${CS.signatures.slotsFor(limits)} across both sides</p>
       <p class="cpn-foot">Facilities increase pile capacity. A normal series draws up to three plays and four tactics. Filling extra slots spreads those draws across more cards.</p>
       <p class="cpn-foot"><b>Opening script:</b> ${pb?.off.openingScript?escH(cardName(pb.off.openingScript)):'Normal draw'}</p>
       ${seasonRecapHTML()}
@@ -1693,6 +1819,10 @@ function normalizeCallSheet(u){
     const folds=new Map([...host.querySelectorAll('[data-card-fold]')].map(el=>[el.dataset.cardFold,el.open]));
     host.innerHTML=activeTab==='deckroom'?cardProgramHTML():collectionHTML();
     for(const btn of host.querySelectorAll('[data-card-alumnus]'))btn.onclick=()=>showPlayerProfile(btn.dataset.cardAlumnus);
+    for(const button of host.querySelectorAll('[data-film-prep]'))button.onclick=()=>{
+      const kind=button.dataset.filmPrep;
+      if(applyFilmPrep(kind)){paintCardRoom();host.querySelector(`[data-film-prep-confirmed="${kind}"]`)?.focus()}
+    };
     for(const el of host.querySelectorAll('[data-card-fold]'))if(folds.has(el.dataset.cardFold))el.open=folds.get(el.dataset.cardFold);
   }
   if(typeof TAB_RENDERERS==='object'){TAB_RENDERERS.deckroom=paintCardRoom;TAB_RENDERERS.collection=paintCardRoom}
@@ -1747,6 +1877,7 @@ function normalizeCallSheet(u){
 .cpn-connections{margin:16px 0}.cpn-connections h4{margin:0 0 8px;color:#fff}.cpn-bridge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}.cpn-bridge-grid article{background:rgba(255,255,255,.06);border:1px solid #394365;border-radius:10px;padding:12px}.cpn-bridge-grid p{font-size:13px;line-height:1.5;color:#c5cfee;margin:6px 0}.cpn-link{min-height:44px;margin:4px 8px 0 0;padding:6px 0;background:none;border:0;color:#ffe291;text-decoration:underline;font:inherit;font-size:13px;cursor:pointer}.cpn-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px}
 .cpn-btn{background:#ffd34d;color:#1a1300;border:0;border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer}
 .cpn-btn:focus-visible,#cardSettings :focus-visible{outline:3px solid #9fe3ff;outline-offset:2px}
+.cpn-film-prep{padding:12px 14px;margin:12px 0 16px;border:1px solid #6b603d;border-radius:10px;background:#e7c76b12}.cpn-film-prep h3{margin:0 0 6px;font-size:18px}.cpn-film-prep p{margin:5px 0 8px;line-height:1.45}.cpn-film-prep button{min-height:44px}
 .cpn-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(92px,1fr));gap:8px;margin:12px 0}
 .cpn-stats div{background:rgba(255,255,255,.06);border-radius:10px;padding:8px 10px}
 .cpn-stats span{display:block;font-size:11px;color:#aab6e8}.cpn-stats b{font-size:18px}
@@ -2185,11 +2316,13 @@ function normalizeCallSheet(u){
       const pg=currentCardGame();
       if(pg?.postseason){if(pg.played)return{ok:true};return globalThis.__callSheetPostseason.record(pg,state,tally,key,moments,film,classic)}
       try{const g=findUserGame(),week=g?.week,me=selected(),userSide=g&&g.home===me.name?'home':'away',opp=g?T(userSide==='home'?g.away:g.home):null,ranks=rankSnapshot(opp);
-        const out=recordGameBase({externalState:state});try{addCardCareer(tally,week)}catch(err){console.error(err)}try{if(out?.ok!==false)recordOppFilm(opp?.id,film,week,tally)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
+        const out=recordGameBase({externalState:state});if(!out?.ok)return out;
+        try{addCardCareer(tally,week)}catch(err){console.error(err)}try{recordOppFilm(opp?.id,film,week,tally)}catch(err){console.error(err)}if(key)cardMeta().recordedBattleSeed=key;
+        let reviews={};try{reviews=recordCardFilm(out.record,film)}catch(err){console.error(err)}
         try{markArchive(out?.result?.gameId,{coached:true,moments,classic})}catch(err){console.error(err)}
         try{noteUsage(state,userSide)}catch(err){console.error(err)}
         try{const us=Number(state?.score?.[userSide])||0,them=Number(state?.score?.[userSide==='home'?'away':'home'])||0;programAwards({won:us>them,us,them,postseason:false,ranks,oppName:opp?.name,opp})}catch(err){console.error(err)}
-        return{ok:true,result:out.result}}
+        return{ok:true,result:out.result,...reviews}}
       catch(err){console.error(err);return{ok:false,error:err.message||String(err)}}
     },
     save(data){
@@ -2213,6 +2346,7 @@ function normalizeCallSheet(u){
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
   globalThis.DynastyCardGameDay={signingGoals:(season=universe.year)=>{const me=selected();const cls=(me.roster||[]).filter(p=>String(recruitmentOf(p)?.schoolId)===String(me.id)&&Number(recruitmentOf(p)?.season)===season);return signingGoals(cls,me,season)},seasonRecap:()=>CS.battle.seasonRecap(universe.callSheet?.seasonCalls?.[String(universe.year)]),hireFilmEffect,setRivalryPrep,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
+    applyFilmPrep,applyProtectionPrep:()=>applyFilmPrep('protection'),
     syncSignatures:()=>syncSignatures(cardMeta(),selected()),
     meta:()=>universe?.callSheet?JSON.parse(JSON.stringify(universe.callSheet)):null,
     integrations:()=>INTEGRATIONS.map(x=>({id:x.id,label:x.label,about:x.about,on:integrationOn(x)})),

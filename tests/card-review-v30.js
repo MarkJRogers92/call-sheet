@@ -70,7 +70,7 @@ test('four_minute_offense gives defense 2 timeouts and openingDrive defaults on'
 
 test('snapVerdict and matchupStory credit Finish recovery on [W, L, W] success snaps',()=>{
   const e={
-    offSide:'home',defSide:'away',kind:'comp',category:'success',
+    offSide:'home',defSide:'away',kind:'catch',category:'success',yards:6,completed:true,
     duelResults:[{won:true},{won:false},{won:true}],
     duels:[
       {key:'G',label:'Protection',offNames:['LT'],defNames:['EDGE'],offRoles:['LT'],defRoles:['EDGE'],mods:[]},
@@ -85,6 +85,39 @@ test('snapVerdict and matchupStory credit Finish recovery on [W, L, W] success s
   const ms=B.matchupStory(e);
   assert.equal(ms.key,'F');
   assert.match(ms.detail,/recovered the play after losing separation/);
+});
+
+test('a PA Boot incompletion leads with the result even when the receiver won Finish',()=>{
+  const home=Ro.preset('ground'),pb=P.newPlaybook();
+  pb.off.base[1]='pa_boot';home.decks=P.decksOf(pb);
+  const b=B.create({home,away:Ro.preset('tempo'),user:'home',mode:'snap',control:'offense',seed:'review-verdict-40'});
+  B.advance(b);
+  const start=b.log.length;
+  B.submit(b,{type:'call',play:'pa_boot',tactics:[]});
+  const e=b.log.slice(start).find(x=>x.type==='snap'&&x.userCalled);
+  assert.deepEqual(e.duelResults.map(d=>d.won),[true,false,true]);
+  assert.equal(e.kind,'inc');
+  const verdict=B.snapVerdict(e,'home'),film=B.matchupStory(e);
+  assert.match(verdict.text,/^Incomplete · 0 yards\. Separation:/);
+  assert.match(film.summary,/^Incomplete · 0 yards\. Separation:/);
+  assert.doesNotMatch(verdict.text+' '+film.detail,/recover/i);
+  assert.equal(B.lastUserCall(b,'home').won,false);
+  assert.equal(B.snapVerdict({...e,kind:'catch',checkdown:true,yards:4}).result,'Checkdown · +4 yards');
+  const converted={...e,kind:'catch',checkdown:true,yards:11,after:{possession:'home',down:1}};
+  assert.equal(B.matchupStory(converted).result,'Checkdown · +11 yards · First down');
+  assert.equal(B.snapVerdict({...e,turnover:'interception'}).result,'Interception');
+});
+
+test('constraint calls count toward opponent film separately from the short-term adjustment',()=>{
+  const home=Ro.preset('ground'),pb=P.newPlaybook();
+  pb.off.base[1]='screen';home.decks=P.decksOf(pb);
+  const b=B.create({home,away:Ro.preset('aerial'),user:'home',mode:'snap',control:'offense',seed:'review-constraint-0'});
+  B.advance(b);
+  B.submit(b,{type:'call',play:'screen',tactics:[]});
+  assert.equal(b.tend.home.constraint,1);
+  assert.equal(B.tendencyCounts(b,'home').constraint,1);
+  b.tend.home.constraint=0; // Adjustments and halftime can clear the live meter without erasing film.
+  assert.equal(B.tendencyCounts(B.load(B.save(b)),'home').constraint,1);
 });
 
 test('deck minimum floor 6, facility 90 4th signature slot, and unbiased prospect generation',()=>{

@@ -57,7 +57,8 @@ async function showOptions(page){
   assert.equal(await page.evaluate(()=>window.__slice.save().playbook.off.openingScript),'screen');
   await page.click('[data-k="mode"][data-v="snap"]');await page.click('#play');await page.click('#kick');if(await page.$('#gotIt'))await page.click('#gotIt');
   await page.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);
-  assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true','Quick Battle opens with the full call sheet');
+  assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'false','a fresh Quick Battle starts in Quick Calls');
+  await page.click('#sheetToggle');
   assert.ok(await page.locator('#hand .card.k-play').first().isVisible());
   const separateRows=await page.locator('#hand').evaluate(hand=>{
     const cmd=hand.querySelector('.cmd').getBoundingClientRect();
@@ -71,8 +72,9 @@ async function showOptions(page){
   assert.ok(!await page.locator('#side').isVisible(),'Quick Calls hides the full detail');
   const preChoice=await page.evaluate(()=>window.CallSheet.battle.save(window.__slice.b));
   await quick.first().focus();await page.keyboard.press('Enter');assert.equal(await quick.first().getAttribute('aria-pressed'),'true');assert.ok(await quick.first().evaluate(el=>el===document.activeElement));
-  const pair=await page.locator('.quick-board .call-tactic-note').innerText();assert.match(pair,/Add tactic|Play now|Hold Command/,'a selected call explains a pairing or why to save Command');
-  await page.click('#sheetToggle');assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true');assert.ok(await page.locator('#coachingRead .call-tactic-note').isVisible(),'same guidance in the full sheet');assert.match(await page.textContent('#look'),/Opening script: Screen/i);
+  await page.locator('.quick-details > summary').click();
+  const pair=await page.locator('.quick-details .call-tactic-note').innerText();assert.match(pair,/Add tactic|Play now|Hold Command/i,'a selected call explains a pairing or why to save Command');
+  await page.click('#sheetToggle');assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true');assert.ok(await page.locator('#coachingRead .call-tactic-note').isVisible(),'same guidance in the full sheet');assert.match(await page.textContent('#look'),/Opening script: RB Screen/i);
   await page.click('#battleSettings');await page.selectOption('#motionMode','reduced');
   assert.ok(await page.locator('#headsetControls [data-headset="inside25"]').isChecked());
   await page.locator('#headsetControls [data-headset="defendLead"]').check();
@@ -96,11 +98,10 @@ async function showOptions(page){
   await page.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true;window.__slice.go({type:'call',play:'outside_zone',tactics:[]})});
   await page.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);
   const checkpoint=await page.evaluate(()=>{const b=window.__slice.b;return{game:b.game,rng:b.rng,hands:b.hands,log:b.log,workload:b.workload}});
-  await page.click('#sheetToggle');
   await page.reload();assert.match(await page.textContent('#play'),/RESUME/);await page.click('#play');
   assert.deepEqual(await page.evaluate(()=>{const b=window.__slice.b;return{game:b.game,rng:b.rng,hands:b.hands,log:b.log,workload:b.workload}}),checkpoint);
-  assert.ok(await page.locator('#quickClue').isVisible(),'Quick Battle remembers the chosen Quick Calls view after reload');
-  await page.click('#sheetToggle');await page.locator('#hand .card.k-play:not(.blocked)').first().click();assert.match(await page.textContent('#side'),/Ability.*Effects.*Edge/);
+  assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'true','Quick Battle remembers the chosen Full Call Sheet after reload');
+  await page.locator('#hand .card.k-play:not(.blocked)').first().click();assert.match(await page.textContent('#side'),/Ability.*Total.*your edge/is);
   await page.setViewportSize({width:390,height:844});await page.evaluate(()=>window.__slice.title());assert.equal(await page.locator('#pbv').isDisabled(),true);
   await page.click('#play');if(!await page.locator('#bSim').isVisible())await page.click('#sheetToggle');await page.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true});await page.click('#bSim');await page.waitForSelector('#openPack');
   const earned=await page.evaluate(()=>({games:window.__slice.save().games,achievements:window.__slice.save().playbook.achievements}));assert.ok(earned.achievements.includes('first_game'));
@@ -129,8 +130,8 @@ async function showOptions(page){
   await dynasty.locator('#clientRail [data-client-tab="dashboard"]').click();await dynasty.locator('#broadcastFeature [data-coach-cards]').click();let frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();
   await frame.waitForFunction(()=>window.__slice&&(document.querySelector('#gotIt')||window.__slice.req));if(await frame.$('#gotIt'))await frame.click('#gotIt');await frame.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);
   assert.equal(await frame.evaluate(()=>window.__slice.b.decks[window.__slice.b.user].off.base[0]),'pa_boot');
-  assert.equal(await frame.locator('#sheetToggle').getAttribute('aria-expanded'),'true','Dynasty opens with the full call sheet');
-  assert.match(await frame.textContent('#look'),/Opening script: Screen/i);await frame.click('#sheetToggle');
+  assert.equal(await frame.locator('#sheetToggle').getAttribute('aria-expanded'),'false','Dynasty starts in Quick Calls');
+  assert.match(await frame.textContent('#look'),/Opening script: RB Screen/i);await frame.click('#sheetToggle');
   const saved=await frame.evaluate(()=>({game:window.__slice.b.game,rng:window.__slice.b.rng}));
   assert.ok(await dynasty.evaluate(()=>window.DynastyCardGameDay.meta().activeBattle));
   await dynasty.evaluate(()=>window.__callSheetDynasty.close());await dynasty.locator('#clientRail [data-client-tab="deckroom"]').click();
@@ -139,7 +140,7 @@ async function showOptions(page){
   await driveChallenges.focus();await dynasty.keyboard.press('Enter');
   const challenge=dynasty.frameLocator('#driveChallengeHost iframe[data-drive-challenges]');
   await challenge.locator('[data-challenge="need_six"]').click();
-  await challenge.locator('#hand .card.k-play:not(.blocked)').first().click();await challenge.locator('#snapBtn').click();
+  await challenge.locator('[data-quick-call]').first().click();await challenge.locator('#snapBtn').click();
   assert.ok(await driveChallenges.evaluate(original=>{
     window.DynastyCardGameDay.openDynastyConnection('deckroom');
     return !original.isConnected;
@@ -153,8 +154,8 @@ async function showOptions(page){
   // Reopening the weekly battle reconstructs its original screen from the host save.
   await dynasty.locator('#cardProgram [data-coach-cards]').click();frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();await frame.waitForFunction(()=>window.__slice?.req);
   assert.deepEqual(await frame.evaluate(()=>({game:window.__slice.b.game,rng:window.__slice.b.rng})),saved);
-  assert.ok(await frame.locator('#quickClue').isVisible(),'Dynasty remembers Quick Calls when the battle reopens');
-  await frame.click('#sheetToggle');await frame.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true});await frame.click('#bSim');await frame.waitForSelector('#openPack');
+  assert.equal(await frame.locator('#sheetToggle').getAttribute('aria-expanded'),'true','Dynasty remembers the Full Call Sheet when the battle reopens');
+  await frame.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true});await frame.click('#bSim');await frame.waitForSelector('#openPack');
   const progress=await dynasty.evaluate(()=>({games:window.DynastyCardGameDay.meta().games,record:window.DynastyCardGameDay.meta().playbook.record}));
   await dynasty.evaluate(()=>window.__callSheetDynasty.close());await dynasty.locator('#cardProgram [data-coach-cards]').click();frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();await frame.waitForSelector('#openPack');
   assert.deepEqual(await dynasty.evaluate(()=>({games:window.DynastyCardGameDay.meta().games,record:window.DynastyCardGameDay.meta().playbook.record})),progress);

@@ -1,6 +1,7 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict');
 const B=require('../forks/call-sheet/core/battle'),D=require('../forks/call-sheet/core/data'),Ro=require('../forks/call-sheet/core/roster');
+const W=require('../forks/call-sheet/core/world');
 const clone=x=>JSON.parse(JSON.stringify(x));
 function fixture(role='off'){
  const b={teams:{home:Ro.preset('ground')},log:[],snap:{def:{play:'secret'}}};
@@ -93,12 +94,42 @@ test('a clock spike names the real QB, not an imaginary target',()=>{
  const v=B.snapDecisions(b,req);assert.match(v.choices[0].detail,/clock/i);assert.ok(v.choices[0].detail.includes(b.teams.home.lineup.off.QB.name));
 });
 
+test('thin-film Quick Calls rank roster-fit options and show the unselected forecast',()=>{
+ const pairs=[['sunbelt','prairie'],['tempo','control'],['lakeshore','aerial'],['prairie','ground'],
+   ['control','granite'],['aerial','sunbelt'],['ground','tempo'],['granite','lakeshore']];
+ const boards=pairs.map(([home,away])=>{
+   const b=B.create({home:W.teamFor(home),away:W.teamFor(away),user:'home',mode:'key',control:'offense',
+     openingDrive:true,seed:'review-fog-'+home});
+   const req=B.advance(b),saved=B.save(b),view=B.snapDecisions(b,req,{},60);
+   assert.equal(view.choices.length,3);
+   for(const {id,aim,forecast,matchup} of view.choices){
+     assert.equal(matchup?.chip,'?');
+     const expected=B.scoutedForecast(b,req,{play:id},60);
+     assert.deepEqual(forecast,{yards:expected.yards,first:expected.first,confidence:'Limited film',goal:'first'});
+     assert.deepEqual(B.quickForecast(b,req,{play:id},60),forecast);
+     if(aim==='Dependable gain')assert.notEqual(D.PLAYS[id].family,'deep');
+   }
+   assert.equal(B.save(b),saved);
+   return view.choices.map(c=>c.id);
+ });
+ assert.ok(boards.filter(ids=>ids.includes('inside_zone')).length<=4,'a base run does not dominate every thin-film board');
+ assert.ok(boards.filter(ids=>ids.includes('quick_slant')).length<=5,'the first listed quick pass does not dominate');
+});
+
 function thirdDown(seed,distance=6,overrides={}){
  const E=require('../game-engine-v2');
  const b=B.create({seed:'two-down-'+seed,home:Ro.preset('ground'),away:Ro.preset('aerial'),mode:'snap',control:'both',user:'home'});
  E.startGame(b.game);Object.assign(b.game,{possession:'home',fieldPosition:35,down:3,distance,...overrides});B.advance(b);
  return b;
 }
+test('goal-to-go and money downs give the conversion recommendation priority',()=>{
+ for(const [b,aim,goal] of [[thirdDown(0),'Move the chains','first'],[thirdDown(0,4,{fieldPosition:96}),'Reach the end zone','touchdown']]){
+   const {choices}=B.snapDecisions(b,b.pending,{},60);
+   assert.equal(choices[0].aim,aim);
+   assert.ok(choices.every(c=>c.forecast?.goal===goal));
+   if(goal==='touchdown')assert.ok(choices.every(c=>c.forecast.yards[1]<=4));
+ }
+});
 test('two-down intent changes legal quick calls, survives resume and clears on the next snap',()=>{
  const b=thirdDown(0),before=B.snapDecisions(b),rng=clone(b.rng);
  B.submit(b,{type:'two_down',active:true});

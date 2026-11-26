@@ -88,3 +88,106 @@ test('coached and saved opponent film counts their actual third-down calls exact
   assert.deepEqual(saved.oppFilm[opp.id][1].off.thirdDown,seen);
   assert.equal(saved.oppFilm[opp.id][0].off.thirdDown,undefined);
 });
+
+test('protection film charts actual duels, offers real prep and compares the next card game',async()=>{
+  const {e,cg,u,me}=await setup(),CS=globalThis.CallSheet,host=globalThis.__callSheetDynasty,cfg=host.launch();
+  const team=side=>CS.adapter.battleTeam(cfg[side],null,cfg.program[side]);
+  const b=CS.battle.simulate({home:team('home'),away:team('away'),seed:'protection-review-1'});
+  const film=CS.battle.callFilm(b,cfg.userSide),sample=film.own.protection;
+  const protectionSnaps=b.log.filter(x=>x.type==='snap'&&x.offSide===cfg.userSide&&!x.penalty&&CS.data.PLAYS[x.play]?.duels.G.protect&&x.duelResults?.[0]);
+  assert.equal(sample.attempts,protectionSnaps.length);
+  assert.equal(sample.sacks,protectionSnaps.filter(x=>x.kind==='sack').length);
+  assert.equal(sample.lost,protectionSnaps.filter(x=>!x.duelResults[0].won).length);
+  host.save({activeBattle:{seed:cfg.seed,battle:'{}'}});
+  const first=host.record(b.game,{},[],film);
+  assert.equal(first.ok,true);
+  assert.match(first.protectionReview,/Film flagged pass protection/);
+  const firstRecord=u.gameArchive.find(game=>game.id===first.result.gameId);
+  assert.deepEqual(firstRecord.cardProtection,sample);
+  assert.match(cg.cardProgramHTML(),/Advance the week/);
+  for(let attempt=0;attempt<2;attempt++)assert.equal(host.record(b.game,{},[],film).ok,true);
+  assert.equal(u.gameArchive.filter(game=>game.cardProtection).length,1);
+
+  const saved=JSON.parse(JSON.stringify(u.callSheet));
+  e.normalizeCallSheet({callSheet:saved});
+  assert.deepEqual(saved.protectionFilm,u.callSheet.protectionFilm);
+  u.callSheet=saved;
+  u.callSheet.activeBattle=null;
+  u.week=1;
+  u.weeklyDecisions=[];
+  assert.match(cg.cardProgramHTML(),/1 weekly prep point for \+1 on Protection duels/);
+  globalThis.__DL_TEST__.weeklyCoachingSet(['run_blocking','coverage']);
+  assert.match(cg.cardProgramHTML(),/Review weekly prep/);
+  assert.equal(cg.applyProtectionPrep(),false);
+  assert.deepEqual(me.weeklyPrep.focuses,['run_blocking','coverage']);
+  globalThis.__DL_TEST__.weeklyCoachingSet(['coverage']);
+  u.callSheet.activeBattle={seed:cg.launch().seed,battle:'{}'};
+  assert.equal(cg.applyProtectionPrep(),false);
+  u.callSheet.activeBattle=null;
+  assert.equal(cg.applyProtectionPrep(),true);
+  assert.equal(cg.applyProtectionPrep(),false);
+  assert.deepEqual(me.weeklyPrep.focuses,['coverage','pass_protection']);
+  const next=cg.launch();
+  assert.deepEqual(next.program[next.userSide].prep,me.weeklyPrep.focuses);
+  assert.deepEqual(next.practiceReps,{two_high:5,cover1:5,deep_cross:5,pa_boot:5});
+
+  const beforePacks=u.callSheet.playbook.packsOpened;
+  const game=e.recordV2GameLabResult();
+  assert.equal(game.ok,true);
+  assert.equal(game.record.cardProtection.planned,true);
+  assert.ok(game.record.cardProtection.prepared>0);
+  assert.deepEqual(game.record.cardProtection.before,sample);
+  assert.match(e.gameSummaryHTML(game.record),/Week 1 had .* This game had /);
+  assert.match(cg.cardProgramHTML(),/Pass Protection prep applied on/);
+  assert.equal(u.callSheet.playbook.packsOpened,beforePacks+1);
+});
+
+test('run defense film tracks designed runs and spends the existing Run Fits prep point',async()=>{
+  const {e,cg,u,me}=await setup(),CS=globalThis.CallSheet,host=globalThis.__callSheetDynasty,cfg=host.launch();
+  const team=side=>CS.adapter.battleTeam(cfg[side],null,cfg.program[side]);
+  const b=CS.battle.simulate({home:team('home'),away:team('away'),seed:'run-defense-review-1'});
+  const film=CS.battle.callFilm(b,cfg.userSide),sample=film.own.runDefense;
+  const runs=b.log.filter(x=>x.type==='snap'&&x.defSide===cfg.userSide&&!x.penalty&&x.kind==='run'&&CS.data.PLAYS[x.play]?.family==='run');
+  assert.equal(sample.attempts,runs.length);
+  assert.equal(sample.yards,runs.reduce((total,run)=>total+run.yards,0));
+  assert.equal(sample.explosives,runs.filter(run=>run.yards>=10).length);
+  assert.ok(sample.attempts>=8&&(sample.yards/sample.attempts>=4.5||sample.explosives>=2));
+  assert.equal(sample.prepared,0);
+
+  host.save({activeBattle:{seed:cfg.seed,battle:'{}'}});
+  const first=host.record(b.game,{},[],film);
+  assert.equal(first.ok,true);
+  assert.match(first.runDefenseReview,/Film flagged run defense.*designed runs for/);
+  assert.deepEqual(u.gameArchive.find(game=>game.id===first.result.gameId).cardRunDefense,sample);
+  assert.equal(host.record(b.game,{},[],film).ok,true);
+  assert.equal(u.gameArchive.filter(game=>game.cardRunDefense).length,1);
+
+  const saved=JSON.parse(JSON.stringify(u.callSheet));
+  e.normalizeCallSheet({callSheet:saved});
+  assert.deepEqual(saved.runDefenseFilm,u.callSheet.runDefenseFilm);
+  const v32=JSON.parse(JSON.stringify(saved));delete v32.runDefenseFilm;
+  e.normalizeCallSheet({callSheet:v32});
+  assert.deepEqual(v32.protectionFilm,saved.protectionFilm);
+  assert.equal(v32.runDefenseFilm,undefined);
+  u.callSheet=saved;
+  u.callSheet.activeBattle=null;
+  u.week=1;
+  u.weeklyDecisions=[];
+  assert.match(cg.cardProgramHTML(),/1 weekly prep point for \+1 on the defensive Gate against designed runs/);
+  globalThis.__DL_TEST__.weeklyCoachingSet(['run_blocking','coverage']);
+  assert.equal(cg.applyFilmPrep('runDefense'),false);
+  assert.deepEqual(me.weeklyPrep.focuses,['run_blocking','coverage']);
+  globalThis.__DL_TEST__.weeklyCoachingSet(['coverage']);
+  assert.equal(cg.applyFilmPrep('runDefense'),true);
+  assert.equal(cg.applyFilmPrep('runDefense'),false);
+  assert.deepEqual(me.weeklyPrep.focuses,['coverage','run_fits']);
+  const next=cg.launch();
+  assert.deepEqual(next.practiceReps,{two_high:5,cover1:5,run_fit:5,cover3:5});
+
+  const game=e.recordV2GameLabResult();
+  assert.equal(game.ok,true);
+  assert.equal(game.record.cardRunDefense.planned,true);
+  assert.ok(game.record.cardRunDefense.prepared>0);
+  assert.deepEqual(game.record.cardRunDefense.before,sample);
+  assert.match(e.gameSummaryHTML(game.record),/Run Fits prep applied on .* Week 1 had .* This game had /);
+});

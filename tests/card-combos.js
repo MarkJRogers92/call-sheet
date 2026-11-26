@@ -41,17 +41,26 @@ test('defensive recipes need the call and help the defense',()=>{
 });
 
 test('full games: combos are occasional, both sides earn them, and the duel shows the label',()=>{
-  const seen={},perGame=[];let labeled=0,defEarned=0;
+  const seen={};let labeled=0,defEarned=0,comboSnaps=0,totalSnaps=0;
   for(let i=0;i<60;i++){
     const b=B.simulate({home:Ro.preset(['aerial','tempo','ground'][i%3]),away:Ro.preset(['ground','aerial','tempo'][i%3]),seed:`combo-games-${i}`});
     assert.equal(b.game.status,'final');assert.ok(!b.final.engineError,b.final.engineError);
-    let n=0;
-    for(const e of b.log)if(e.type==='snap'){for(const ev of e.events||[])if(ev.type==='combo'&&ev.id!=='chain_gang'){seen[ev.id]=(seen[ev.id]||0)+1;n++;if(ev.side===e.defSide)defEarned++}
-      if(e.duels?.some(d=>(d.mods||[]).some(m=>/^COMBO: /.test(m.src))))labeled++}
-    perGame.push(n);
+    for(const e of b.log){
+      if(e.type!=='snap')continue;
+      totalSnaps++;
+      const combos=(e.events||[]).filter(ev=>ev.type==='combo'&&ev.id!=='chain_gang');
+      assert.equal(new Set(combos.map(ev=>ev.side)).size,combos.length,'each side can earn at most one combo per snap');
+      if(combos.length)comboSnaps++;
+      for(const ev of combos){
+        seen[ev.id]=(seen[ev.id]||0)+1;
+        if(ev.side===e.defSide)defEarned++;
+      }
+      if(e.duels?.some(d=>(d.mods||[]).some(m=>/^COMBO: /.test(m.src))))labeled++;
+    }
   }
-  const avg=perGame.reduce((a,x)=>a+x,0)/perGame.length;
-  assert.ok(avg>=1&&avg<=12,`combos per game ${avg.toFixed(1)}`);
+  // Both sides can earn one on the same play. Measure how often a snap has a combo.
+  const rate=comboSnaps/totalSnaps;
+  assert.ok(comboSnaps>=60&&rate<=1/12,`combos on ${(rate*100).toFixed(1)}% of snaps`);
   assert.ok(Object.keys(seen).length>=5,`recipes seen: ${JSON.stringify(seen)}`);
   assert.ok(defEarned>0,'the defense earns its combos');assert.ok(labeled>0,'combo edges are labeled on the duel');
 });

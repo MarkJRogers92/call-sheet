@@ -98,7 +98,7 @@ test('in-series Clean Execution and Stonewalled surges award +1 Command',()=>{
   assert.equal(wall.b.hands.home.command,4);
 });
 
-test('Quick Calls surfaces covTend, draw heat counter, badges, and Need Six / Goal-Line Stand alternates',()=>{
+test('Quick Calls separates a pressure tendency from a confirmed rush and preserves challenge alternates',()=>{
   const b=B.create({home:Ro.preset('ground'),away:Ro.preset('aerial'),user:'home',mode:'snap',control:'offense',seed:'v31-quick'});
   const req=B.advance(b);
   req.look.covTend='zone';
@@ -117,8 +117,13 @@ test('Quick Calls surfaces covTend, draw heat counter, badges, and Need Six / Go
   req.look.heat=true;
   const view=B.snapDecisions(b,req);
   const drawChoice=view.choices.find(c=>c.id==='draw');
-  assert.ok(drawChoice,'draw is surfaced as a heat counter');
-  assert.equal(drawChoice.badge,'BEATS BLITZ');
+  assert.ok(!drawChoice?.badge,'Draw has no live rush bonus from historical heat');
+  req.look.pressure={value:false,confirmed:true};
+  assert.match(B.snapDecisions(b,req).clue,/confirms no extra rush/);
+  assert.equal(B.counterBadge(req,D.PLAYS.draw),null);
+  assert.equal(B.counterBadge(req,D.PLAYS.screen),'PRESSURE TENDENCY');
+  req.look.pressure={value:true,confirmed:true};
+  assert.equal(B.snapDecisions(b,req).choices.find(c=>c.id==='draw')?.badge,'BEATS THE BLITZ');
   assert.ok(view.choices.every(c=>c.detail.length<140));
 
   const sixAlt=B.createChallenge('need_six',{alternate:true});
@@ -129,6 +134,51 @@ test('Quick Calls surfaces covTend, draw heat counter, badges, and Need Six / Go
   const glsAlt=B.createChallenge('goal_line_stand',{alternate:true});
   assert.equal(glsAlt.challengeLook,'spread_pylon');
   assert.equal(D.PLAYS[glsAlt.snap.off.play].pass,true);
+});
+
+test('defensive combo cues only use public family and drive history',()=>{
+  const b=B.createChallenge('goal_line_stand');
+  const req=b.pending,dkey=b.game.drive+':away';
+  b.drive={key:dkey,fams:['run','run'],plays:['inside_zone','inside_zone'],calls:[],
+    results:[{family:'run',yards:1},{family:'run',yards:-3}],combos:[]};
+  req.offLook.family={value:'run',confirmed:false};
+  const runFit=B.comboRead(b,req,D.CALLS.run_fit);
+  assert.equal(runFit.id,'wall_up');
+  assert.equal(runFit.condition,'if they run');
+  req.options.plays=[{id:'run_fit',card:D.CALLS.run_fit,cost:0}];
+  assert.match(B.setupCue(b,req).text,/Wall Up.*if they run/);
+  assert.match(B.snapDecisions(b,req).choices[0].badge,/IF THEY RUN/);
+  b.snap.off={...b.snap.off,play:'deep_cross'};
+  req.offLook.family.value='deep';
+  assert.deepEqual(B.comboRead(b,req,D.CALLS.run_fit),runFit);
+  assert.equal(B.comboRead(b,req,D.CALLS.zone_pressure).alternate,'Wall Up');
+  req.offLook.family.confirmed=true;
+  assert.equal(B.comboRead(b,req,D.CALLS.run_fit),null);
+  const ready=B.comboRead(b,req,D.CALLS.zone_pressure);
+  assert.equal(ready.id,'heat_check');
+  assert.equal(ready.condition,undefined);
+  req.offLook.family.value='run';
+  assert.equal(B.comboRead(b,req,D.CALLS.zone_pressure).id,'wall_up','only one defensive combo earns the payoff');
+});
+
+test('both units can earn their set-up combo in the same snap, without lowering staff-granted Command',()=>{
+  const home=Ro.preset('ground'),pb=P.newPlaybook();
+  pb.off.base[1]='power';home.decks=P.decksOf(pb);
+  const b=B.create({home,away:Ro.preset('aerial'),user:'home',mode:'snap',control:'offense',seed:'combo-receipts-0'});
+  B.advance(b);
+  const zone={coverage:'zone',pressure:0,shell:2};
+  b.drive={key:b.game.drive+':home',fams:['quick','quick'],plays:['quick_slant','stick'],calls:[zone,zone],
+    results:[{family:'quick',yards:5},{family:'quick',yards:5}],combos:[]};
+  b.snap.def={play:'cover1',tactics:[]};b.hands.home.command=3;b.hands.away.command=7;
+  b.decks.away.def.base=['cover1'];b.hands.away.wrinkles=[];b.hands.away.tactics=[];
+  const start=b.log.length;
+  B.submit(b,{type:'call',play:'power',tactics:[]});
+  const e=b.log.slice(start).find(x=>x.type==='snap'&&x.userCalled);
+  assert.deepEqual(e.events.filter(x=>x.type==='combo').map(x=>[x.id,x.side,x.commandRefund]),
+    [['rhythm_and_bruise','home',1],['bait_the_throw','away',0]]);
+  assert.ok(e.duels[0].mods.some(x=>x.src==='COMBO: Tempo Body Blow'));
+  assert.ok(e.duels[1].mods.some(x=>x.src==='COMBO: Bait the Throw'));
+  assert.equal(b.hands.away.command,7);
 });
 
 test('repairMinimum repairs under-minimum decks and AI evolutions honor roster gates',()=>{
