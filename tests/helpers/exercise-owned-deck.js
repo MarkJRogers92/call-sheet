@@ -87,13 +87,23 @@ module.exports = function exerciseOwnedDeck() {
   eq(saved.reserve.off.wrinkles.length,500,'storage respects host limit');
   eq(saved.off.wrinkles.includes('draw'),true,'saved the requested exchange');
   eq(owned(saved),ceilingOwned,'all 514 play copies survive');
-  // Slots other than the four base calls are upper bounds, not a quota to be filled.
+  // A draft can go under the minimum while editing. Saving must conserve every copy.
   const light=packs.newPlaybook();
   for(const s of ['off','def'])for(const pile of ['wrinkles','tactics']){
     light.reserve[s][pile]=light[s][pile];light[s][pile]=[];
   }
-  playbookUI.open(light,{onSave:p=>{saved=p}});count('wrinkles',0,14);count('tactics',0,14);count('base',4,4);
-  click('[data-save]');eq(owned(saved),owned(light),'a base-only deck is playable without discarding any cards');eq(saved.off.wrinkles,[],'optional piles stay empty');
+  saved=null;playbookUI.open(light,{onSave:p=>{saved=p}});count('wrinkles',0,14);count('tactics',0,14);count('base',4,4);
+  one('[data-save]').click();eq(saved,null,'cannot save a deck below the minimum');
+  for(const side of ['off','def']){
+    click(attr('data-side',side));
+    for(const pile of ['wrinkles','tactics']){
+      click(attr('data-category',pile));
+      const minimum=packs.MIN_CAPACITY[pile];
+      for(const id of light.reserve[side][pile].slice(0,minimum))move(id,'add');
+      count(pile,minimum,14);
+    }
+  }
+  click('[data-save]');eq(owned(saved),owned(light),'saving at the minimum keeps every owned card');
   // Same exchange at the signature archive ceiling: the player-specific cards are never discarded.
   saved=null;playbookUI.open(pb,{maxUnusedSignatures:1,onSave:p=>{saved=p}});click('[data-category="signatures"]');
   click(attr('data-sig-store',players[0].id));one('[data-save]').click();eq(saved,null,'do not normalize away excess inactive signatures');

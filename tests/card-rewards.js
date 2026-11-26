@@ -105,7 +105,8 @@ test('even a nearly complete collection receives an eligible discovery option',a
 
 function stickerSession(storage) {
   const fs = require('node:fs'), vm = require('node:vm');
-  const context = vm.createContext({localStorage: storage});
+  const battle = require('../forks/call-sheet/core/battle');
+  const context = vm.createContext({localStorage: storage, CallSheet: {battle}});
   vm.runInContext(fs.readFileSync(require.resolve('../forks/call-sheet/slice/challenge-awards.js'), 'utf8'), context);
   return context.ChallengeAwards;
 }
@@ -136,4 +137,34 @@ test('a challenge sticker can be awarded once per session when browser storage i
     assert.equal(awards.list().length, 1);
     assert.equal(awards.get('goal_line_stand').symbol, 'W');
   }
+});
+
+test('challenge records persist best and last drives separately for each look', () => {
+  const career = [['callsheet.slice.v1', 'career'], ['dynasty.active', 'season']];
+  const db = new Map(career);
+  const storage = {getItem: key => db.get(key), setItem: (key, value) => db.set(key, value)};
+  const quick = stickerSession(storage), dynasty = stickerSession(storage);
+  const complete = (awards, look, won, snaps) => awards.finish('need_six', look, {won, snaps});
+  assert.equal(complete(quick, 'stacked_box', true, 1), null, 'unrelated alternate is not tracked');
+  assert.equal(complete(quick, null, false, 4).improved, false);
+  assert.equal(dynasty.progress('need_six').best, null, 'an unsuccessful drive has no best clear');
+  assert.equal(complete(dynasty, null, true, 5).improved, true);
+  assert.equal(complete(quick, null, true, 3).improved, true);
+  assert.equal(complete(dynasty, null, true, 3).improved, false, 'a tie is not an improvement');
+  assert.equal(complete(quick, 'prevent_umbrella', true, 2).improved, true);
+  assert.equal(complete(dynasty, null, false, 2).improved, false);
+  const reload = stickerSession(storage);
+  assert.deepEqual(JSON.parse(JSON.stringify(reload.progress('need_six'))), {
+    attempts: 5, clears: 3, best: 3, last: {won: false, snaps: 2},
+  });
+  assert.deepEqual(JSON.parse(JSON.stringify(reload.progress('need_six', 'prevent_umbrella'))), {
+    attempts: 1, clears: 1, best: 2, last: {won: true, snaps: 2},
+  });
+  assert.equal(reload.get('need_six'), null, 'recording an alternate does not earn an original sticker');
+  assert.deepEqual(career.map(([key]) => db.get(key)), ['career','season']);
+  const blocked = stickerSession({getItem: () => null, setItem() { throw Error('Storage unavailable'); }});
+  complete(blocked, null, true, 2);
+  complete(blocked, null, false, 4);
+  assert.equal(blocked.progress('need_six').attempts, 2);
+  assert.equal(blocked.progress('need_six').best, 2);
 });

@@ -5,7 +5,7 @@ const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm');
 const source=fs.readFileSync(path.join(__dirname,'../../forks/call-sheet/slice/slice.js'),'utf8');
 function postgameFrame(host){
   const nodes=new Map(),noop=()=>{},effects=new Proxy({},{get:()=>noop}),get=s=>{
-    if(!nodes.has(s))nodes.set(s,{style:{},dataset:{},classList:{add:noop,remove:noop,contains:()=>false},
+    if(!nodes.has(s))nodes.set(s,{style:{setProperty:noop,removeProperty:noop},dataset:{},classList:{add:noop,remove:noop,contains:()=>false},
       innerHTML:'',appendChild:noop,addEventListener:noop,setAttribute:noop,getContext:()=>({clearRect:noop}),querySelector:()=>null,querySelectorAll:()=>[]});
     return nodes.get(s);
   };

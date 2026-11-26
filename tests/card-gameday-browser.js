@@ -44,11 +44,26 @@ const shots=process.env.CARD_SHOTS||'';
       el.dispatchEvent(new PointerEvent('pointerleave'));return rows;
     });
     assert.ok(fog.length&&fog.every(r=>r.range.includes('–')&&r.bar===Number(r.range.split('–')[0])),'opponent bars use the displayed range, never the exact hidden trait');
-    await frame.click('#sheetToggle');
+    assert.equal(await frame.locator('#sheetToggle').getAttribute('aria-expanded'),'false','a fresh Dynasty battle starts in Quick Calls');
     assert.ok(await frame.locator('#quickClue').isVisible(),'the visible look precedes the quick calls');
-    await page.setViewportSize({width:390,height:844});
-    const fit=await frame.evaluate(()=>{const r=document.querySelector('#hand').getBoundingClientRect(),s=document.querySelector('#snapBtn').getBoundingClientRect();return r.right<=innerWidth+1 && s.bottom<=innerHeight && [...document.querySelectorAll('[data-quick-call]')].every(x=>x.getBoundingClientRect().width>=44&&x.getBoundingClientRect().height>=44)});
-    assert.ok(fit,'all quick choices and snap control fit the phone');
+    assert.match(await frame.locator('[data-quick-call] .quick-estimate').first().innerText(),/yd.*\d+.*%.*Limited film/s,'available calls show public forecasts before selection');
+    for(const [width,height] of [[1280,720],[390,844]]){
+      await page.setViewportSize({width,height});
+      const choice=frame.locator('[data-quick-call]').first();
+      await choice.click();
+      assert.equal(await choice.getAttribute('aria-pressed'),'true');
+      const fit=await frame.evaluate(()=>{
+        const hand=document.querySelector('#hand').getBoundingClientRect();
+        const snap=document.querySelector('#snapBtn').getBoundingClientRect();
+        const forecast=document.querySelector('#callForecast')?.getBoundingClientRect();
+        const inView=r=>r&&r.width>0&&r.height>0&&r.top>=0&&r.bottom<=innerHeight+1;
+        const choices=[...document.querySelectorAll('[data-quick-call]')];
+        return hand.right<=innerWidth+1&&inView(snap)&&inView(forecast)&&choices.every(choice=>{
+          const rect=choice.getBoundingClientRect();return rect.width>=44&&rect.height>=44;
+        });
+      });
+      assert.ok(fit,`the selected call keeps Snap and its forecast in view at ${width}×${height}`);
+    }
     if(shots)await page.screenshot({path:`${shots}/c2-quick-phone.png`});
     await page.setViewportSize({width:1400,height:900});await frame.click('#sheetToggle');
     assert.ok(await frame.locator('#coachingRead').isVisible(),'public coaching cues appear before selecting a play');

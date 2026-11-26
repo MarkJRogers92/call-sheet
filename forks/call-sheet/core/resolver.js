@@ -79,6 +79,7 @@ function defFlag(lineup,flag){return hasSig(lineup,Object.keys(D.DEF_ROLES),flag
 // Tactic legality for a given play. Returns null or a reason.
 function tacticBlocked(tac,play,offLineup){
   const sig=signatureBlocked(tac,offLineup);if(sig)return sig;
+  if(!tac.info&&(play.quickKick||play.id==='spike'))return 'This call cannot use a snap tactic';
   const n=tac.needs;if(!n)return null;
   if(n.protection&&!play.protection)return'Only on plays with a protection duel';
   if(n.pass&&!play.pass)return'Only on pass plays';
@@ -247,7 +248,8 @@ function buildSnap(ctx){
     // Momentum: the offense that just took the ball away gets one snap's push at the point of attack.
     if(ctx.momentum&&key==='G')add(1,'Momentum: takeaway');
     // Combos and hot players.
-    if(ctx.combo&&ctx.combo.duel===key)add(ctx.combo.v,`COMBO: ${ctx.combo.name}`);
+    for(const combo of ctx.combos||(ctx.combo?[ctx.combo]:[]))
+      if(combo.duel===key)add(combo.v,`COMBO: ${combo.name}`);
     if(ctx.fire){
       const hotO=d.off.map(r=>off[r]).find(p=>p&&ctx.fire[p.id]),hotD=d.def.map(r=>def[r]).find(p=>p&&ctx.fire[p.id]);
       if(hotO)add(.5,`${hotO.name} ON FIRE`);if(hotD)add(-.5,`${hotD.name} ON FIRE`);
@@ -343,9 +345,10 @@ function gainOdds(threshold,mean,sd,tail){
   return normal*(1-tail)+clamp(long,0,1)*tail;
 }
 // Expected value used by the AI and the "projection" line in the sandbox.
-function evaluate(snap,situation){
+function evaluate(snap,situation,extraTargets=[]){
   const probs=categoryProbs(snap),need=situation?.distance??10;
-  let yards=0,first=0,to=0,sack=0;
+  const targets=[need,...extraTargets].map(yards=>yards-.5),chances=targets.map(()=>0);
+  let yards=0,to=0,sack=0;
   for(const [cat,pc] of Object.entries(probs)){
     if(!pc)continue;const list=resultList(snap,cat),wsum=list.reduce((s,r)=>s+r.w,0);
     for(const r of list){
@@ -356,19 +359,22 @@ function evaluate(snap,situation){
       const fumble=(1-escape)*chance.fumble;
       to+=pr*(chance.pick+fumble);
       if(r.kind==='inc'){
-        if(cd){yards+=pr*cd*snap.checkdown.yards;first+=pr*cd*gainOdds(need-.5,snap.checkdown.yards,1.5,0)}
+        if(cd){
+          yards+=pr*cd*snap.checkdown.yards;
+          for(let i=0;i<targets.length;i++)chances[i]+=pr*cd*gainOdds(targets[i],snap.checkdown.yards,1.5,0);
+        }
       }else if(r.kind==='sack'){
         sack+=pr*(1-escape);yards+=pr*((1-escape)*Math.min(-1,mean)+escape*4.5);
-        first+=pr*escape*clamp((7-(need-.5))/5,0,1);
+        for(let i=0;i<targets.length;i++)chances[i]+=pr*escape*clamp((7-targets[i])/5,0,1);
       }else{
         // Scrambles have a 2–7 yard minimum. Most printed scramble results
         // already cluster around that range, so their expectation is approximate.
         yards+=pr*(r.kind==='scramble'?Math.max(mean,4.5):mean);
-        first+=pr*(1-fumble)*gainOdds((need-.5)/scale,r.yards[0],r.yards[1],r.tail||0);
+        for(let i=0;i<targets.length;i++)chances[i]+=pr*(1-fumble)*gainOdds(targets[i]/scale,r.yards[0],r.yards[1],r.tail||0);
       }
     }
   }
-  return{yards,first,turnover:to,sack,probs};
+  return{yards,first:chances[0],turnover:to,sack,probs,...(extraTargets.length?{targetOdds:chances.slice(1)}:{})};
 }
 
 // Roll the snap. rng: DynastyRng instance. Returns an engine outcome plus the story of the snap.

@@ -16,6 +16,22 @@ test('facility capacity uses earned thresholds, persists and honors the integrat
   cg.setIntegration('facility-playbook',false);pb.capacity={wrinkles:14,tactics:14};me.facilities=99;
   cg.syncProgramCapacity(me,pb);assert.equal(pb.capacity.tactics,14);
 });
+test('Facility 90 opens a fourth signature slot for a simulated breakout',async t=>{
+  const {e,cg,u,me,CS}=await setup(),pb=u.callSheet.playbook;
+  me.facilities=90;
+  const starters=CS.adapter.lineupFromTeam(me).lineup.off;
+  pb.signatures=['QB','RB','X'].map(role=>CS.signatures.specFor(starters[role]));
+  assert.match(cg.cardProgramHTML(),/Player signatures:<\/b> 3\/4/);
+  assert.equal(pb.signatureSlots,undefined,'the read-only Deck Room leaves the playbook alone');
+  t.mock.method(CS.signatures,'candidate',(b,side)=>({p:b.teams[side].lineup.off.TE,wins:18,duels:20,fire:0}));
+  const out=e.recordV2GameLabResult();
+  assert.equal(out.ok,true);
+  assert.equal(pb.signatures.length,4);
+  assert.equal(pb.signatures[3].playerId,starters.TE.id);
+  assert.equal(pb.reserveSignatures?.length??0,0);
+  e.normalizeCallSheet(u);
+  assert.equal(u.callSheet.playbook.signatures.length,4);
+});
 test('recruit playbook fit reaches the existing pitch and ignores hidden ratings',async()=>{
   const {cg,e,u,me}=await setup(831);
   const r=u.recruits.find(r=>cg.recruitingFit(me,r).bonus>0);assert.ok(r);

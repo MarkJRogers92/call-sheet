@@ -37,7 +37,7 @@ function sheet(role,tactics,command=5){
   const ctx=vm.createContext({B,D,R,b,req:b.pending,sel:{play:null,tac:[]},busy:false,err:'',
     readMode:'auto',S:{init:noop,chime:noop,tick:noop,error:noop},FX:{shake:noop},
     document:{activeElement:null},$:()=>el,teamOf:side=>b.teams[side],refresh:noop,renderHand:noop,
-    writeSave:noop,clearGlow:noop,present:async()=>{},decide:noop});
+    writeSave:noop,clearGlow:noop,wideCamera:noop,scoutLabels:{coverage:'coverage',pressure:'rush',shell:'safety shell',family:'play family',protection:'extra blockers'},present:async()=>{},decide:noop});
   const names=['choosePlay','selectedTactics','tacticBlock','retainCallTactics','snapChoice','selCost','tacticClick','beginPlayback','go'];
   vm.runInContext(names.map(handlerSource).join('\n'),ctx);
   return ctx;
@@ -210,10 +210,12 @@ test('staff playback gives the field the viewport and releases it before the nex
     ctx.fullSheet=fullSheet;
     ctx.save={settings:{sheetView:fullSheet?'full':'quick'}};
     const before=JSON.stringify(ctx.save.settings);
-    let presentations=0,decisions=0;
+    let presentations=0,decisions=0,wideShots=0;
+    ctx.wideCamera=()=>wideShots++;
     ctx.present=async()=>{
       presentations++;
       assert.ok(classes.has('playback'),'field expands while the staff play runs');
+      assert.equal(wideShots,1,'staff play uses the full-field camera');
       assert.equal(root.scrollTop,0,'a coach who selected a card lower on a phone can see the play');
       assert.equal(ctx.busy,true);
     };
@@ -250,7 +252,7 @@ test('a new staff snap or kick clears the earlier matchup, and a final coached s
     const log=following?[coached,following]:[coached],story={hidden:true},staff=[];
     const showStaff=()=>staff.push(story.hidden);
     const ctx=vm.createContext({
-      b:{log},seen:0,FX:{instant:true},renderBug:noop,
+      b:{log},seen:0,FX:{instant:true},renderBug:noop,clearGlow:noop,
       $:selector=>selector==='#matchupStory'?story:{classList:{add:noop}},
       quick:e=>{if(e.userCalled)story.hidden=false;else showStaff()},quickKick:showStaff
     });

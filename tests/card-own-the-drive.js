@@ -170,19 +170,19 @@ test('the verdict credits a tactic only on a duel the play reached',()=>{
   const G=duel('G','Protection',[{v:2,src:'Max protect'}],['Line']),K=duel('K','Separation',[],['Z']),F=duel('F','Read the safety',[{v:-1,src:'One fewer route'}],['Z'],['FS']);
   // Pocket held, receiver separated, safety won the catch point.
   let v=B.snapVerdict(entry({duels:[G,K,F],duelResults:[{won:true},{won:true},{won:false}]}),'home');
-  assert.equal(v.text,'Protection: won with help from Max Protect. Read the safety: their FS beat your Z.');
+  assert.equal(v.text,'+4 yards. Protection: won with help from Max Protect. Read the safety: their FS beat your Z.');
   assert.equal(v.tactics[0].credit,'helped');assert.equal(v.won,false);
   // The rush won anyway.
   v=B.snapVerdict(entry({kind:'sack',duels:[G,K,F],duelResults:[{won:false},{won:true},{won:true}]}),'home');
-  assert.equal(v.text,'Protection: Max Protect helped, but their Def G still beat your Line.');
+  assert.equal(v.detail,'Protection: Max Protect helped, but their Def G still beat your Line.');
   // A tactic that targets an unreached duel gets no credit.
   const Kmo=duel('K','Separation',[{v:1,src:'Route adjustment'}],['Z']);
   v=B.snapVerdict(entry({offTactics:['route_adjust'],duels:[duel('G','Protection',[]),Kmo,F],duelResults:[{won:false},{won:true},{won:true}]}),'home');
-  assert.match(v.text,/^Route Adjustment would have helped at Separation, but the play ended first\. Protection: their Def G beat your Off G\.$/);
+  assert.match(v.detail,/^Route Adjustment would have helped at Separation, but the play ended first\. Protection: their Def G beat your Off G\.$/);
   assert.equal(v.tactics[0].credit,'unreached');
   // No tactic: just the deciding duel. From the defense's side the same snap is a win.
   v=B.snapVerdict(entry({offTactics:[],duels:[G,K,F],duelResults:[{won:true},{won:true},{won:true}]}),'away');
-  assert.equal(v.text,'Read the safety: their Z beat your FS.');assert.equal(v.won,false);
+  assert.equal(v.detail,'Read the safety: their Z beat your FS.');assert.equal(v.won,false);
   assert.equal(B.snapVerdict(entry({penalty:{label:'Holding'}})),null);
 });
 test('the verdict on real recorded snaps names only tactics that were played',()=>{

@@ -1,9 +1,16 @@
 'use strict';
 const {test}=require('node:test'),assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
 const source=fs.readFileSync(require.resolve('../forks/call-sheet/slice/slice.js'),'utf8');
-function run(name,context,args=[]){
- const begin=source.indexOf('function '+name+'(');assert.notEqual(begin,-1,`${name} exists`);
- const end=source.indexOf('\nfunction ',begin+1);const code=source.slice(begin,end<0?undefined:end);
+function handlerSource(name){
+ const start=source.search(new RegExp('^(?:async )?function '+name+'\\(','m'));
+ assert.notEqual(start,-1,`${name} exists`);
+ const lines=source.slice(start).split('\n');
+ const end=lines[0].endsWith('}')?0:lines.findIndex(line=>line==='}');
+ assert.ok(end>=0,`${name} closes`);
+ return lines.slice(0,end+1).join('\n');
+}
+function run(name,context,args=[],helpers=[]){
+ const code=[...helpers,name].map(handlerSource).join('\n');
  return vm.runInNewContext(code+`\n;${name}(...args)`,{...context,args});
 }
 const esc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -23,17 +30,21 @@ test('adaptation panel makes clues readable without declaring a guaranteed count
  assert.match(html,/Opponent adjustment/);assert.match(html,/&lt;pressure&gt;/);assert.match(html,/may/);assert.match(html,/Try HB Screen/);
 });
 test('field story leads with the recorded play outcome and keeps the duel secondary and fog-safe',()=>{
- const note={summary:'Tackle beat edge',detail:'player-rating edge'};
- const B={matchupStory:()=>note},D={PLAYS:{power:{name:'Power'}}};
- const e={play:'power',offSide:'home',defSide:'away',yards:3,kind:'run',sit:{down:2,distance:5,score:{home:0,away:0}},after:{down:3,possession:'home'},score:{home:0,away:0}};
- const html=(extra={},fog=2)=>run('matchupStoryHTML',{B,D,setupReceipt:()=>'',fogSpread:()=>fog,esc},[{...e,...extra}]);
- assert.match(html(),/^<strong>Power · \+3 yd<\/strong><span>Tackle beat edge/);
+ const B=require('../forks/call-sheet/core/battle'),D=require('../forks/call-sheet/core/data');
+ const e={play:'power',offSide:'home',defSide:'away',yards:3,kind:'run',sit:{down:2,distance:5,score:{home:0,away:0}},
+  after:{down:3,possession:'home'},score:{home:0,away:0},duelResults:[{won:true}],
+  duels:[{key:'G',label:'Block',offNames:['Tackle'],defNames:['Edge'],mods:[]}]};
+ const html=(extra={},fog=2)=>{
+  const event={...e,...extra},note={...B.matchupStory(event),detail:'player-rating edge'};
+  return run('matchupStoryHTML',{B,D,setupReceipt:()=>'',sequenceReceipts:()=>'',fogSpread:()=>fog,esc},[event,note]);
+ };
+ assert.match(html(),/^<strong>Power · \+3 yards<\/strong><span>Block: Tackle beat Edge/);
  assert.doesNotMatch(html(),/player-rating/);assert.match(html({},0),/player-rating/);
- assert.match(html({yards:6,after:{down:1,possession:'home'}}),/\+6 yd · First down<\/strong>/);
- assert.match(html({score:{home:7,away:0}}),/Touchdown<\/strong>/);
- assert.match(html({kind:'inc',yards:0}),/Incomplete<\/strong>/);
- assert.match(html({kind:'sack',yards:-5,turnover:'fumble'}),/Sack · -5 yd · Fumble lost<\/strong>/);
- assert.match(html({kind:'inc',turnover:'interception'}),/Intercepted<\/strong>/);
+ assert.match(html({yards:6,after:{down:1,possession:'home'}}),/\+6 yards · First down<\/strong>/);
+ assert.match(html({score:{home:7,away:0}}),/Touchdown · \+3 yards<\/strong>/);
+ assert.match(html({kind:'inc',yards:0}),/Incomplete · 0 yards<\/strong>/);
+ assert.match(html({kind:'sack',yards:-5,turnover:'fumble'}),/Fumble lost · −5 yards<\/strong>/);
+ assert.match(html({kind:'inc',turnover:'interception'}),/Interception<\/strong>/);
 });
 test('resume advances an unfinished checkpoint instead of awarding a premature final',()=>{
  let advanced=0,decided=0;
@@ -54,11 +65,17 @@ test('setup receipt names the actual players and result only for an adjustment t
  e.duelResults[0].won=false;assert.equal(run('setupReceipt',{esc},[e]),'');
  e.duelResults[0].won=true;e.penalty={label:'Holding'};assert.equal(run('setupReceipt',{esc},[e]),'');
 });
-test('quick sheet shows only offered calls, escaped public read, costs and optional full-sheet access',()=>{
- const req={role:'off',options:{command:2,plays:[{id:'screen',cost:1,card:{name:'Screen'}},{id:'draw',cost:0,card:{name:'Draw'}}]}};
- const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.'}]};
- const html=run('quickSheetHTML',{req,b:{},callForecastHTML:()=>'<div id="callForecast">Forecast</div>',sel:{play:'screen',tac:[]},selCost:()=>1,blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',tacticNoteHTML:()=>'<p>Pair with a tactic</p>',esc,err:''},[view]);
- assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);assert.match(html,/Snap.*Screen/i);
+test('quick sheet compares offered calls and keeps the selected call, estimate and snap together',()=>{
+ const req={role:'off',situation:{down:1},options:{command:2,plays:[{id:'screen',cost:1,card:{name:'Screen'}},{id:'draw',cost:0,card:{name:'Draw'}}]}};
+ const forecast={yards:[1.5,5.2],first:[12,24],goal:'first',confidence:'Limited film'};
+ const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.',aim:'Dependable gain',forecast}]};
+ const html=run('quickSheetHTML',{req,b:{},B:{comboRead:()=>null},callForecastHTML:(compact,estimate)=>{
+   assert.equal(compact,true);assert.equal(estimate,forecast);return '<div id="callForecast">Forecast</div>';
+ },sel:{play:'screen',tac:[]},selCost:()=>1,selectedTactics:()=>[],blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',quickTacticsHTML:()=>'<p>Pair with a tactic</p>',forecastReadHTML:()=>'',redrawButton:()=>'',redrawText:()=>'',esc,err:''},[view],['rangeText','forecastNumbers','quickEstimateHTML','comboReceiptHTML']);
+ assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);
+ assert.match(html,/Dependable gain.*<b>1–6 yd<\/b>.*<b>10–25%<\/b>.*Limited film/);
+ assert.match(html,/class="quick-footer">\s*<div class="quick-receipt"><strong>Screen<\/strong>[\s\S]*id="callForecast"[\s\S]*Snap · 1 CMD/);
+ assert.match(html,/<details class="quick-details" data-play="screen"\s*>/);
  assert.match(html,/Your last call/);assert.match(html,/Featured duel/);assert.match(html,/id="callForecast"/);assert.match(html,/Finish guided drive/);assert.doesNotMatch(html,/data-quick-call="draw"/);assert.match(html,/Pair with a tactic/);
 });
 test('standalone signing day previews the named recruit’s possible signature and matchup without awarding a card',()=>{
@@ -149,12 +166,9 @@ test('rapid postgame cuts move one chosen card per prompt and finish once',async
 
 test('featured matchup follows the tactic to its duel and reads odds from the coach’s side',()=>{
  const D=require('../forks/call-sheet/core/data'),B=require('../forks/call-sheet/core/battle');
- const render=(b,play,tactics,fog=0)=>{
-  const mark={style:{}},locator={querySelector:()=>mark};
-  return run('matchupHTML',{b,req:b.pending,D,B,sel:{play},selectedTactics:()=>tactics,
-   snapChoice:ids=>({play,tactics:ids}),fogSpread:()=>fog,fieldGlow(){assert.equal(fog,0,'fogged players use neutral field markers')},clearGlow(){},frameSelectedPlay(){},
-   layer:{dots:{}},window:{SliceCards:{routeFor:()=>null}},$:()=>locator,absOf:x=>x,sameLookHTML:()=>'',esc});
- };
+ const render=(b,play,tactics,fog=0)=>run('matchupHTML',{b,req:b.pending,D,B,sel:{play},selectedTactics:()=>tactics,
+  snapChoice:ids=>({play,tactics:ids}),fogSpread:()=>fog,fieldGlow(){assert.equal(fog,0,'fogged players use neutral field markers')},clearGlow(){},drawPlayRoute(){},
+  layer:{dots:{}},sameLookHTML:()=>'',esc});
  const offense=B.createChallenge('four_minute_offense');
  assert.match(render(offense,'outside_zone',[]),/Gate · Edge block[\s\S]*37% estimated duel win/);
  const sealed=render(offense,'outside_zone',['seal_block']);
@@ -172,10 +186,10 @@ test('selected play shows scouting bands on defense and switches to touchdown od
  const ctx={req:{role:'def',side:'away',situation:{field:45,distance:3},options:{plays:[{id:'cover1',card:{id:'cover1'}}]}},
    sel:{play:'cover1'},b:{},DYN:{scouting:{confidence:70}},selectedTactics:()=>[],snapChoice:()=>({play:'cover1'}),
    B:{filmFog:()=>({spread:1}),scoutedForecast:()=>({yards:[1.5,4.6],first:[22,44]}),preview:()=>assert.fail('fogged calls must use only the scouting model')}};
- const html=run('callForecastHTML',ctx);
+ const html=run('callForecastHTML',ctx,[],['rangeText','forecastReadHTML']);
  assert.match(html,/Moderate scouting confidence/);assert.match(html,/yards allowed <b>1–5 yd/);assert.match(html,/Opp\. 1st down <b>20–45%/);
  ctx.req.situation={field:97,distance:3};
- const goal=run('callForecastHTML',ctx);assert.match(goal,/3 yd to goal/);assert.match(goal,/Opp\. TD <b>20–45%/);
+ const goal=run('callForecastHTML',ctx,[],['rangeText','forecastReadHTML']);assert.match(goal,/3 yd to goal/);assert.match(goal,/Opp\. TD <b>20–45%/);
  ctx.req.options.plays=[{id:'spike',card:{id:'spike'}}];ctx.sel.play='spike';
  assert.match(run('callForecastHTML',ctx),/0 yards.*stop the clock/);
 });
