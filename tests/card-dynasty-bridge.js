@@ -53,6 +53,18 @@ test('Deck Room and Collection route to one saved playbook without moving cards 
  assert.ok(cs.packs.cardDef('screen'));
 });
 
+test('Dynasty reconciles an installed combo after save and passes it to the scheduled card battle',async()=>{
+ const {e,cg,u}=await setup(),packs=globalThis.CallSheet.packs;
+ const off={id:'establish',play:'pa_boot'},def={id:'heat_check',play:'zone_pressure'};
+ packs.setComboPlan(u.callSheet.playbook,'off',off);packs.setComboPlan(u.callSheet.playbook,'def',def);
+ u.callSheet=JSON.parse(JSON.stringify(u.callSheet));e.normalizeCallSheet(u);
+ const cfg=cg.launch();assert.deepEqual(cfg.playbook.off.comboPlan,off);assert.deepEqual(cfg.playbook.def.comboPlan,def);
+ const decks=packs.decksOf(cfg.playbook);
+ assert.deepEqual(decks.off.comboPlan,off);assert.deepEqual(decks.def.comboPlan,def);
+ u.callSheet.playbook.def.comboPlan={id:'establish',play:'inside_zone'};
+ e.normalizeCallSheet(u);assert.equal(u.callSheet.playbook.def.comboPlan,undefined);
+});
+
 test('rivalry catch survives a save, identifies the new starter and prepares this meeting only',async()=>{
  const {cg,u,me,opp,e}=await setup(),line=globalThis.CallSheet.adapter.lineupFromTeam(opp).lineup.off;
  me.protectedRivalIds=[opp.id];const id=String(line.TE.id),name=line.TE.name;
@@ -67,6 +79,34 @@ test('rivalry catch survives a save, identifies the new starter and prepares thi
  const other=cfg.userSide==='home'?'away':'home',starter=globalThis.CallSheet.adapter.battleTeam(opp,null,cfg.program[other]).lineup.off.TE;
  const now=cg.rivalryHistory();assert.equal(now.still,false);assert.ok(now.text.includes('Alex Graduate graduated'));assert.ok(now.text.includes(starter.name+' now starts at TE'));assert.equal(now.target.id,String(starter.id));
  u.callSheet.oppFilm[opp.id][0]={year:u.year-1,week:10,star:{id,name,w:6,l:3}};assert.equal(cg.rivalryHistory().snaps,undefined);assert.equal(cg.setRivalryPrep(true),false);
+});
+
+test('a recorded rivalry win supplies the next matchup with one durable hand-scouting note',async()=>{
+ const {cg,u,me,opp,e}=await setup(),CS=globalThis.CallSheet,host=globalThis.__callSheetDynasty,g=e.findUserGame();
+ me.protectedRivalIds=[opp.id];
+ const cfg=host.launch();assert.equal(cfg.rivalryPlan,undefined);
+ const team=side=>{
+   const t=CS.adapter.battleTeam(cfg[side],null,cfg.program[side]);
+   for(const lineup of Object.values(t.lineup))for(const player of Object.values(lineup))
+     for(const trait of Object.keys(player.traits))player.traits[trait]=side===cfg.userSide?88:63;
+   return t;
+ };
+ const b=CS.battle.simulate({home:team('home'),away:team('away'),seed:'rivalry-opening-win',rivalry:true});
+ const film=CS.battle.callFilm(b,cfg.userSide),sample={...film.rivalryWin,teamId:String(me.id)};
+ assert.ok(film.rivalryWin?.count>=2);
+ host.save({activeBattle:{seed:cfg.seed,battle:'{}'}});
+ assert.equal(host.record(b.game,{},[],film).ok,true);
+ assert.equal(host.record(b.game,{},[],film).ok,true);
+ assert.equal(u.callSheet.oppFilm[opp.id].length,1);
+ assert.deepEqual(u.callSheet.oppFilm[opp.id][0].rivalryWin,sample);
+ u.callSheet=JSON.parse(JSON.stringify(u.callSheet));e.normalizeCallSheet(u);
+ u.callSheet.activeBattle=null;g.played=false;u.year++;
+ u.gameArchive=[]; // Browser saves defer loading the historical box scores.
+ assert.deepEqual(cg.launch().rivalryPlan,{side:cfg.userSide,play:sample.play});
+ u.events.push({type:'GAME_COMPLETED',season:u.year-1,week:g.week+1,schoolIds:[me.id,opp.id]});
+ assert.equal(cg.launch().rivalryPlan,undefined,'a later meeting supersedes the remembered win');
+ u.events.pop();me.protectedRivalIds=[];
+ assert.equal(cg.launch().rivalryPlan,undefined,'ordinary opponents get no rematch bias');
 });
 
 test('coached and saved opponent film counts their actual third-down calls exactly once',async()=>{

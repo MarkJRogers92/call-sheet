@@ -388,7 +388,7 @@ const DEFAULT_DECKS={
     tactics:['film_tell','film_tell','identify_protection','identify_protection','disguise','disguise','bracket','bracket','spy','spy','press','press']}
 };
 
-const RULES={seriesCommand:5,wrinkleRow:3,tacticHand:4,leanBase:4,redZone:80,twoMinute:120,fireStreak:3};
+const RULES={seriesCommand:5,wrinkleRow:3,tacticHand:4,comboDrawCost:1,leanBase:4,redZone:80,twoMinute:120,fireStreak:3};
 
 // --- Program cards (rules v0.6) ------------------------------------------------------------------------
 // Not in random packs. Coaching-tree cards arrive with a coordinator's background, trick plays with milestones,
@@ -676,5 +676,33 @@ function canScriptOpener(deck,id){
   const c=PLAYS[id];return !c.trick&&!c.drill&&!c.signature&&!c.thirdOnly&&!c.fourthOnly;
 }
 
-return{canScriptOpener,COMBOS,DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
+// Check whether equipped setup calls could complete an existing recipe with a
+// given payoff. Actual redemption always checks the real drive history.
+function comboPlanOptions(deck,side){
+  const table=side==='off'?PLAYS:CALLS,options=[];
+  if(!['off','def'].includes(side)||!Array.isArray(deck?.base)||!Array.isArray(deck?.wrinkles))return options;
+  const card=id=>Object.hasOwn(table,id)?table[id]:null;
+  const root=c=>c.evolvedFrom||c.upgradeOf||c.id;
+  const active=[...new Set([...(deck.base||[]),...(deck.wrinkles||[])])].map(card).filter(Boolean);
+  const recipes=COMBOS.filter(c=>c.side===side);
+  for(const id of new Set(deck.wrinkles||[])){
+    const payoff=card(id);
+    if(!payoff||deck.base?.includes(id)||payoff.trick||payoff.signature||payoff.drill||payoff.fourthOnly)continue;
+    for(const combo of recipes){
+      const possible=active.some(setup=>{
+        if(side==='off')return combo.test({play:payoff,call:null,root:root(payoff),fams:[setup.family,setup.family],
+          plays:[root(setup),root(setup)],calls:[{pressure:1}],results:[{family:setup.family,yards:8},{family:setup.family,yards:8}]});
+        return [-3,0,3].some(yards=>combo.test({play:{family:'run'},call:payoff,calls:[setup,setup],results:[{family:'run',yards},{family:'run',yards}]}));
+      });
+      if(possible)options.push({id:combo.id,play:id,name:combo.name,playName:payoff.name,how:combo.how});
+    }
+  }
+  return options;
+}
+function validComboPlan(deck,side,plan){
+  return typeof plan?.id==='string'&&typeof plan?.play==='string'&&
+    comboPlanOptions(deck,side).some(o=>o.id===plan.id&&o.play===plan.play);
+}
+
+return{canScriptOpener,comboPlanOptions,validComboPlan,COMBOS,DRILL_CARDS,SCHEME_CARDS,PROGRAM_CARDS,STYLES,STYLE_TRAITS,TRAITS,OFF_ROLES,DEF_ROLES,WIN_CHANCE,chip,PLAYS,CALLS,TACTICS,SIGNATURES,DEFAULT_DECKS,RULES,RARITY,rarityOf};
 });

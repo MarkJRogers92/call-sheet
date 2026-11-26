@@ -43,6 +43,110 @@ test('adaptation recommendations never suggest an unaffordable or blocked counte
   req.options.plays[0].blocked=null;assert.equal(B.adaptationRead({log:[]},req).counterPlay,'pa_boot');
 });
 
+function coordinatorGame(seed,defensivePlan){
+ const D=require('../forks/call-sheet/core/data'),E=require('../game-engine-v2');
+ const home=Ro.preset('aerial'),away=Ro.preset('tempo');
+ home.decks=clone(D.DEFAULT_DECKS);home.decks.off.base.push('screen');
+ const b=B.create({home,away,seed,user:'home',mode:'snap',control:'offense',defensivePlan});
+ E.startGame(b.game);
+ Object.assign(b.game,{possession:'home',fieldPosition:35,down:1,distance:10});
+ return b;
+}
+test('opposing game plans produce different legal opening calls from the same rosters',()=>{
+ const {CALLS}=require('../forks/call-sheet/core/data');
+ const counts={pressure:0,coveragePressure:0,twoHigh:0,pressureTwoHigh:0,adjustedPressure:0,adjustedTwoHigh:0};
+ for(let i=0;i<24;i++){
+   const rush=coordinatorGame('coordinator-'+i,'pressure'),coverage=coordinatorGame('coordinator-'+i,'two_high');
+   const adjustedRush=B.load(B.save(rush)),adjustedCoverage=B.load(B.save(coverage));
+   adjustedRush.opponentDefense.counters=2;adjustedCoverage.opponentDefense.counters=2;
+   assert.match(B.advance(rush).defensePlan.text,/extra rushers/);
+   assert.match(B.advance(coverage).defensePlan.text,/two safeties/);
+   B.advance(adjustedRush);B.advance(adjustedCoverage);
+   const rushCall=CALLS[rush.snap.def.play],coverageCall=CALLS[coverage.snap.def.play];
+   counts.pressure+=Number(rushCall.pressure>0);
+   counts.coveragePressure+=Number(coverageCall.pressure>0);
+   counts.twoHigh+=Number(coverageCall.shell===2);
+   counts.pressureTwoHigh+=Number(rushCall.shell===2);
+   counts.adjustedPressure+=Number(CALLS[adjustedRush.snap.def.play].pressure>0);
+   counts.adjustedTwoHigh+=Number(CALLS[adjustedCoverage.snap.def.play].shell===2);
+ }
+ assert.ok(counts.pressure>=counts.coveragePressure+4,JSON.stringify(counts));
+ assert.ok(counts.twoHigh>=counts.pressureTwoHigh+4,JSON.stringify(counts));
+ assert.ok(counts.pressure>=counts.adjustedPressure+4,JSON.stringify(counts));
+ assert.ok(counts.twoHigh>=counts.adjustedTwoHigh+4,JSON.stringify(counts));
+ assert.match(B.advance(coordinatorGame('auto-plan','auto')).defensePlan.text,/extra rushers/);
+ assert.equal(B.advance(coordinatorGame('no-plan',false)).defensePlan,undefined);
+ assert.equal(B.createChallenge('need_six').pending.defensePlan,undefined,'the original challenge keeps its scripted behavior');
+});
+test('the pressure coordinator adjusts after two completed screen counters and remembers on resume',()=>{
+ const {CALLS}=require('../forks/call-sheet/core/data');
+ const b=coordinatorGame('counter-2','pressure');
+ b.aiBias={away:{family:'pressure'}};
+ const action={type:'call',play:'screen',tactics:[]};
+ let req=B.advance(b);
+ assert.equal(req.defensePlan.adjusted,false);
+ req=B.submit(b,action);
+ assert.ok(b.lastResult.yards>=5&&CALLS[b.lastResult.call].pressure>0);
+ assert.equal(b.opponentDefense.counters,1);
+ assert.equal(req.defensePlan.adjusted,false);
+ assert.ok(CALLS[b.snap.def.play].pressure>0);
+ const before=B.save(b);
+ assert.equal(B.snapDecisions(b).defensePlan.adjusted,false);
+ assert.equal(B.save(b),before,'reading the committed matchup changes nothing');
+ const resumed=B.load(before);
+ req=B.submit(resumed,action);
+ assert.ok(resumed.lastResult.yards>=5&&CALLS[resumed.lastResult.call].pressure>0);
+ assert.deepEqual(resumed.opponentDefense,{id:'pressure',counters:2});
+ assert.equal(req.defensePlan.adjusted,true);
+ assert.match(req.defensePlan.text,/Two screens.*drop into coverage/);
+ assert.deepEqual(B.load(B.save(resumed)).pending.defensePlan,req.defensePlan);
+ resumed.snap.def.play='cover0';
+ assert.deepEqual(B.snapDecisions(resumed).defensePlan,req.defensePlan,'the public tendency never reveals this snap’s call');
+ const noRush=coordinatorGame('counter-2','pressure');
+ noRush.aiBias={away:{pressure:0}};
+ B.advance(noRush);B.submit(noRush,action);
+ assert.equal(CALLS[noRush.lastResult.call].pressure,0);
+ assert.equal(noRush.opponentDefense.counters,0,'a screen against coverage does not count as a pressure counter');
+});
+test('the two-high coordinator treats only productive runs as reasons to adjust',()=>{
+ const b=coordinatorGame('two-high-counter-1','two_high');
+ b.aiBias={away:{shell:2}};
+ const action={type:'call',play:'inside_zone',tactics:[]};
+ B.advance(b);
+ assert.equal(B.submit(b,action).defensePlan.adjusted,false);
+ assert.equal(b.opponentDefense.counters,1);
+ assert.equal(B.submit(b,action).defensePlan.adjusted,false);
+ assert.equal(b.opponentDefense.counters,1);
+ assert.match(B.submit(b,action).defensePlan.text,/Two runs.*closer to the line/);
+ assert.equal(b.opponentDefense.counters,2);
+});
+test('rivalry film charts a productive payoff only from the winning side of a finished meeting',()=>{
+ const payoff=snap({play:'pa_boot',yards:12,sit:{down:3,distance:7,field:45,period:2},
+  events:[{type:'combo',id:'establish',duel:'K',side:'home'}]});
+ const b={rivalry:true,user:'home',game:{status:'final',score:{home:24,away:20}},log:[payoff,
+  {...payoff,yards:8,events:[]},{...payoff,yards:9,penalty:{label:'Holding'}},{...payoff,yards:20,turnover:'fumble'}]};
+ assert.deepEqual(B.callFilm(b).rivalryWin,{play:'pa_boot',count:2,yards:20,combo:'establish'});
+ assert.equal(B.callFilm({...b,rivalry:false}).rivalryWin,undefined);
+ assert.equal(B.callFilm({...b,game:{...b.game,status:'live'}}).rivalryWin,undefined);
+ assert.equal(B.callFilm({...b,game:{status:'final',score:{home:20,away:24}}}).rivalryWin,undefined);
+});
+test('studying different rivalry cards changes legal AI responses without revealing the next call',()=>{
+ const D=require('../forks/call-sheet/core/data'),E=require('../game-engine-v2');
+ const counts={screen:0,deep_cross:0};
+ for(let i=0;i<32;i++)for(const play of Object.keys(counts)){
+   const b=B.create({home:Ro.preset('aerial'),away:Ro.preset('tempo'),seed:'rival-coordinator-'+i,
+     user:'home',mode:'snap',control:'offense',rivalry:true,rivalryPlan:{side:'home',play}});
+   E.startGame(b.game);Object.assign(b.game,{possession:'home',fieldPosition:35,down:1,distance:10});
+   const req=B.advance(b),call=D.CALLS[b.snap.def.play];
+   counts[play]+=Number(call.pressure>0);
+   assert.ok(req.defensePlan.text.includes(D.PLAYS[play].name));
+   const replay=B.load(B.save(b));replay.snap.def.play=call.id==='cover0'?'two_high':'cover0';
+   assert.deepEqual(B.snapDecisions(replay).defensePlan,B.snapDecisions(b).defensePlan);
+ }
+ assert.ok(counts.deep_cross>=counts.screen+6,JSON.stringify(counts));
+ const old=B.create({home:Ro.preset('aerial'),away:Ro.preset('tempo'),user:'home',rivalry:false,rivalryPlan:{side:'home',play:'deep_cross'}});
+ assert.equal(old.rivalryPlan,undefined);
+});
 test('rivalry film remembers actual converting receivers and two recorded catches',()=>{
   const play=snap({offSide:'away',defSide:'home',sit:{down:4,distance:5,period:4,clock:82,field:60},completed:true,
     participants:{target:'TE'},lineups:{off:{TE:'relief',X:'primary'}},primaryTarget:'X'});

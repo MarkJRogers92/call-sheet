@@ -46,6 +46,72 @@ test('field story leads with the recorded play outcome and keeps the duel second
  assert.match(html({kind:'sack',yards:-5,turnover:'fumble'}),/Fumble lost · −5 yards<\/strong>/);
  assert.match(html({kind:'inc',turnover:'interception'}),/Interception<\/strong>/);
 });
+test('field highlights require a completed scoring swing, clutch stop or reached combo',()=>{
+ const e={offSide:'home',defSide:'away',yards:1,sit:{down:4,distance:2,period:4,score:{home:17,away:20}},
+  after:{possession:'home'},score:{home:17,away:20},duelResults:[{won:true},{won:true}],
+  duels:[{key:'G',mods:[]},{key:'K',mods:[{src:'COMBO: Timed Throw'}]}]};
+ const highlight=(extra={})=>run('completedFieldMoment',{},[{...e,...extra}])?.label;
+ assert.equal(highlight(),undefined,'an ordinary snap never gets a label');
+ assert.equal(highlight({score:{home:23,away:20}}),'Lead change');
+ assert.equal(highlight({score:{home:20,away:20}}),'Game tied');
+ assert.equal(highlight({after:{possession:'away'}}),'Fourth-down stop');
+ assert.equal(highlight({turnover:'fumble'}),'Clutch takeaway');
+ const events=[{type:'combo',id:'timing',name:'Timed Throw',duel:'K'}];
+ assert.equal(highlight({events}),'Combo completed · Timed Throw');
+ assert.equal(highlight({events,duelResults:[{won:false},{won:true}]}),undefined,'the Key boost was never reached');
+ assert.equal(highlight({events,duelResults:null}),undefined,'the pre-snap look cannot trigger a cue');
+ assert.equal(highlight({events,penalty:{label:'Holding'}}),undefined);
+});
+test('an optional staff highlight uses recorded names and rings the decisive player',()=>{
+ const B=require('../forks/call-sheet/core/battle'),D=require('../forks/call-sheet/core/data');
+ const e={play:'power',offSide:'home',defSide:'away',yards:-1,kind:'run',sit:{down:4,distance:2,period:4,score:{home:17,away:20}},
+  after:{possession:'away'},score:{home:17,away:20},duelResults:[{won:false}],
+  duels:[{key:'G',label:'Point of attack',offNames:['Tackle'],defNames:['Edge <Drew>'],offRoles:['LT'],defRoles:['RUSH'],mods:[]}]};
+ const panel={dataset:{},innerHTML:'',hidden:true},marked=[];
+ const mark={classList:{add:key=>marked.push(key)}};
+ const ctx={B,D,$:()=>panel,save:{settings:{fieldHighlights:false}},setupReceipt:()=>'',sequenceReceipts:()=>'',fogSpread:()=>2,esc,
+  layer:{dots:{'d:RUSH':mark},players:{appendChild:dot=>assert.equal(dot,mark)}}};
+ const draw=()=>run('showMatchupStory',ctx,[e],['completedFieldMoment','matchupStoryHTML']);
+ draw();assert.equal(panel.hidden,true);assert.deepEqual(marked,[]);
+ ctx.save.settings.fieldHighlights=true;
+ draw();assert.equal(panel.hidden,false);assert.equal(panel.dataset.moment,'stop');
+ assert.match(panel.innerHTML,/Fourth-down stop[\s\S]+Edge &lt;Drew&gt; beat Tackle/);
+ assert.deepEqual(marked,['decisive']);
+});
+test('the last coaching review compares the shown estimate, result and matchup on either side',()=>{
+ const B=require('../forks/call-sheet/core/battle');
+ for(const [challenge,play,otherTactic,estimate] of [
+   ['need_six','vertical_shot','max_protect','4.2 yd gain · 1st down 32% · Shown look'],
+   ['goal_line_stand','two_high','bracket','0–4 yd allowed · Opp. TD 10–55% · Play tendencies']
+ ]){
+  const b=B.createChallenge(challenge);
+  assert.equal(B.coachedSnapReview(b),null);
+  B.submit(b,{type:'call',play,tactics:[],coachingReview:{estimate}});
+  const e=b.log[b.coachedSnap.index],saved=B.save(b),review=B.coachedSnapReview(b);
+  assert.equal(review.estimate,estimate);
+  assert.equal(review.actual,B.snapVerdict(e,b.user).result);
+  assert.equal(review.detail,B.snapVerdict(e,b.user).detail);
+  assert.ok(review.alternatives.includes(otherTactic));
+  const practice=B.practiceCoachedSnap(b,otherTactic);
+  assert.ok(practice.actual&&practice.detail);
+  assert.deepEqual(B.practiceCoachedSnap(B.load(saved),otherTactic),practice);
+  assert.equal(B.practiceCoachedSnap(b,'unknown'),null);
+  assert.equal(B.save(b),saved,'practice leaves the entire battle intact, including its score and RNG');
+  const html=run('coachedSnapReviewHTML',{B,b,esc});
+  assert.ok(html.includes(estimate));
+  assert.ok(html.includes(esc(review.actual))&&html.includes(esc(review.detail)));
+  assert.match(html,/Practice the same look/);
+ }
+});
+test('a flag review shows the game’s enforcement and offers no alternate tactic',()=>{
+ const B=require('../forks/call-sheet/core/battle');
+ const b={user:'home',coachedSnap:{index:0,role:'off',estimate:'<3 yd gain'},
+  log:[{userCalled:true,play:'deep_cross',penalty:{label:'Holding'},text:'Flag: Holding on Home, 10 yards.'}]};
+ const html=run('coachedSnapReviewHTML',{B,b,esc});
+ assert.match(html,/&lt;3 yd gain.*Flag: Holding/s);
+ assert.doesNotMatch(html,/Practice the same look/);
+ assert.equal(B.practiceCoachedSnap(b,'max_protect'),null);
+});
 test('resume advances an unfinished checkpoint instead of awarding a premature final',()=>{
  let advanced=0,decided=0;
  const battle={pending:null,log:[],game:{status:'playing',score:{home:0,away:0}}};
@@ -71,7 +137,7 @@ test('quick sheet compares offered calls and keeps the selected call, estimate a
  const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.',aim:'Dependable gain',forecast}]};
  const html=run('quickSheetHTML',{req,b:{},B:{comboRead:()=>null},callForecastHTML:(compact,estimate)=>{
    assert.equal(compact,true);assert.equal(estimate,forecast);return '<div id="callForecast">Forecast</div>';
- },sel:{play:'screen',tac:[]},selCost:()=>1,selectedTactics:()=>[],blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',quickTacticsHTML:()=>'<p>Pair with a tactic</p>',forecastReadHTML:()=>'',redrawButton:()=>'',redrawText:()=>'',esc,err:''},[view],['rangeText','forecastNumbers','quickEstimateHTML','comboReceiptHTML']);
+ },sel:{play:'screen',tac:[]},selCost:()=>1,selectedTactics:()=>[],blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',quickTacticsHTML:()=>'<p>Pair with a tactic</p>',forecastReadHTML:()=>'',redrawButton:()=>'',redrawText:()=>'',esc,err:''},[view],['rangeText','forecastNumbers','forecastObjective','quickEstimateHTML','comboReceiptHTML']);
  assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);
  assert.match(html,/Dependable gain.*<b>1–6 yd<\/b>.*<b>10–25%<\/b>.*Limited film/);
  assert.match(html,/class="quick-footer">\s*<div class="quick-receipt"><strong>Screen<\/strong>[\s\S]*id="callForecast"[\s\S]*Snap · 1 CMD/);
@@ -182,14 +248,21 @@ test('featured matchup follows the tactic to its duel and reads odds from the co
  assert.match(render(defense,'cover1',['bracket']),/Release vs quick[\s\S]*66% → 52% · -14 pts/);
 });
 
-test('selected play shows scouting bands on defense and switches to touchdown odds at the goal',()=>{
- const ctx={req:{role:'def',side:'away',situation:{field:45,distance:3},options:{plays:[{id:'cover1',card:{id:'cover1'}}]}},
+test('defensive Quick Calls and the selected forecast show the same opposing odds and yards allowed',()=>{
+ const forecast={yards:[1.5,4.6],first:[22,44],goal:'first',confidence:'Partial film'};
+ const ctx={req:{role:'def',side:'away',situation:{field:45,distance:3,down:3},options:{plays:[{id:'cover1',card:{id:'cover1'}}]}},
    sel:{play:'cover1'},b:{},DYN:{scouting:{confidence:70}},selectedTactics:()=>[],snapChoice:()=>({play:'cover1'}),
-   B:{filmFog:()=>({spread:1}),scoutedForecast:()=>({yards:[1.5,4.6],first:[22,44]}),preview:()=>assert.fail('fogged calls must use only the scouting model')}};
- const html=run('callForecastHTML',ctx,[],['rangeText','forecastReadHTML']);
- assert.match(html,/Moderate scouting confidence/);assert.match(html,/yards allowed <b>1–5 yd/);assert.match(html,/Opp\. 1st down <b>20–45%/);
- ctx.req.situation={field:97,distance:3};
- const goal=run('callForecastHTML',ctx,[],['rangeText','forecastReadHTML']);assert.match(goal,/3 yd to goal/);assert.match(goal,/Opp\. TD <b>20–45%/);
- ctx.req.options.plays=[{id:'spike',card:{id:'spike'}}];ctx.sel.play='spike';
+   B:{filmFog:()=>({spread:1}),quickForecast:()=>forecast,preview:()=>assert.fail('fogged calls must use only the scouting model')},esc};
+ const helpers=['rangeText','forecastNumbers','forecastObjective'];
+ const html=run('callForecastHTML',ctx,[],[...helpers,'forecastReadHTML']);
+ assert.match(html,/Selected defensive call forecast/);
+ assert.match(html,/Partial film.*yards allowed <b>1–5 yd.*Opp\. Convert <b>20–45%.*past calls/);
+ ctx.req.situation={field:97,distance:3,down:3};
+ Object.assign(forecast,{yards:[-1.2,3],goal:'touchdown'});
+ const goal=run('callForecastHTML',ctx,[],[...helpers,'forecastReadHTML']);
+ assert.match(goal,/yards allowed <b>-2–3 yd.*Opp\. TD <b>20–45%/);
+ const quick=run('quickEstimateHTML',ctx,[forecast],helpers);
+ assert.match(quick,/Est\. allowed <b>-2–3 yd.*Opp\. TD <b>20–45%.*Partial film/);
+ ctx.req.role='off';ctx.req.options.plays=[{id:'spike',card:{id:'spike'}}];ctx.sel.play='spike';
  assert.match(run('callForecastHTML',ctx),/0 yards.*stop the clock/);
 });

@@ -45,13 +45,30 @@ function updateStarterBook(pb,reserveLimit=500){
   pb.version=2;
 }
 // Signature cards ride along outside the capacity limits: one copy each, in the pile their kind belongs to.
-function decksOf(pb){const d={off:clone(pb.off),def:clone(pb.def)};for(const sg of pb.signatures||[])d[sg.side][sg.pile].push(sg.id);return d}
+function decksOf(pb){const d={off:clone(pb.off),def:clone(pb.def)};repairComboPlans(d);for(const sg of pb.signatures||[])d[sg.side][sg.pile].push(sg.id);return d}
 function setOpeningScript(pb,id){
   if(id==null||id===''){delete pb.off.openingScript;return}
   if(!D.canScriptOpener(pb.off,id))throw new Error('Choose an eligible play from your active offensive pile.');
   pb.off.openingScript=id;
 }
 function clearStaleOpener(pb){if(pb.off.openingScript&&!D.canScriptOpener(pb.off,pb.off.openingScript))delete pb.off.openingScript}
+function setComboPlan(pb,side,plan){
+  if(!['off','def'].includes(side))throw new Error('Choose offense or defense.');
+  if(!plan){delete pb[side].comboPlan;return}
+  if(!D.validComboPlan(pb[side],side,plan))throw new Error('Choose a combo using setup and payoff cards in your active deck.');
+  pb[side].comboPlan={id:plan.id,play:plan.play};
+}
+function repairComboPlans(pb){
+  for(const side of ['off','def']){
+    const deck=pb[side],plan=deck?.comboPlan;
+    if(plan===undefined)continue;
+    // Upgrades can replace the payoff with a new printing of the same play.
+    const root=id=>{const c=cardDef(id);return c?.evolvedFrom||c?.upgradeOf||c?.id};
+    const choices=D.comboPlanOptions(deck,side).filter(o=>o.id===plan?.id);
+    const choice=choices.find(o=>o.play===plan.play)||choices.find(o=>root(o.play)===root(plan.play));
+    if(choice)deck.comboPlan={id:choice.id,play:choice.play};else delete deck.comboPlan;
+  }
+}
 // A school chooses a branch for the whole playbook. Frozen packs keep the catalog
 // identity they rolled, then present the school's current version at claim time.
 function awardedId(pb,id){
@@ -210,6 +227,7 @@ function applyPick(pb,selection,{serial=pb.packsOpened,stored=false,from=null}={
   if(card.kind==='upgrade'&&pb.off.openingScript===card.replaces&&!D.canScriptOpener(pb.off,card.replaces)){
     if(D.canScriptOpener(pb.off,card.id))pb.off.openingScript=card.id;else delete pb.off.openingScript;
   }
+  if(card.kind==='upgrade')repairComboPlans(pb);
   if(card.rarity==='legendary')pb.legendaries.push(card.id);
   // A game pack also notes which game it came from, so the dynasty can say where last game's card went.
   const origin=from&&typeof from.pack==='string'?{pack:from.pack.slice(0,240),source:String(from.source||'Game day').slice(0,140),game:Math.max(0,Number(pb.gamesPlayed)|0),...(card.kind==='upgrade'?{replaces:card.replaces}:{})}:{};
@@ -331,13 +349,14 @@ function repairMinimum(pb){
     let fi=0;
     while(active.length<min&&fallback.length){const f=fallback[fi++%fallback.length];active.push(awardedId(pb,f))}
   }
+  repairComboPlans(pb);
   return pb;
 }
 function cut(pb,side,pile,index){
   const list=pb[side][pile];if(index<0||index>=list.length)throw new Error('No card at that slot.');
   const [id]=list.splice(index,1);
   ensureCollection(pb)[side][pile].push(id);
-  clearStaleOpener(pb);
+  clearStaleOpener(pb);repairComboPlans(pb);
   return id;
 }
 // Owned cards stay in the collection when removed from the active deck.
@@ -350,7 +369,7 @@ function moveCard(pb,side,pile,index,equip){
   const reserve=ensureCollection(pb),from=equip?reserve[side][pile]:pb[side][pile],to=equip?pb[side][pile]:reserve[side][pile];
   if(!Number.isInteger(index)||!from[index])throw new Error('No card at that slot.');
   if(equip&&to.length>=pb.capacity[pile])throw new Error('Move a card to the collection to make room first.');
-  to.push(from.splice(index,1)[0]);clearStaleOpener(pb);
+  to.push(from.splice(index,1)[0]);clearStaleOpener(pb);repairComboPlans(pb);
 }
 function setBase(pb,side,slot,id){
   if(!['off','def'].includes(side)||!Number.isInteger(slot)||slot<0||slot>3)throw new Error('Invalid base slot.');
@@ -362,7 +381,7 @@ function setBase(pb,side,slot,id){
   if(index<0)throw new Error('Unlock this card first.');
   const proposed=deck.base.map((old,i)=>i===slot?id:old);
   if(!proposed.some(x=>{const c=cardDef(x);return c.cost===0&&!c.needs}))throw new Error('Keep at least one free, unrestricted base play so you can always call a snap.');
-  from[index]=deck.base[slot];deck.base[slot]=id;clearStaleOpener(pb);
+  from[index]=deck.base[slot];deck.base[slot]=id;clearStaleOpener(pb);repairComboPlans(pb);
 }
 const ACHIEVEMENTS=[
   {id:'first_game',name:'First Whistle',how:'Finish a card battle',reward:'rpo_bubble'},
@@ -416,5 +435,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,MIN_CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,underMinimum,repairMinimum,cut,cardDef};
+return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,setComboPlan,repairComboPlans,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,MIN_CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,underMinimum,repairMinimum,cut,cardDef};
 });

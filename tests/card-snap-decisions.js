@@ -122,6 +122,68 @@ function thirdDown(seed,distance=6,overrides={}){
  E.startGame(b.game);Object.assign(b.game,{possession:'home',fieldPosition:35,down:3,distance,...overrides});B.advance(b);
  return b;
 }
+test('Quick Calls show defensive ranges that distinguish public call tradeoffs',()=>{
+ const b=B.createChallenge('goal_line_stand'),req=b.pending,before=B.save(b);
+ const withFamily=family=>({...req,offLook:{...req.offLook,family:{value:family,confirmed:true}}});
+ const versusRun=withFamily('run'),versusDeep=withFamily('deep');
+ const forecast=(look,play,confidence)=>B.quickForecast(b,look,{play},confidence);
+ const runFit=forecast(versusRun,'run_fit',60),quarters=forecast(versusRun,'two_high',60);
+ assert.ok(runFit.first[1]<quarters.first[1],'load the box against confirmed runs');
+ assert.ok(forecast(versusDeep,'two_high',60).first[1]<forecast(versusDeep,'run_fit',60).first[1],
+   'keep two safeties back against confirmed deep passes');
+ for(const confidence of [60,70,90,undefined]){
+   const {choices}=B.snapDecisions(b,req,{},confidence);
+   assert.ok(choices.length>=2);
+   for(const {id,forecast:estimate} of choices){
+     assert.deepEqual(estimate,forecast(req,id,confidence));
+     assert.equal(estimate.goal,'touchdown');
+     assert.ok(estimate.yards[0]<=estimate.yards[1]&&estimate.yards[1]<=4);
+     assert.ok(estimate.first[0]>=0&&estimate.first[0]<estimate.first[1]&&estimate.first[1]<=100);
+   }
+ }
+ for(const [confidence,label] of [[60,'Limited film'],[70,'Partial film'],[90,'Play tendencies'],[undefined,'Play tendencies']]){
+   assert.equal(forecast(req,'run_fit',confidence).confidence,label);
+ }
+ assert.equal(forecast(versusRun,'run_fit',90).confidence,'Scouted family');
+ const betweenThe20s=thirdDown(0,6,{possession:'away'});
+ assert.equal(B.snapDecisions(betweenThe20s).choices[0].forecast.goal,'first');
+ assert.equal(B.save(b),before);
+});
+
+test('defensive projections ignore hidden calls, tactics and unread scouting facts',()=>{
+ const b=B.createChallenge('goal_line_stand'),req=b.pending;
+ const unrevealed=(family,protection)=>({...req,offLook:{family:{value:family,confirmed:false},protection:{value:protection,confirmed:false}}});
+ const forecast=(look,confidence)=>B.quickForecast(b,look,{play:'cover3'},confidence);
+ const limited=forecast(unrevealed('run',true),60),full=forecast(unrevealed('run',true),90);
+ const board=B.snapDecisions(b,req,{},60);
+ const noPeeking=()=>{throw new Error('hidden offense accessed')};
+ Object.defineProperty(b.snap,'off',{get:noPeeking});
+ Object.defineProperty(b.snap,'offInfo',{get:noPeeking});
+ assert.deepEqual(forecast(unrevealed('deep',false),90),full);
+ assert.deepEqual(B.snapDecisions(b,req,{},60),board);
+ Object.defineProperty(b.teams,'away',{get:noPeeking});
+ assert.deepEqual(forecast(unrevealed('deep',false),60),limited);
+});
+
+test('defensive tactic previews use the selected assignment and compare against the same call',()=>{
+ const b=B.createChallenge('goal_line_stand'),base=b.pending;
+ const look=family=>({...base,offLook:{...base.offLook,family:{value:family,confirmed:true}}});
+ const deep=look('deep'),run=look('run'),play='two_high';
+ const bracket=deep.options.tactics.find(t=>t.id==='bracket');
+ const choice={play,bracketRole:'Z'};
+ const rows=B.quickTactics(b,deep,choice,[bracket.slot],60);
+ const paired=B.quickForecast(b,deep,{...choice,tactics:['bracket']},60);
+ assert.deepEqual(rows[0].with,paired);
+ assert.deepEqual(rows[0].without,B.quickForecast(b,deep,{play},60));
+ assert.notDeepEqual(rows[0].with.first,rows[0].without.first);
+ assert.notDeepEqual(paired,B.quickForecast(b,deep,{...choice,bracketRole:'X',tactics:['bracket']},60));
+ assert.ok(!rows.some(t=>t.name==='Identify Protection'),'scouting cards stay out of tactic comparisons');
+ const selected=B.snapDecisions(b,deep,{...choice,tac:[bracket.slot]},60).choices.find(c=>c.id===play);
+ assert.deepEqual(selected.forecast,paired);
+ assert.notDeepEqual(B.quickForecast(b,run,{play,edgeAssignment:'crash'},90),
+   B.quickForecast(b,run,{play,edgeAssignment:'contain'},90));
+});
+
 test('goal-to-go and money downs give the conversion recommendation priority',()=>{
  for(const [b,aim,goal] of [[thirdDown(0),'Move the chains','first'],[thirdDown(0,4,{fieldPosition:96}),'Reach the end zone','touchdown']]){
    const {choices}=B.snapDecisions(b,b.pending,{},60);

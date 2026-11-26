@@ -49,14 +49,17 @@ async function showOptions(page){
   // Exercise the real standalone save callback, discard once, then cold-reload the kept changes.
   await page.click('#pbv');await showOptions(page);await page.selectOption('#openingScript','screen');await page.click('[data-cancel]');await page.click('#pbv');
   await showOptions(page);assert.equal(await page.inputValue('#openingScript'),'');await page.selectOption('#openingScript','screen');
+  await page.selectOption('#installedCombo','shot_after_run:deep_cross');
   await page.click('[data-category="base"]');await page.locator('[data-base="0"]').selectOption('pa_boot');
   await page.click('[data-category="tactics"]');await page.locator('[data-owned-card="motion"] [data-move="remove"]').click();await page.click('[data-save]');
   assert.equal(await page.evaluate(()=>window.__slice.save().playbook.off.base[0]),'pa_boot');
   assert.equal(await page.evaluate(()=>window.__slice.save().playbook.reserve.off.tactics.length),1);
   await page.reload();assert.equal(await page.evaluate(()=>window.__slice.save().playbook.off.base[0]),'pa_boot');
   assert.equal(await page.evaluate(()=>window.__slice.save().playbook.off.openingScript),'screen');
+  assert.deepEqual(await page.evaluate(()=>window.__slice.save().playbook.off.comboPlan),{id:'shot_after_run',play:'deep_cross'});
   await page.click('[data-k="mode"][data-v="snap"]');await page.click('#play');await page.click('#kick');if(await page.$('#gotIt'))await page.click('#gotIt');
   await page.waitForFunction(()=>window.__slice.req&&!window.__slice.busy);
+  assert.deepEqual(await page.evaluate(()=>window.__slice.b.decks.home.off.comboPlan),{id:'shot_after_run',play:'deep_cross'});
   assert.equal(await page.locator('#sheetToggle').getAttribute('aria-expanded'),'false','a fresh Quick Battle starts in Quick Calls');
   await page.click('#sheetToggle');
   assert.ok(await page.locator('#hand .card.k-play').first().isVisible());

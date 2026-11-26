@@ -5,6 +5,7 @@
     { id: 'need_six', name: 'Two-Minute Drill', symbol: '6' },
     { id: 'goal_line_stand', name: 'Brick Wall', symbol: 'W' },
     { id: 'four_minute_offense', name: 'Clock Killer', symbol: '00' },
+    { id: 'three_drive', name: 'Complete Game', symbol: 'III' },
   ].map(Object.freeze));
   const prefix = 'callsheet.challenge.sticker.v1.';
   const recordPrefix = 'callsheet.challenge.record.v1.';
