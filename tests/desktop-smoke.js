@@ -134,7 +134,7 @@ function watchPage(page, pageErrors, consoleErrors) {
 
 async function verifyRenderer(page) {
   await page.waitForFunction(() => document.querySelector('#titleTeam')?.options.length > 0, {timeout: 60000});
-  assert.match(await page.title(), /Dynasty Lab/i);
+  assert.match(await page.title(), /^Call Sheet v\d/);
   assert.equal(await page.evaluate(() => location.protocol), 'file:');
   assert.equal(await page.evaluate(() => typeof window.require), 'undefined');
   const rendererStorage = await page.evaluate(() => ({
