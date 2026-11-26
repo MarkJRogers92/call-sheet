@@ -382,6 +382,8 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .duelmath{display:block;font:12px/1.5 system-ui;color:#c9d8e0;margin-top:5px}.cl{height:auto;min-height:280px;padding-top:180px}.cl .mods{position:static;margin-top:8px}.clashmath{position:relative;text-align:center;background:#0b121de8;border-radius:9px;padding:6px}.setup-ready{position:absolute;top:2px;left:3px;right:3px;text-align:center;background:#ffe066;color:#171300;border-radius:5px;font:700 10px system-ui;padding:3px;z-index:5}
 #matchupStory{position:absolute;left:8px;right:8px;bottom:7px;z-index:9;max-width:680px;margin:auto;padding:9px 13px;border:1px solid #dfc365;border-radius:9px;background:#101722ed;color:#f4edda;pointer-events:none;font:14px/1.35 system-ui;text-align:left}#matchupStory strong,#matchupStory span{display:block}#matchupStory span{font-size:12px;color:#d0d7e1;margin-top:3px}#matchupStory[hidden]{display:none}@media(max-width:600px){#matchupStory{font-size:12px;padding:6px 8px}#matchupStory span{font-size:12px}}
 #matchupStory .sequence-note{display:block;color:var(--sequence-brass);margin-top:4px}
+#matchupStory .moment-label{display:block;margin-bottom:3px;color:var(--sequence-brass);font:800 11px/1.25 system-ui;letter-spacing:.045em;text-transform:uppercase}
+#matchupStory[data-moment="stop"] .moment-label{color:#91dfed}
 .sequence-receipts{display:flex;gap:4px 6px;flex-wrap:wrap;margin:4px 0}
 .sequence-receipt,#matchupStory .sequence-receipt{margin:0;padding:1px 6px;border:1px solid #96783d;border-radius:4px;background:#352b1b;color:var(--sequence-brass);font:700 12px/1.4 system-ui}
 /* The sideline has one decision surface. The full diagrammed sheet remains a view, not a separate hand. */
@@ -398,6 +400,8 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .quick-heading .eyebrow,.quick-choice-title small{font:800 13px/1.1 var(--cond);letter-spacing:.08em;color:#efcd68;text-transform:uppercase}
 .quick-heading small{font-size:12px;color:#cac6b8}
 #quickClue{font:600 clamp(14px,2vw,17px)/1.35 system-ui;margin:6px 0 9px}
+#quickDefensePlan{font:13px/1.35 system-ui;color:#c3cedd;margin:0 0 8px}
+#quickDefensePlan strong{color:#f1df9e}
 .quick-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:8px}
 .quick-choice{padding:10px 12px;border:1px solid #505b6d;border-radius:8px;background:#1c2735;min-width:0;text-align:left;align-self:stretch}
 .quick-choice-title b{font:800 19px/1.1 var(--cond);color:white}.quick-choice-title small{white-space:nowrap;color:#d2ccbb}
@@ -526,7 +530,7 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
 #root.quick-snap:not(.playback) #ticker .tick{border:0;border-radius:0;background:none;max-width:100%;padding:1px 0}
 #root.quick-snap:not(.playback) #ticker:empty,#root.quick-snap:not(.playback) #ticker .tick:not(:first-child),#root.quick-snap:not(.playback) #stage:has(#matchupStory:not([hidden])) #ticker{display:none}
 #root.quick-snap:not(.playback) #matchupStory{border-width:1px 0 0}
-#root.quick-snap:not(.playback) #matchupStory small:not(.sequence-note){display:none}
+#root.quick-snap:not(.playback) #matchupStory small:not(.sequence-note,.moment-label){display:none}
 
 /* Keep scouting, the playing surface and the last result in separate rows. */
 .full-snap #stage{display:flex;flex-direction:column;background:radial-gradient(ellipse at 50% 48%,#233c3b,#111e25 68%,#0c151f)}
@@ -688,6 +692,9 @@ html.motion-reduced #hand .fan .card.dealt{animation:none!important}
 .challenge-record{padding:10px 12px;border-left:2px solid var(--sequence-brass);background:#20313d}
 .challenge-record strong{display:block;margin-bottom:4px;color:#f8df97}
 .challenge-objective{display:block;margin:8px 0;color:#f6dc91}
+.challenge-brief{margin:6px 0;font:13px/1.45 system-ui,sans-serif;color:#c7d4db}
+.challenge-brief summary{cursor:pointer;color:#f6dc91;font-weight:700}
+.challenge-brief p{margin:5px 0 0}
 .challenge-score{display:block;width:fit-content;margin:12px 0;font:800 clamp(26px,5vw,42px)/1.1 var(--cond);font-variant-numeric:tabular-nums;color:#f8df97}
 .challenge-sticker{display:inline-flex;align-items:center;gap:7px;width:fit-content;max-width:100%;color:#f6df99;font:700 15px/1.15 var(--cond)}
 .challenge-sticker:before{content:var(--sticker-mark);display:inline-grid;place-items:center;flex:none;width:24px;height:24px;border-radius:50%;transform:rotate(-8deg);background:var(--sticker-fill,#e8c566);color:#18232b;font:800 16px/1 var(--cond);box-shadow:inset 0 0 0 2px #eee7d1,inset 0 0 0 3px #49505a}
@@ -724,6 +731,7 @@ html.motion-reduced #hand .fan .card.dealt{animation:none!important}
     <label>Quarterback reads <select id="readPolicy"><option value="auto">Allow checkdowns</option><option value="primary">Primary only</option></select></label>
     <label><input type="checkbox" id="fastMode"> Fast playback</label>
     <label><input type="checkbox" id="soundMode"> Game sound</label>
+    <label><input type="checkbox" id="fieldHighlights"> Field highlights</label>
     <fieldset><legend>Key Moments headset</legend><div id="headsetControls"></div></fieldset>
     <small data-battle-build hidden></small>
     <div class="settings-actions"><button type="button" id="settingsHelp" class="tbtn">How to play</button><button class="tbtn" autofocus>Done</button></div>

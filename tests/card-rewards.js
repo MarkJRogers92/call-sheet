@@ -168,3 +168,113 @@ test('challenge records persist best and last drives separately for each look', 
   assert.equal(blocked.progress('need_six').attempts, 2);
   assert.equal(blocked.progress('need_six').best, 2);
 });
+
+test('three-drive challenge starts the real combo setup and lends an opening tactic without enlarging the deck', () => {
+  const B = require('../forks/call-sheet/core/battle');
+  const D = require('../forks/call-sheet/core/data');
+  const originalDecks = structuredClone(D.DEFAULT_DECKS);
+  const {stages} = B.THREE_DRIVE_CHALLENGE;
+  const opening = B.createChallenge(stages[0].id, {runStage: 0});
+  assert.deepEqual(opening.decks.home.off.comboPlan, {id: 'establish', play: 'pa_boot'});
+  assert.ok(!opening.pending.options.plays.some(play => play.id === 'pa_boot'));
+  assert.ok(opening.piles.home.off.wrinkle.draw.includes('pa_boot'));
+  assert.equal(B.createChallenge(stages[0].id).decks.home.off.comboPlan, undefined);
+  for (let run = 0; run < 2; run++) B.submit(opening, {type: 'call', play: 'inside_zone', tactics: []});
+  const command = opening.pending.options.command;
+  assert.equal(opening.pending.comboPayoff?.play, 'pa_boot');
+  B.submit(opening, {type: 'combo_payoff'});
+  assert.equal(opening.pending.options.command, command - 1);
+  assert.ok(opening.pending.options.plays.some(play => play.id === 'pa_boot' && !play.blocked));
+  assert.equal(opening.pending.comboPayoff, undefined);
+
+  for (const [runStage, stage] of stages.entries()) {
+    for (const loan of stage.loans || []) {
+      const battle = B.createChallenge(stage.id, {runStage, loan});
+      const {role, options} = battle.pending;
+      assert.equal(options.tactics[0].id, loan, `${loan} starts in hand`);
+      assert.equal(options.tactics.length, D.RULES.tacticHand);
+      assert.equal(battle.decks.home[role].tactics.length, D.DEFAULT_DECKS[role].tactics.length);
+    }
+  }
+  assert.deepEqual(D.DEFAULT_DECKS, originalDecks);
+  assert.throws(() => B.createChallenge('need_six', {runStage: 1}), /not part of this run/);
+  assert.throws(() => B.createChallenge('goal_line_stand', {runStage: 1, loan: 'max_protect'}), /not offered/);
+});
+
+test('the three-drive record and sticker are separate from the individual drives', () => {
+  const db = new Map([['callsheet.slice.v1', 'career']]);
+  const storage = {getItem: key => db.get(key), setItem: (key, value) => db.set(key, value)};
+  const awards = stickerSession(storage);
+  awards.finish('three_drive', null, {won: false, snaps: 10});
+  awards.finish('three_drive', null, {won: true, snaps: 8});
+  assert.equal(awards.earn('three_drive'), true);
+  const reload = stickerSession(storage);
+  assert.equal(reload.get('three_drive').name, 'Complete Game');
+  assert.equal(reload.progress('three_drive').best, 8);
+  assert.equal(reload.progress('three_drive').attempts, 2);
+  for (const id of ['need_six','goal_line_stand','four_minute_offense']) {
+    assert.equal(reload.get(id), null);
+    assert.equal(reload.progress(id), null);
+  }
+  assert.equal(db.get('callsheet.slice.v1'), 'career');
+});
+
+test('draft Power and Tempo face the same opening look and earn different payoffs', () => {
+  const B = require('../forks/call-sheet/core/battle');
+  const D = require('../forks/call-sheet/core/data');
+  const week = playbook => B.createChallenge('need_six', {runStage: 0, route: 'opener', playbook, loans: []});
+  const power = week('power'), tempo = week('tempo');
+  assert.deepEqual(tempo.pending.situation, power.pending.situation);
+  assert.deepEqual(tempo.teams.home.lineup, power.teams.home.lineup);
+  assert.deepEqual(tempo.snap.def, power.snap.def);
+  assert.ok(power.pending.options.plays.some(play => play.id === 'power' && play.base));
+  assert.ok(tempo.pending.options.plays.some(play => play.id === 'quick_out' && play.base));
+  assert.ok(!tempo.decks.home.off.wrinkles.includes('vertical_shot'));
+  for (const b of [power,tempo]) assert.ok(D.validComboPlan(b.decks.home.off,'off',b.decks.home.off.comboPlan));
+
+  B.submit(tempo, {type: 'call', play: 'quick_slant', tactics: []});
+  assert.equal(tempo.lastResult.yards, 10);
+  assert.equal(tempo.hands.home.wrinkles.length, D.RULES.wrinkleRow + 1);
+  assert.equal(tempo.hands.home.tempoExtra, true);
+  assert.equal(tempo.challengeDraft.tempoUsed, true);
+  assert.deepEqual(B.load(B.save(tempo)).challengeDraft, tempo.challengeDraft);
+  B.submit(power, {type: 'call', play: 'quick_slant', tactics: []});
+  assert.equal(power.lastResult.yards, 10);
+  assert.equal(power.hands.home.wrinkles.length, D.RULES.wrinkleRow);
+});
+
+test('draft routes give the advertised spot and carry both loans in the correct final hand', () => {
+  const B = require('../forks/call-sheet/core/battle');
+  const D = require('../forks/call-sheet/core/data');
+  const create = (challenge, runStage, route, loans) => B.createChallenge(challenge, {runStage,route,playbook:'tempo',loans});
+  const soft = create('four_minute_offense',1,'protect_lead',['seal_block']);
+  assert.deepEqual([soft.game.clock,soft.game.down,soft.game.distance,soft.game.timeouts.away],[80,2,4,1]);
+  const attack = create('four_minute_offense',2,'close_it_out',['seal_block','hurry_up']);
+  const defense = create('goal_line_stand',2,'last_stop',['stunt','spy']);
+  const mixed = create('four_minute_offense',2,'close_it_out',['stunt','route_adjust']);
+  for (const b of [attack,defense]) {
+    const {loans} = b.challengeDraft, {role,options} = b.pending;
+    assert.ok(loans.every(id => options.tactics.some(tactic => tactic.id === id)));
+    assert.equal(options.tactics.length, D.RULES.tacticHand);
+    assert.equal(b.decks.home[role].tactics.length, D.DEFAULT_DECKS[role].tactics.length);
+  }
+  assert.deepEqual([defense.game.down,defense.game.fieldPosition],[3,94]);
+  assert.ok(mixed.decks.home.def.tactics.includes('stunt'));
+  assert.ok(!mixed.pending.options.tactics.some(tactic => tactic.id === 'stunt'));
+  assert.throws(() => create('goal_line_stand',2,'last_stop',['stunt','stunt']), /offered tactic/);
+  assert.throws(() => create('goal_line_stand',2,'last_stop',['stunt','hurry_up']), /not offered for this matchup/);
+});
+
+test('the risky middle route can be cleared through a deliberate run fit', () => {
+  const B = require('../forks/call-sheet/core/battle');
+  for (const loan of ['stunt','lock']) {
+    const setup = () => B.createChallenge('goal_line_stand', {runStage:1, route:'goal_line', playbook:'power', loans:[loan]});
+    const staffed = setup(), coached = setup();
+    for (let i=0; i<4&&!B.challengeResult(staffed); i++) B.submit(staffed, {type:'auto'});
+    for (let i=0; i<4&&!B.challengeResult(coached); i++) {
+      B.submit(coached, {type:'call',play:'run_fit',tactics:i===0?[loan]:[],edgeAssignment:'contain'});
+    }
+    assert.equal(B.challengeResult(staffed)?.won, false);
+    assert.equal(B.challengeResult(coached)?.won, true);
+  }
+});

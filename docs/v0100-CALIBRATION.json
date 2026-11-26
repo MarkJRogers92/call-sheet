@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-11-17T09:42:29.811Z",
+  "generatedAt": "2026-11-26T18:42:47.013Z",
   "branch": "codex/v0100-game-engine-2",
   "baselineVersion": "0.36.0",
   "mode": "development-only shadow comparison",
@@ -23,7 +23,7 @@
     "games": 480,
     "meanPoints": 39.28,
     "meanPlays": 114.78,
-    "meanYards": 587.2,
+    "meanYards": 587.15,
     "meanTurnovers": 2.13,
     "meanTouchdowns": 4.83,
     "meanFgMade": 1.82,
@@ -36,7 +36,7 @@
   "delta": {
     "meanPoints": -3.28,
     "meanPlays": -5.43,
-    "meanYards": -8.82,
+    "meanYards": -8.87,
     "meanTurnovers": -0.28,
     "meanTouchdowns": 0.18,
     "meanFgMade": -0.63,
@@ -70,7 +70,7 @@
     "These are calibration observations, not release thresholds."
   ],
   "calibrationContract": 1,
-  "sourceSha256": "283c5523bdaa6a7fd2d9204d1d690a5ab9b42348663efaf04c0e7209c42e7e38",
+  "sourceSha256": "0ef5fee893a406c94fc27d1657eb0ada68d2fec570799b1a38a6de789c2a8717",
   "sourceFiles": [
     "game-engine-v2.js",
     "game-engine-v2-adapter.js",

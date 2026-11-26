@@ -88,6 +88,7 @@ function loadPreset(pb,index){
     if(side==='off'&&d.openingScript){d.openingScript=current(d.openingScript);if(!D.canScriptOpener(d,d.openingScript))delete d.openingScript}
   }
   pb.off=next.off;pb.def=next.def;pb.reserve=next.reserve;
+  P.repairComboPlans(pb);
   return [...new Set(changes)];
 
 }
@@ -261,6 +262,14 @@ function thirdDownHTML(hands,unit){
     <p>Change a card to replay these draws before saving.</p>
     ${hands.map((h,i)=>`<details><summary>Hand ${i+1} · ${metric} ${pct(h.saved.calls[0]?.chance||0)} → ${pct(h.draft.calls[0]?.chance||0)}</summary><p>Saved · ${report(h.saved)}</p><p>Draft · ${report(h.draft)}</p></details>`).join('')}`;
 }
+function comboPlanHTML(deck,side){
+  const {data:D}=root.CallSheet,plans=D.comboPlanOptions(deck,side);
+  const chosen=plans.find(o=>o.id===deck.comboPlan?.id&&o.play===deck.comboPlan.play);
+  return `<section><h3>Installed combo</h3><label>Combo and payoff card<select id="installedCombo" aria-describedby="comboPlanRules">
+    <option value="">None</option>${plans.map(p=>`<option value="${escF(p.id+':'+p.play)}"${p===chosen?' selected':''}>${escF(p.name)} · ${escF(p.playName)}</option>`).join('')}</select></label>
+    <p class="de-muted" id="comboPlanRules">Complete the setup, then spend ${D.RULES.comboDrawCost} Command to draw the payoff from your deck or discard. Once per drive.</p>
+    ${chosen?`<p>${escF(chosen.how)}.</p>`:''}</section>`;
+}
 function openingScriptHTML(deck,lineup){
   const {data:D,resolver:R}=root.CallSheet;
   const choices=[...new Set(deck.wrinkles)].filter(id=>D.canScriptOpener(deck,id));
@@ -422,6 +431,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
   function render({reset=false,focus=null}={}){
     const prevScroll=reset?0:body.scrollTop;
     const moreOpen=!!$('[data-more-options]')?.open,advancedOpen=!!$('[data-deck-advice]')?.open,plansOpen=!!$('[data-plans]')?.open,presetName=$('#deckPresetName')?.value||'';
+    P.repairComboPlans(draft);
     const deck=draft[side],reserve=draft.reserve[side],sideName=side==='off'?'Offense':'Defense',adjective=side==='off'?'offensive':'defensive';
     const c=deckCounts(draft,side),group={wrinkles:c.plays,tactics:c.tactics,base:{active:deck.base.length,limit:4},signatures:c.signatures},g=group[category];
     dialog.querySelectorAll('[data-side]').forEach(b=>b.setAttribute('aria-pressed',String(side===b.dataset.side)));
@@ -462,6 +472,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
     body.innerHTML=help+(presetChanges.length?`<aside class="de-banner" data-preset-repair><b>Preset repairs</b><ul>${presetChanges.map(note=>`<li>${esc(note)}</li>`).join('')}</ul>Save deck to keep these selections and update the repaired preset.</aside>`:'')+list+(lineup?.off&&lineup?.def?`<section><button type="button" data-hand-test aria-expanded="${showHands}" aria-controls="de-hand-report">Test ten third-and-seven ${side==='def'?'defensive ':''}hands</button><div id="de-hand-report" ${showHands?'':'hidden'}>${showHands?thirdDownHTML(thirdDownHands(pb,draft,lineup,team,side,practiceFilm,useFilm),side):''}</div></section>`:'')+`<details data-more-options ${moreOpen?'open':''}><summary>More deck options${ready.length?' · '+ready.length+' ready to evolve':''}</summary>
     <p>Each series, draw up to ${D.RULES.wrinkleRow} extra plays and ${D.RULES.tacticHand} tactics. Base calls are always available. Special-teams tactics trigger in their own situations instead of being drawn.</p>
     ${side==='off'?openingScriptHTML(deck,lineup):''}
+    ${comboPlanHTML(deck,side)}
 <details data-plans ${plansOpen?'open':''}><summary>Try a different ${adjective} build</summary>
 <p class="de-muted">Preview a tighter draw pile using cards you already own. Only ${sideName.toLowerCase()} changes.</p>
 <label>Game plan<select data-plan><option value="">Choose a build to preview</option>${Object.entries(GAME_PLANS[side]).map(([key,p])=>`<option value="${key}" ${key===planKey?'selected':''}>${p.name}</option>`).join('')}</select></label>
@@ -516,6 +527,10 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
     if(el.hasAttribute('data-plan')){planKey=el.value;render({focus:'[data-plan]'});status(invalidDraft()?.msg||'Ready to play.',!!invalidDraft());return}
     if(el.hasAttribute('data-base')){const i=Number(el.dataset.base),id=el.value;act(()=>P.setBase(draft,side,i,id),`Base call ${i+1}: ${cardName(id)}.`,()=>$(at('[data-base',String(i)))?.focus({preventScroll:true}));return}
     if(el.id==='openingScript'){act(()=>P.setOpeningScript(draft,el.value),'Opening script updated.',()=>$('#openingScript')?.focus({preventScroll:true}));return}
+    if(el.id==='installedCombo'){
+      const [id,play]=el.value.split(':');
+      act(()=>P.setComboPlan(draft,side,id?{id,play}:null),'Installed combo updated.',()=>$('#installedCombo')?.focus({preventScroll:true}));
+    }
   });
   render();const initialIssue=invalidDraft();status(initialIssue?.msg||'Ready to play.',!!initialIssue);dialog.showModal();return dialog;
 }

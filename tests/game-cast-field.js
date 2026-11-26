@@ -28,9 +28,8 @@ function context(prefix) {
 }
 
 test('recording per-play actors leaves every stat line byte-identical', () => {
-  // The digest was taken from the attribution module before per-play actors existed (v0.12.5). It is checked on the
-  // original rules (rules:false); v0.16 only added zero-valued keys (returns, penalty and pressure totals) to the
-  // stat lines, which are removed here so the same bytes are compared.
+  // Keep the legacy rules and stat schema. The golden accounts for the v0.17.2 field goal range and Call Sheet V20
+  // turnover yardage corrections. The current and pre-fork attribution modules agree on those same corrected events.
   const NEW_PLAYER = ['returns', 'returnYds', 'returnTD'], NEW_TEAM = ['pressures', 'penalties', 'penaltyYds', 'returns', 'returnYds', 'returnTD'];
   const strip = (obj, keys) => { const out = {...obj}; for (const k of keys) delete out[k]; return out; };
   const legacy = a => [
@@ -46,7 +45,7 @@ test('recording per-play actors leaves every stat line byte-identical', () => {
     const snaps = s.state.events.filter(e => ['scrimmage', 'interception', 'fumble'].includes(e.type));
     for (const e of snaps) assert.ok(a.playActors[e.seq], `snap ${e.seq} has recorded actors`);
   }
-  assert.equal(h.digest('hex'), '5f5f4bbe333bdfd33b9688d277d3192995765f726f15bbd3c7a1054a12826a06' /* re-taken at v0.17.2: field goals past 55 yards are no longer attempted, which changes which plays are run */);
+  assert.equal(h.digest('hex'), 'b1d6a7641e5334b5db1023d382a694d13c85a646b8c31bac917540e061ce8cd0');
 });
 
 test('a user game saves a compact play log that replays to the final score and drive results', async () => {

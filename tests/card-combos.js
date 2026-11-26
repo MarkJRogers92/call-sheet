@@ -40,6 +40,61 @@ test('defensive recipes need the call and help the defense',()=>{
   assert.equal(B.comboFor(battleAt(runs),P('inside_zone'),C('run_fit')),null,'runs that gained ground do not');
 });
 
+test('a playbook saves one compatible combo per unit and reconciles evolved payoff copies',()=>{
+  const packs=core('packs.js'),pb=packs.newPlaybook();
+  packs.setComboPlan(pb,'off',{id:'establish',play:'pa_boot'});
+  packs.setComboPlan(pb,'def',{id:'heat_check',play:'zone_pressure'});
+  assert.deepEqual(packs.decksOf(pb).off.comboPlan,{id:'establish',play:'pa_boot'});
+  assert.deepEqual(packs.decksOf(pb).def.comboPlan,{id:'heat_check',play:'zone_pressure'});
+  assert.throws(()=>packs.setComboPlan(pb,'off',{id:'establish',play:'inside_zone'}),/active deck/);
+  assert.throws(()=>packs.setComboPlan(pb,'off',{id:'wall_up',play:'pa_boot'}),/active deck/);
+  pb.off.wrinkles=pb.off.wrinkles.map(id=>id==='pa_boot'?'pa_boot_plus':id);
+  packs.repairComboPlans(pb);
+  assert.equal(pb.off.comboPlan.play,'pa_boot_plus');
+  for(let i=pb.off.wrinkles.length-1;i>=0;i--)if(pb.off.wrinkles[i]==='pa_boot_plus')packs.moveCard(pb,'off','wrinkles',i,false);
+  assert.equal(pb.off.comboPlan,undefined,'a payoff stored in the collection is not equipped');
+});
+
+function installedPayoff(challenge,plan,history,source){
+  const b=B.createChallenge(challenge),{side,role}=b.pending,hand=b.hands[side];
+  const pile=b.piles[side][role].wrinkle,from=pile[source];
+  b.decks[side][role].comboPlan=plan;
+  for(const cards of [hand.wrinkles,pile.draw,pile.discard])if(cards!==from){
+    for(let i=cards.length-1;i>=0;i--)if(cards[i]===plan.play)from.push(...cards.splice(i,1));
+  }
+  b.drive={key:`${b.game.drive}:${b.game.possession}`,fams:[],plays:[],calls:[],results:[],firsts:0,...history};
+  return B.load(B.save(b));
+}
+test('an installed payoff moves one physical copy after the real setup, once per possession and across a reload',()=>{
+  const plan={id:'establish',play:'pa_boot'};
+  let b=installedPayoff('need_six',plan,{fams:['run'],plays:['inside_zone']},'discard');
+  assert.equal(b.pending.comboPayoff,undefined);
+  const untouched=B.save(b);assert.throws(()=>B.submit(b,{type:'combo_payoff'}),/No installed combo/);assert.equal(B.save(b),untouched);
+  b=installedPayoff('need_six',plan,runs,'discard');
+  const side=b.user,hand=b.hands[side],pile=b.piles[side].off.wrinkle;
+  assert.equal(b.pending.comboPayoff?.id,'establish');assert.equal(b.pending.comboPayoff?.cost,1);
+  const all=()=>[...hand.wrinkles,...pile.draw,...pile.discard,...b.exhausted[side]].sort();
+  const copies=all(),rng=structuredClone(b.rng),situation=structuredClone(b.game),paid=hand.command;
+  const result=B.submit(b,{type:'combo_payoff'});
+  assert.equal(result.comboPayoff,undefined);assert.equal(result.situation.down,situation.down);
+  assert.equal(B.comboRead(b,result,P(plan.play))?.id,'establish');assert.equal(hand.wrinkles.filter(x=>x===plan.play).length,1);
+  assert.equal(hand.command,paid-1);assert.deepEqual(all(),copies);assert.deepEqual(b.rng,rng);assert.deepEqual(b.game,situation);
+  pile.discard.push(...hand.wrinkles.splice(hand.wrinkles.indexOf(plan.play),1));
+  const resumed=B.load(B.save(b));assert.equal(resumed.pending.comboPayoff,undefined);
+  assert.throws(()=>B.submit(resumed,{type:'combo_payoff'}),/No installed combo/);
+});
+
+test('defensive combo payoff readiness uses the prior loss and keeps enough Command to call the blitz',()=>{
+  const plan={id:'heat_check',play:'zone_pressure'},history={results:[{family:'deep',yards:-4}]};
+  const b=installedPayoff('goal_line_stand',plan,history,'draw'),side=b.user;
+  assert.equal(b.pending.comboPayoff?.play,plan.play);
+  b.hands[side].command=1;
+  assert.throws(()=>B.submit(b,{type:'combo_payoff'}),/No installed combo/);
+  b.hands[side].command=5;
+  const next=B.submit(b,{type:'combo_payoff'});
+  assert.ok(next.options.plays.some(c=>c.id===plan.play));assert.equal(next.options.command,4);
+});
+
 test('full games: combos are occasional, both sides earn them, and the duel shows the label',()=>{
   const seen={};let labeled=0,defEarned=0,comboSnaps=0,totalSnaps=0;
   for(let i=0;i<60;i++){

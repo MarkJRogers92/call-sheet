@@ -11,7 +11,7 @@ const STORE='callsheet.slice.v1';
 // Dynasty mode: when Dynasty Lab opens the battle (an iframe on the same origin), the host supplies the real teams,
 // the program's playbook and settings, records the result into the season, and stores the playbook in the save.
 const challengeFrame=window.frameElement?.dataset?.driveChallenges==='true';
-let campaignSave=null,activeChallenge=null;
+let campaignSave=null,activeChallenge=null,challengeRun=null;
 const HOST=(()=>{try{return !challengeFrame&&window.parent!==window&&(window.frameElement?.dataset?.classicDrive?window.parent.__callSheetClassic:window.parent.__callSheetDynasty)||null}catch(e){return null}})();
 const DYN=HOST?HOST.launch():null;
 function loadSave(){
@@ -418,7 +418,12 @@ function comboHTML(){if(!save.combos.length)return'';return`<div class="box"><h3
 const fmtEdge=n=>`${n>0?'+':''}${Number(n.toFixed(1))}`;
 // The same whole-play estimate sits beside the call in either sheet.
 function forecastReadHTML(){
-  const certain=req.role==='off'&&req.situation.down>=3&&B.lookCertainty(req.look);
+  if(req.role==='def'){
+    const family=req.offLook?.family;
+    const detail=family?.confirmed?`Scouting confirmed the ${family.value} play family. Estimates cover possible plays from that family.`:'Estimates use the situation and past calls. Scout to confirm the play family.';
+    return `<small class="look-certainty">${esc(detail)}</small>`;
+  }
+  const certain=req.situation.down>=3&&B.lookCertainty(req.look);
   if(!(certain&&(certain.known.length||certain.guess.length)))return '';
   return `<small class="look-certainty">${certain.known.length?`Known: ${esc(certain.known.join(', '))}.`:''}${certain.guess.length?` Still a guess: ${esc(certain.guess.join(', '))}.`:''}</small>`;
 }
@@ -430,6 +435,9 @@ function forecastNumbers({yards,first,confidence}){
     first:rangeText([5*Math.floor(first[0]/5),5*Math.ceil(first[1]/5)])
   };
 }
+function forecastObjective(goal,role,down){
+  return (role==='def'?'Opp. ':'')+(goal==='touchdown'?'TD':down>=3?'Convert':'1st down');
+}
 function callForecastHTML(compact=false,recommendation=null){
   const play=req.options.plays.find(p=>p.id===sel.play)?.card;
   if(!play)return '';
@@ -439,10 +447,13 @@ function callForecastHTML(compact=false,recommendation=null){
   }
   const offense=req.role==='off',choice=snapChoice(selectedTactics());
   const confidence=DYN?.scouting?.confidence,fog=B.filmFog(confidence);
+  const estimate=recommendation||(!offense&&B.quickForecast(b,req,choice,confidence));
   let yards,chance,label;
-  if(recommendation){
-    const numbers=forecastNumbers(recommendation);
-    yards=numbers.yards;chance=numbers.first+'%';label=recommendation.confidence;
+  if(estimate){
+    const numbers=forecastNumbers(estimate);
+    yards=numbers.yards;chance=numbers.first+'%';label=estimate.confidence;
+  }else if(!offense){
+    return '';
   }else if(fog.spread){
     const range=B.scoutedForecast(b,req,choice,confidence);
     if(!range)return '';
@@ -459,11 +470,14 @@ function callForecastHTML(compact=false,recommendation=null){
     chance=Math.round(100*average('first'))+'%';
     label=confidence==null?'From the shown look':'High scouting confidence';
   }
-  const goal=req.situation.field+req.situation.distance>=100,late=req.situation.down>=3;
-  const objective=(offense?'':'Opp. ')+(goal?'TD':late?'Convert':'1st down');
-  const estimate=offense?(compact?'Est.':'Est. gain'):(compact?'Est. allowed':'Est. yards allowed');
-  const yardage=goal&&!compact?`<span>${100-req.situation.field} yd to goal</span>`:`<span>${estimate} <b>${yards} yd</b></span>`;
-  return `<div class="call-forecast" id="callForecast" aria-label="Selected play forecast" title="Estimated average gain and chance to reach the target against the visible look."><small>${label}</small>${yardage}<span>${objective} <b>${chance}</b></span>${compact?'':forecastReadHTML()}</div>`;
+  const goal=req.situation.field+req.situation.distance>=100;
+  const objective=forecastObjective(goal?'touchdown':'first',req.role,req.situation.down);
+  const yardLabel=offense?(compact?'Est.':'Est. gain'):(compact?'Est. allowed':'Est. yards allowed');
+  const showGoalDistance=goal&&!compact&&offense;
+  const yardage=showGoalDistance?`<span>${100-req.situation.field} yd to goal</span>`:`<span>${yardLabel} <b>${yards} yd</b></span>`;
+  const shown=[showGoalDistance?'':`${yards} yd ${offense?'gain':'allowed'}`,`${objective} ${chance}`,label].filter(Boolean).join(' · ');
+  const title=offense?'Estimated gain and conversion chance from the visible look.':'Estimated yards allowed and opponent conversion chance across possible plays.';
+  return `<div class="call-forecast" id="callForecast" aria-label="Selected ${offense?'play':'defensive call'} forecast" title="${title}" data-forecast-play="${esc(sel.play)}" data-forecast-shown="${esc(shown)}"><small>${esc(label)}</small>${yardage}<span>${objective} <b>${chance}</b></span>${compact?'':forecastReadHTML()}</div>`;
 }
 function readHTML(){
   if(!req||req.kind!=='snap'){clearGlow();return''}
@@ -658,9 +672,10 @@ function quickTacticsHTML(){
     let estimate='';
     if(t.without&&t.with){
       const before=forecastNumbers(t.without),after=forecastNumbers(t.with);
-      const objective=t.with.goal==='touchdown'?'TD':req.situation.down>=3?'Convert':'1st down';
+      const objective=forecastObjective(t.with.goal,req.role,req.situation.down);
+      const yardLabel=req.role==='def'?'Yards allowed ':'';
       estimate=before.yards===after.yards&&before.first===after.first?'No visible forecast change.':
-        `With this tactic · ${before.yards} → ${after.yards} yd · ${objective} ${before.first}% → ${after.first}%.`;
+        `With this tactic · ${yardLabel}${before.yards} → ${after.yards} yd · ${objective} ${before.first}% → ${after.first}%.`;
     }
     const effect=`quickTacticEffect${t.slot}`;
     return `<li><button class="tbtn" type="button" data-tactic-slot="${t.slot}" aria-pressed="${t.active}" aria-label="${esc(t.name)} · ${t.cost} Command" aria-describedby="${effect}">${t.active?'Remove tactic':'Add tactic'} · ${esc(t.name)} · ${t.cost} CMD</button><small id="${effect}">${esc(t.reason)}${estimate?` <span>${esc(estimate)}</span>`:''}</small></li>`;
@@ -714,6 +729,33 @@ function lastSnapHTML(){
   const outcome=verdict?.result||note.result||(e.penalty?e.penalty.label:e.turnover?e.turnover:e.kind==='inc'?'Incomplete':`${e.yards>0?'+':''}${e.yards} yards`);
   return`<div class="box" id="lastSnap"><h3>Last snap · ${esc(teamOf(e.offSide).short)} offense</h3><div class="mini">${esc(D.PLAYS[e.play]?.name||'')} · ${esc(outcome)}</div><p class="mini">${esc(verdict?.detail||note.duelSummary||note.summary)}</p>${sequenceReceipts(e)}<details><summary>Full breakdown</summary><div class="mini muted">${esc(note.detail)}</div></details></div>`;
 }
+function coachedSnapReviewHTML(){
+  const review=B.coachedSnapReview(b);if(!review)return'';
+  return `<details class="recent-snaps" data-coached-review><summary>Review your last call</summary>
+    ${review.estimate?`<p class="mini"><b>Pre-snap estimate</b> · ${esc(review.estimate)}</p>`:''}
+    <p class="mini"><b>${esc(review.call||'Your call')}</b> · ${esc(review.actual)}</p>
+    ${review.detail?`<p class="mini">${esc(review.detail)}</p>`:''}
+    ${review.alternatives.length?'<button type="button" class="tbtn" data-practice-snap>Practice the same look</button>':''}</details>`;
+}
+function bindCoachedSnapReview(root){
+  const open=root.querySelector('[data-practice-snap]');if(!open)return;
+  open.onclick=()=>{
+    const review=B.coachedSnapReview(b);if(!review?.alternatives.length)return;
+    const dialog=document.createElement('dialog');dialog.className='coaching-dialog';dialog.setAttribute('aria-labelledby','practiceSnapTitle');
+    dialog.innerHTML=`<h2 id="practiceSnapTitle">Practice the same look</h2><p>${esc(review.call)} · In the game, ${esc(review.actual)}.</p>
+      <p>Try a different tactic with the same personnel and opposing call. Practice is a free rep.</p>
+      <label>Practice tactic <select>${review.alternatives.map(id=>`<option value="${esc(id)}">${esc(D.TACTICS[id]?.name||'No tactic')}</option>`).join('')}</select></label>
+      <button type="button" class="btn go" data-run-practice>Run practice snap</button> <button type="button" class="btn" data-close-practice>Back to game</button>
+      <p role="status" data-practice-result></p>`;
+    dialog.querySelector('[data-run-practice]').onclick=()=>{
+      const pick=B.practiceCoachedSnap(b,dialog.querySelector('select').value);
+      dialog.querySelector('[data-practice-result]').textContent=pick?[`Practice result · ${pick.actual}.`,pick.detail].filter(Boolean).join(' '):'This tactic is unavailable for the practice snap.';
+    };
+    dialog.querySelector('[data-close-practice]').onclick=()=>dialog.close();
+    dialog.addEventListener('close',()=>{dialog.remove();if(open.isConnected)open.focus({preventScroll:true})},{once:true});
+    document.body.appendChild(dialog);dialog.showModal();
+  };
+}
 // A setup is evidence only when its modifier affected a duel that was actually played.
 function setupReceipt(e){
   if(!e||e.penalty||e.category==='kick'||!e.duelResults?.length)return '';
@@ -739,16 +781,42 @@ function sequenceReceipts(e){
     return `<span class="sequence-receipt">${esc(event.name)}${reward?' · '+esc(reward):''}</span>`;
   }).join('')}</div>`;
 }
-function matchupStoryHTML(e,note){
+function completedFieldMoment(e){
+  if(e.penalty||e.category==='kick'||!e.duelResults?.length)return null;
+  const {offSide,defSide,sit,score,after}=e,before=sit?.score;
+  const late=sit?.period>=4,margin=before?Math.abs(before[offSide]-before[defSide]):Infinity;
+  if(before&&score){
+    for(const [side,other] of [[offSide,defSide],[defSide,offSide]]){
+      if(score[side]<=before[side])continue;
+      const trailing=before[side]-before[other],ahead=score[side]-score[other];
+      if(trailing<=0&&ahead>0)return{type:'score',label:'Lead change'};
+      if(trailing<0&&ahead===0)return{type:'score',label:'Game tied'};
+      if(late&&trailing< -8&&ahead>= -8&&ahead<0)return{type:'score',label:'One-score game'};
+    }
+  }
+  if(late&&margin<=8&&e.turnover)return{type:'stop',label:'Clutch takeaway'};
+  if(sit?.down===4&&after?.possession===defSide&&!e.turnover&&e.yards<sit.distance){
+    return{type:'stop',label:'Fourth-down stop'};
+  }
+  const reached=e.duelResults[0].won?e.duels?.slice(0,e.duelResults.length):e.duels?.slice(0,1);
+  const combo=e.events?.find(ev=>ev.type==='combo'&&ev.name&&(ev.id==='chain_gang'||
+    reached?.some(duel=>duel.key===ev.duel&&duel.mods?.some(mod=>mod.src===`COMBO: ${ev.name}`))));
+  return combo?{type:'combo',label:`Combo completed · ${combo.name}`}:null;
+}
+function matchupStoryHTML(e,note,moment=null){
   if(!note)return'';
   const detail=note.defense||(!fogSpread()&&note.detail);
   const verdict=e.userCalled&&B.snapVerdict(e,b.user),receipt=setupReceipt(e);
-  return`<strong>${esc(D.PLAYS[e.play]?.name||e.play)} · ${esc(note.result)}</strong><span>${esc(verdict?.detail||note.duelSummary||note.summary)}</span>${receipt?`<small class="sequence-note">${esc(receipt)}</small>`:''}${sequenceReceipts(e)}${detail?`<small>${esc(detail)}</small>`:''}`;
+  const estimate=e.userCalled&&b.coachedSnap&&b.log[b.coachedSnap.index]===e?b.coachedSnap.estimate:'';
+  return`${moment?`<small class="moment-label">${esc(moment.label)}</small>`:''}<strong>${esc(D.PLAYS[e.play]?.name||e.play)} · ${esc(note.result)}</strong>${estimate?`<small>Pre-snap estimate · ${esc(estimate)}</small>`:''}<span>${esc(verdict?.detail||note.duelSummary||note.summary)}</span>${receipt?`<small class="sequence-note">${esc(receipt)}</small>`:''}${sequenceReceipts(e)}${detail?`<small>${esc(detail)}</small>`:''}`;
 }
 function showMatchupStory(e){
+  const moment=save.settings.fieldHighlights!==false?completedFieldMoment(e):null;
+  if(!e.userCalled&&!moment)return;
   let panel=$('#matchupStory');if(!panel){panel=document.createElement('div');panel.id='matchupStory';panel.setAttribute('role','status');$('#stage').appendChild(panel)}
   const note=B.matchupStory(e);
-  panel.innerHTML=matchupStoryHTML(e,note);panel.hidden=!panel.innerHTML;
+  if(moment&&note)panel.dataset.moment=moment.type;else delete panel.dataset.moment;
+  panel.innerHTML=matchupStoryHTML(e,note,moment);panel.hidden=!panel.innerHTML;
   for(const role of note?.winnerRoles||[]){
     const dot=layer.dots[(note.offWon?'o:':'d:')+role];
     if(dot){dot.classList.add('decisive');layer.players.appendChild(dot)}
@@ -763,8 +831,9 @@ function bindGuide(root){
   finish.onclick=()=>{if(busy)return;O.skip(b);save.settings.guidedDriveDone=true;save.settings.guidedDrivePending=false;writeSave();refresh();$('#sheetToggle').focus()};
 }
 function adaptationHTML(){
-  const clue=B.adaptationRead(b,req);if(!clue)return'';
-  return`<section class="box" id="opponentAdjustment"><h3>Opponent adjustment</h3><p class="mini">${esc(clue.summary)}</p><details><summary>Your possible answer</summary><p class="mini">${esc(clue.detail)}${clue.counterPlay?` Try ${esc(D.PLAYS[clue.counterPlay]?.name||clue.counterPlay)} from your hand.`:''}</p></details></section>`;
+  const clue=B.adaptationRead(b,req),plan=req?.defensePlan;
+  const planHTML=plan?`<section class="box" id="opponentDefense"><h3>${plan.adjusted?'Defense adjusted':'Opponent game plan'}</h3><p class="mini">${esc(plan.text)}</p></section>`:'';
+  return planHTML+(clue?`<section class="box" id="opponentAdjustment"><h3>Opponent adjustment</h3><p class="mini">${esc(clue.summary)}</p><details><summary>Your possible answer</summary><p class="mini">${esc(clue.detail)}${clue.counterPlay?` Try ${esc(D.PLAYS[clue.counterPlay]?.name||clue.counterPlay)} from your hand.`:''}</p></details></section>`:'');
 }
 // The one snap that decided it, with the duel that won it. The same text is recorded on the dynasty's game
 // archive, so This Week's Last Final card shows the identical line.
@@ -786,11 +855,13 @@ function renderSide(){
   if(req?.kind==='snap'&&!fullSheet){$('#side').replaceChildren();return}
   const pb=save.playbook;
   const ur=DYN?DYN.record:(save.world?.userRecord||pb.record),opponent=teamOf(b.user==='away'?'home':'away');
-  const goal=activeChallenge?`<section class="box"><h3>${esc(activeChallenge.name)}</h3><p class="challenge-objective">${esc(activeChallenge.objective)}</p>${b?.challengeLook&&activeChallenge.alternate?`<p class="mini">${esc(activeChallenge.alternate.name)}: ${esc(activeChallenge.alternate.change)}</p>`:''}</section>`:'';
+  const goal=activeChallenge?`<section class="box"><h3>${esc(challengeLabel())}</h3><p class="challenge-objective">${esc(activeChallenge.objective)}</p>${challengeRunNote()}${b?.challengeLook&&activeChallenge.alternate?`<p class="mini">${esc(activeChallenge.alternate.name)}: ${esc(activeChallenge.alternate.change)}</p>`:''}</section>`:'';
   const gameContext=activeChallenge?'':`<h3>${DYN?esc(DYN.label):`Season ${save.world.season}`}</h3><div class="statline">${DYN?.classicDrive?'RECORDED FINAL · '+esc(DYN.finalScore):`RECORD <b>${ur.w}-${ur.l}</b>`}${DYN?'':` · WEEK <b>${save.world.week%save.world.order.length+1}</b> of ${save.world.order.length}`}</div>`;
   $('#side').innerHTML=goal+(req?.kind==='snap'&&staffRecaps.length?`<div class="box">${staffRecapHTML()}</div>`:'')+(req?.kind==='snap'&&req.setupCue?`<div class="box">${setupCueHTML()}</div>`:'')+guidedDriveHTML()+adaptationHTML()+backfieldHTML()+personnelHTML()+coachingHTML()+readHTML()+lastSnapHTML()+hotHTML()+comboHTML()+`<div class="box">${gameContext}
    <div class="mini">vs ${esc(opponent.name)} · ${esc(opponent.coach.name)}</div>
    <div style="margin-top:8px;display:flex;gap:6px;flex-wrap:wrap"><button class="tbtn" id="bHelp">How to play</button><button class="tbtn" id="bFast">${save.settings.fast?'Speed: fast':'Speed: normal'}</button><button class="tbtn" id="bSound">${save.settings.sound?'Sound: on':'Sound: off'}</button><button class="tbtn" id="bReplay">Replays: ${save.settings.replays==='all'?'all':'key moments'}</button><button class="tbtn" id="bRead" title="Auto: if the first read is covered, the QB checks down to the back or tight end. Primary only: no checkdowns (long 3rd downs).">Checkdowns: ${readMode==='primary'?'off':'auto'}</button>${activeChallenge?'':`<button class="tbtn" id="bSim">${DYN?.classicDrive?'Sim this drive':'Sim to end'}</button>`}</div></div>`;
+  if(b.coachedSnap)$('#side').insertAdjacentHTML('beforeend',coachedSnapReviewHTML());
+  bindCoachedSnapReview($('#side'));
   bindGuide($('#side'));
   if(req?.kind==='snap'&&sel.play){
     const featured=matchupHTML();if(featured)$('#coachingRead')?.insertAdjacentHTML('afterbegin',featured);
@@ -868,6 +939,25 @@ function bindSetupCue(root){
   const button=root.querySelector('[data-cue-play]');if(!button)return;
   button.onclick=()=>{if(busy)return;S.init();choosePlay(button.dataset.cuePlay);S.tick(6);refresh()};
 }
+function comboPayoffButton(){
+  const payoff=req?.comboPayoff;
+  if(!payoff)return '';
+  const condition=payoff.condition?' · '+payoff.condition:'';
+  return `<button type="button" class="tbtn sequence-ready" data-combo-payoff title="${esc(payoff.name)} is set up. Draw and select the payoff card.">Draw ${esc(payoff.playName)} · ${payoff.cost} CMD${esc(condition)}</button>`;
+}
+function bindComboPayoff(root){
+  const button=root.querySelector('[data-combo-payoff]');if(!button)return;
+  button.onclick=()=>{
+    if(busy||!req?.comboPayoff)return;
+    const payoff=req.comboPayoff;
+    try{
+      req=B.submit(b,{type:'combo_payoff'});
+      choosePlay(payoff.play);writeSave();S.init();S.tick(6);refresh();
+      $('#callStatus').textContent=`Drew ${payoff.playName} · ${payoff.cost} Command spent.`;
+      $('#snapBtn')?.focus({preventScroll:true});
+    }catch(e){err=e.message;renderHand()}
+  };
+}
 // Once staff snaps have run since the coach's last call, the ticker no longer shows it: pin one line on the board.
 function pinnedCallHTML(){
   const c=B.lastUserCall(b);if(!c||c.since<1)return'';
@@ -940,9 +1030,10 @@ function bindPersonnel(root,attribute){
 }
 function quickEstimateHTML(forecast){
   if(!forecast)return '';
-  const goal=forecast.goal==='touchdown'?'TD':req.situation.down>=3?'Convert':'1st down';
+  const goal=forecastObjective(forecast.goal,req.role,req.situation.down);
   const {yards,first}=forecastNumbers(forecast);
-  return `<span class="quick-estimate"><span>Est. <b>${esc(yards)} yd</b></span><span>${goal} <b>${esc(first)}%</b></span><small>${esc(forecast.confidence)}</small></span>`;
+  const label=req.role==='def'?'Est. allowed':'Est.';
+  return `<span class="quick-estimate"><span>${label} <b>${esc(yards)} yd</b></span><span>${goal} <b>${esc(first)}%</b></span><small>${esc(forecast.confidence)}</small></span>`;
 }
 function comboEffect(combo){
   const duel={G:'Gate',K:'Key',F:'Finish'}[combo.duel];
@@ -966,16 +1057,18 @@ function quickSheetHTML(view,detailsOpen){
   const tactics=selectedTactics().map(id=>D.TACTICS[id]?.name).filter(Boolean);
   const combo=selected&&B.comboRead(b,req,selected.card);
   const selectedView=view.choices.find(c=>c.id===sel.play);
-  const estimate=selected&&req.role==='off'?(selectedView?.forecast||B.quickForecast(b,req,snapChoice(selectedTactics()),DYN?.scouting?.confidence)):null;
+  const estimate=selected?(selectedView?.forecast||B.quickForecast(b,req,snapChoice(selectedTactics()),DYN?.scouting?.confidence)):null;
   const matchup=selected?matchupHTML():'';
   if(!selected)clearGlow();
   const details=selected?`<details class="quick-details" data-play="${esc(sel.play)}" ${detailsOpen?'open':''}><summary>Matchup, assignments &amp; tactics</summary>${selectedView?.forecast?`<p class="trade">${esc(selectedView.detail)}</p>`:''}${forecastReadHTML()}${assignmentHTML()}${matchup}${quickTacticsHTML()}</details>`:'';
   return `<div class="quick-scroll"><div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':view.ownDrive?'Your drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
     ${req.role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}
-    ${b.challenge?`<p class="challenge-objective">${esc(activeChallenge.name)}${b.challengeLook?' · '+esc(activeChallenge.alternate?.name||''):''} · ${esc(activeChallenge.objective)}</p>`:''}
+    ${b.challenge?`<p class="challenge-objective">${esc(challengeLabel())}${b.challengeLook?' · '+esc(activeChallenge.alternate?.name||''):''} · ${esc(activeChallenge.objective)}</p>${challengeRunNote()}`:''}
     ${view.quickBarHTML||''}${view.staffRecap||''}${pinnedCallHTML()}${view.setupCue||''}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
+    ${view.defensePlan?`<p id="quickDefensePlan"><strong>${view.defensePlan.adjusted?'Defense adjusted':'Opponent game plan'}</strong> · ${esc(view.defensePlan.text)}</p>`:''}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
+    ${b.coachedSnap?coachedSnapReviewHTML():''}
     <div class="quick-tools">${details}${redrawButton()}</div>
     ${redrawText()?`<p class="call-notice">${esc(redrawText())}</p>`:''}
     ${guidedDriveHTML()}</div></div>
@@ -1007,14 +1100,15 @@ function renderQuickHand(h){
     .map(t=>({t,facts:scoutFacts(t)})).filter(({facts})=>facts.length)
     .map(({t,facts})=>`<button type="button" class="tbtn" data-quick-info="${t.slot}" title="Confirm ${esc(facts.map(id=>scoutLabels[id]||id).join(', '))}. ${esc(t.card.text)}">Scout: ${esc(t.card.name)} · ${t.cost} CMD</button>`).join('');
   const personnel=personnelSelect('data-quick-personnel');
-  const quickBarHTML=(chips.length||infoBtns||personnel)?`<div class="quick-bar">${personnel}${chips.join('')}${infoBtns}</div>`:'';
+  const payoff=comboPayoffButton();
+  const quickBarHTML=(chips.length||infoBtns||personnel||payoff)?`<div class="quick-bar">${personnel}${chips.join('')}${infoBtns}${payoff}</div>`:'';
   const details=h.querySelector('.quick-details'),sameSnap=quickSnap===b.snap;
   const detailsOpen=sameSnap&&details?.open&&details.dataset.play===sel.play;
   const previousScroll=sameSnap?h.querySelector('.quick-scroll')?.scrollTop||0:0;
   h.innerHTML=quickSheetHTML({...B.snapDecisions(b,req,{...sel,read:readMode},DYN?.scouting?.confidence),
     ownDrive:!!B.sidelineOptions(b)?.coachDrive,staffRecap:staffRecapHTML(),setupCue:setupCueHTML(),quickBarHTML},detailsOpen);
   quickSnap=b.snap;h.querySelector('.quick-scroll').scrollTop=previousScroll;
-  {const story=$('#matchupStory');if(story&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
+  {const story=$('#matchupStory');if(story&&!story.dataset.moment&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
   for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
     if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
     S.init();choosePlay(id);S.tick(6);renderQuickHand(h);
@@ -1024,7 +1118,7 @@ function renderQuickHand(h){
     const t=req.options.tactics.find(x=>x.slot===Number(el.dataset.quickInfo));
     if(t)tacticClick(t,null);
   };
-  bindAssignment(h);bindGuide(h);bindTwoDown(h);bindSetupCue(h);bindPersonnel(h,'data-quick-personnel');bindRedraw(h);
+  bindAssignment(h);bindGuide(h);bindTwoDown(h);bindSetupCue(h);bindPersonnel(h,'data-quick-personnel');bindRedraw(h);bindCoachedSnapReview(h);bindComboPayoff(h);
   for(const button of h.querySelectorAll('[data-tactic-slot]'))button.onclick=()=>{
     const tactic=req.options.tactics.find(t=>t.slot===Number(button.dataset.tacticSlot));
     if(tactic)tacticClick(tactic,tacticBlock(tactic,req.options.plays.find(p=>p.id===sel.play)));
@@ -1091,7 +1185,7 @@ function renderHand(){
   const over=cost>o.command,why=play&&(play.blocked||blockedSelection(play));
   const comboReceipt=comboReceiptHTML(combo,o.command,cost);
   cmd.innerHTML=`${play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}${comboReceipt}</strong>`:''}${personnelSelect('data-cmd-personnel')}${assignmentHTML()}${role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
-    ${callForecastHTML()}${redrawButton()}<button class="snap" id="snapBtn" ${!play||over||why?'disabled':''}>SNAP IT${play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>${redrawText()?`<p class="call-notice">${esc(redrawText())}</p>`:''}`;
+    ${callForecastHTML()}${redrawButton()}${comboPayoffButton()}<button class="snap" id="snapBtn" ${!play||over||why?'disabled':''}>SNAP IT${play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>${redrawText()?`<p class="call-notice">${esc(redrawText())}</p>`:''}`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
     const why=tacticBlock(t,play),selected=sel.tac.includes(t.slot);
@@ -1106,7 +1200,7 @@ function renderHand(){
   cards.style.setProperty('--plays',Math.max(1,o.plays.length)+'fr');
   cards.style.setProperty('--tactics',Math.max(1,o.tactics.length)+'fr');
   cards.append(fanP,fanT);h.append(cards,cmd);cards.scrollTop=previousScroll;
-  bindAssignment(h);bindTwoDown(h);bindPersonnel(h,'data-cmd-personnel');bindRedraw(h);
+  bindAssignment(h);bindTwoDown(h);bindPersonnel(h,'data-cmd-personnel');bindRedraw(h);bindComboPayoff(h);
   if(err)cmd.insertAdjacentHTML('afterbegin',`<span class="sheet-error" role="status">${esc(err)}</span>`);
   $('#snapBtn').onclick=()=>snap();
   $('#autoBtn').onclick=()=>{S.whoosh();go({type:'auto'})};
@@ -1178,7 +1272,9 @@ function snap(){
   const blocked=blockedSelection(req.options.plays.find(p=>p.id===sel.play));
   if(blocked){err='Remove '+blocked.card.name+' in the full sheet or choose a compatible play.';S.error();renderHand();return}
   if(selCost()>req.options.command){err='Not enough Command.';S.error();renderHand();return}
-  S.init();go({type:'call',...snapChoice(tactics)});
+  const shown=$('#callForecast')?.dataset;
+  const estimate=shown?.forecastPlay===sel.play?shown.forecastShown:'';
+  S.init();go({type:'call',...snapChoice(tactics),coachingReview:{estimate}});
 }
 function refresh(){renderLook();renderHand();renderSide()}
 $('#sheetToggle').onclick=()=>{if(busy||req?.kind!=='snap')return;fullSheet=!fullSheet;save.settings.sheetView=fullSheet?'full':'quick';writeSave();refresh()};
@@ -1198,6 +1294,7 @@ $('#battleSettings').onclick=()=>{
   preferences.querySelector('#replayMode').value=save.settings.replays==='all'?'all':'moments';
   preferences.querySelector('#fastMode').checked=!!save.settings.fast;
   preferences.querySelector('#soundMode').checked=save.settings.sound!==false;
+  preferences.querySelector('#fieldHighlights').checked=save.settings.fieldHighlights!==false;
   preferences.querySelector('#readPolicy').value=readMode;
   $('#headsetControls').innerHTML=headsetInputs();
   preferences.showModal();
@@ -1208,6 +1305,11 @@ preferences.onchange=e=>{
   settings.motion=$('#motionMode').value;FX.setMotion(settings.motion);
   settings.replays=$('#replayMode').value;settings.fast=$('#fastMode').checked;FX.speed=settings.fast?.45:1;
   settings.sound=$('#soundMode').checked;S.on=settings.sound;
+  settings.fieldHighlights=$('#fieldHighlights').checked;
+  if(!settings.fieldHighlights){
+    const story=$('#matchupStory');
+    if(story){story.querySelector('.moment-label')?.remove();delete story.dataset.moment}
+  }
   settings.readMode=readMode=$('#readPolicy').value;writeSave();refresh();
 };
 $('#settingsHelp').onclick=()=>{preferences.close();howToPlay()};
@@ -1309,7 +1411,7 @@ async function quick(e){
   renderBug(e.sit,b._lastScore||e.score);
   await setFormation(e.sit,FX.skipping?0:200,e);
   ticker(`${teamOf(e.offSide).short} · ${e.text}`);
-  if(!e.penalty){await animatePlayFast(e);if(e.userCalled)showMatchupStory(e)}
+  if(!e.penalty){await animatePlayFast(e);showMatchupStory(e)}
   const td=e.score&&e.score[e.offSide]-(b._lastScore?b._lastScore[e.offSide]:0)>=6;
   b._lastScore={...e.score};renderBug(e.after,e.score);
   const good=userOff(e);
@@ -1681,7 +1783,7 @@ function finalScreen(){
     <p class="statline">${esc(teamOf('home').short)} <b>${b.game.score.home}</b> — <b>${b.game.score.away}</b> ${esc(teamOf('away').short)}${DYN?'':` · record <b>${save.playbook.record.w}-${save.playbook.record.l}</b>`}</p>
     ${DYN?(b._saved?.ok?'<p class="statline" style="color:var(--win)">✓ SAVED TO YOUR SEASON</p>':`<p class="statline" style="color:var(--lose)">NOT SAVED: ${esc(b._saved?.error||'unknown error')}. Your season is unchanged.</p>`):''}
     <div style="margin:14px 0">${top.map(p=>`<div class="statline" style="font-size:16px"><b>${esc(p.name)}</b> ${p.role} · ${esc(line(p))}</div>`).join('')}</div>
-    ${deciderHTML()}${takeawayHTML()}${DYN?[b._saved?.protectionReview,b._saved?.runDefenseReview].filter(Boolean).map(review=>`<p class="statline">${esc(review)}</p>`).join(''):''}${driveLogHTML()}
+    ${deciderHTML()}${coachedSnapReviewHTML()}${takeawayHTML()}${DYN?[b._saved?.protectionReview,b._saved?.runDefenseReview].filter(Boolean).map(review=>`<p class="statline">${esc(review)}</p>`).join(''):''}${driveLogHTML()}
     ${b.rivalry?(DYN?`<p class="statline">RIVALRY ${won?'WON':'LOST'}</p>`:`<div class="trophyWrap ${won?'won':''}">${trophyImg()}<p class="statline">${won?`<b>${esc(trophyName())}</b> ${save.world.trophy.holder==='user'?'stays':'comes'} home`:`${esc(specOf(oppId()).short)} keeps <b>${esc(trophyName())}</b>`}</p></div>`):''}
     ${milestoneHTML()}
     <button class="btn go" id="openPack">${b._breakout&&!b._breakoutResolved?'⭐ SEE THE BREAKOUT':won?(P.STAGE_PACKS?.[DYN?.stage]?`OPEN ${P.STAGE_PACKS[DYN.stage].title.toUpperCase()}`:b.rivalry?'OPEN RIVALRY PACK':'OPEN VICTORY PACK'):'OPEN FILM STUDY PACK'}</button>${bankButton()}</div>`;
@@ -1694,7 +1796,7 @@ function finalScreen(){
   const swapBtn=m.querySelector('[data-film-swap]');if(swapBtn)swapBtn.onclick=()=>{const swap=lossSwapFor(B.postgameTakeaway(b));if(!swap){swapBtn.remove();return}
     window.CallSheet.playbookUI.open(save.playbook,{suggest:swap,maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();const again=lossSwapFor(B.postgameTakeaway(b));if(!again)swapBtn.remove();(m.querySelector('[data-film-swap]')||m.querySelector('[data-film-deck]'))?.focus()}})};
   const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
-  bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
+  bindCoachedSnapReview(m);bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
 async function packScreen(won){
   S.init();
@@ -1968,10 +2070,23 @@ function challengeSticker(award){
   return `<span class="challenge-sticker" data-sticker="${esc(award.id)}" data-challenge-earned>${esc(award.name)}</span>`;
 }
 function challengeSnapCount(snaps){return `${snaps} ${snaps===1?'snap':'snaps'}`}
-function challengeProgressHTML(progress,includeLast=false){
+function challengeProgressHTML(progress,includeLast=false,lastLabel='Last drive'){
   if(!progress)return '';
   const {attempts,clears,best,last}=progress;
-  return `<small class="challenge-progress">${clears} ${clears===1?'clear':'clears'} in ${attempts} ${attempts===1?'try':'tries'}${best===null?'':` · Best clear in ${challengeSnapCount(best)}`}${includeLast?`<br>Last drive ${last.won?'cleared':'ended'} in ${challengeSnapCount(last.snaps)}`:''}</small>`;
+  return `<small class="challenge-progress">${clears} ${clears===1?'clear':'clears'} in ${attempts} ${attempts===1?'try':'tries'}${best===null?'':` · Best clear in ${challengeSnapCount(best)}`}${includeLast?`<br>${lastLabel} ${last.won?'cleared':'ended'} in ${challengeSnapCount(last.snaps)}`:''}</small>`;
+}
+function challengeLabel(){
+  return challengeRun?`Drive ${challengeRun.stage+1} of ${B.THREE_DRIVE_CHALLENGE.routes.length} · ${challengeRun.route.name}`:activeChallenge.name;
+}
+function challengeRunNote(){
+  if(!challengeRun)return '';
+  const {playbook,route,loans}=challengeRun;
+  const active=loans.filter(id=>D.TACTICS[id].side===activeChallenge.role);
+  const waiting=loans.filter(id=>!active.includes(id));
+  const cards=ids=>ids.map(id=>esc(D.TACTICS[id].name)).join(', ');
+  const extra=b?.hands[b.user]?.tempoExtra?' · Extra play drawn':'';
+  return `<details class="challenge-brief"><summary>${esc(playbook.name)} playbook${active.length?' · '+cards(active):''}${extra}</summary>
+    <p>${esc(route.brief)}</p>${waiting.length?`<p>Held for the other unit · ${cards(waiting)}</p>`:''}</details>`;
 }
 function challengeMenu(){
   if(busy)return;
@@ -1979,16 +2094,19 @@ function challengeMenu(){
     campaignSave=save;
     save={team:null,world:null,playbook:P.newPlaybook(),settings:JSON.parse(JSON.stringify(save.settings)),combos:[],games:0,seenHelp:true};
   }
-  activeChallenge=null;b=null;req=null;
+  activeChallenge=null;challengeRun=null;b=null;req=null;
   $('#challengeExit')?.remove();
   const m=$('#modal'),awards=window.ChallengeAwards;
+  const run=B.THREE_DRIVE_CHALLENGE,runSticker=awards.get(run.id);
+  const runEntry=`<article class="challenge-entry"><button type="button" class="challenge-option" id="beginChallengeRun"><small>THREE POSSESSIONS</small><strong>${esc(run.name)}</strong><span>Pick a playbook, choose your matchups and carry borrowed tactics through the run.</span>${runSticker?challengeSticker(runSticker):''}${challengeProgressHTML(awards.progress(run.id),true,'Last run')}</button></article>`;
   const options=B.DRIVE_CHALLENGES.map(c=>{
     const earned=awards.get(c.id),progress=awards.progress(c.id),alt=c.alternate;
     const practice=alt&&(progress||earned)?`<div class="challenge-alt"><button class="tbtn" type="button" data-challenge-alt="${esc(c.id)}" aria-label="Face another look in ${esc(c.name)}">Face another look</button>${challengeProgressHTML(awards.progress(c.id,alt.id),true)}</div>`:'';
     return `<article class="challenge-entry"><button type="button" class="challenge-option" data-challenge="${esc(c.id)}"><small>${c.role==='off'?'OFFENSE':'DEFENSE'}</small><strong>${esc(c.name)}</strong><span>${esc(c.situation)}</span><span class="challenge-objective">${esc(c.objective)}</span>${earned?challengeSticker(earned):''}${challengeProgressHTML(progress,true)}</button>${practice}</article>`;
   }).join('');
-  m.innerHTML=`<section class="challenge-menu"><h1>Drive Challenges</h1><p>Coach one possession. Retry with the same roster and opening hand.</p><p class="statline">Helmet stickers · ${awards.list().length} / ${B.DRIVE_CHALLENGES.length}</p><div class="challenge-list">${options}</div><button class="tbtn" id="challengeBack">${challengeFrame?'Return to Dynasty':'Back to Quick Battle'}</button></section>`;
+  m.innerHTML=`<section class="challenge-menu"><h1>Drive Challenges</h1><p>Coach one possession or play three drives in a row.</p><p class="statline">Helmet stickers · ${awards.list().length} / ${awards.catalog.length}</p><div class="challenge-list">${runEntry}${options}</div><button class="tbtn" id="challengeBack">${challengeFrame?'Return to Dynasty':'Back to Quick Battle'}</button></section>`;
   m.classList.add('on');m.scrollTop=0;
+  $('#beginChallengeRun').onclick=()=>startChallengeRun();
   for(const option of m.querySelectorAll('[data-challenge]'))option.onclick=()=>startChallenge(option.dataset.challenge);
   for(const option of m.querySelectorAll('[data-challenge-alt]'))option.onclick=()=>{
     const challenge=B.DRIVE_CHALLENGES.find(c=>c.id===option.dataset.challengeAlt);
@@ -2001,9 +2119,24 @@ function challengeMenu(){
     title();
   };
 }
-function startChallenge(id,look=null){
+function startChallengeRun(){
+  const run=B.THREE_DRIVE_CHALLENGE,m=$('#modal');
+  m.innerHTML=`<section class="challenge-menu"><p class="statline">${esc(run.name)}</p><h1 tabindex="-1">Choose a playbook</h1>
+    <p>Use this playbook for all three drives. Borrow a tactic before each of the last two drives.</p>
+    <div class="challenge-list">${run.playbooks.map(playbook=>`<button type="button" class="challenge-option" data-run-playbook="${esc(playbook.id)}"><strong>${esc(playbook.name)}</strong><span>${esc(playbook.description)}</span></button>`).join('')}</div>
+    <button type="button" class="tbtn" id="challengeMenu">All challenges</button></section>`;
+  m.classList.add('on');m.scrollTop=0;m.querySelector('h1').focus({preventScroll:true});
+  for(const option of m.querySelectorAll('[data-run-playbook]'))option.onclick=()=>{
+    const playbook=run.playbooks.find(p=>p.id===option.dataset.runPlaybook),route=run.routes[0][0];
+    startChallenge(route.challenge,null,{stage:0,route,playbook,loans:[],results:[]});
+  };
+  $('#challengeMenu').onclick=challengeMenu;
+}
+function startChallenge(id,look=null,run=null){
+  const next=B.createChallenge(id,run?{runStage:run.stage,route:run.route.id,playbook:run.playbook.id,loans:run.loans}:look?{look}:{});
+  challengeRun=run;
   activeChallenge=B.DRIVE_CHALLENGES.find(c=>c.id===id);
-  b=B.createChallenge(id,look?{look}:{});req=b.pending;seen=b.log.length;staffFrom=b.log.length;staffRecaps=[];err='';lastLook={};sel={play:null,tac:[]};
+  b=next;req=b.pending;seen=b.log.length;staffFrom=b.log.length;staffRecaps=[];err='';lastLook={};sel={play:null,tac:[]};
   save.combos=[];FX.skipping=false;S.init();hideTip();clearGlow();
   b._lastScore={...b.game.score};setWeather(b.weather);drawField();setMarkers(null);
   $('#ticker').replaceChildren();const story=$('#matchupStory');if(story)story.hidden=true;
@@ -2012,7 +2145,56 @@ function startChallenge(id,look=null){
   $('#scorebar').appendChild(exit);
   $('#modal').classList.remove('on');decide();
 }
+function finishChallengeRun(result,nextRoute=null){
+  const run=B.THREE_DRIVE_CHALLENGE,awards=window.ChallengeAwards,state=challengeRun;
+  state.results[state.stage]??={name:state.route.name,won:result.won,snaps:b.log.filter(event=>event.type==='snap').length};
+  const next=run.routes[state.stage+1],clears=state.results.filter(drive=>drive.won).length;
+  const bonus=next&&state.results[state.stage].won&&state.route.reward;
+  const recap=state.results.map(drive=>`<li><strong>${esc(drive.name)}</strong> · ${drive.won?'Cleared':'Missed'} · ${challengeSnapCount(drive.snaps)}</li>`).join('');
+  let actions,loans=[];
+  if(nextRoute){
+    const extra=bonus&&nextRoute.bonusLoan,role=B.DRIVE_CHALLENGES.find(d=>d.id===nextRoute.challenge)?.role;
+    loans=[...new Set([...nextRoute.loans,...(extra?[extra]:[])])].filter(id=>!state.loans.includes(id));
+    actions=`<h2>Borrow a tactic</h2><p>${esc(nextRoute.name)} · ${esc(nextRoute.brief)}</p><div class="challenge-list">${loans.map(id=>{
+      const tactic=D.TACTICS[id];
+      return `<button type="button" class="challenge-option" data-challenge-loan="${esc(id)}"><strong>${esc(tactic.name)}</strong><small>${tactic.side==='off'?'OFFENSE':'DEFENSE'} · ${tactic.cost} COMMAND${id===extra?' · BONUS CHOICE':''}</small><span>${esc(tactic.text)}</span>${tactic.side!==role?'<small>Held for a later drive</small>':''}</button>`;
+    }).join('')}</div><button class="tbtn" id="backToRunRoutes">Choose a different drive</button>`;
+  }else if(next){
+    actions=`<h2>Choose the next drive</h2><div class="challenge-list">${next.map(route=>{
+      const drive=B.DRIVE_CHALLENGES.find(d=>d.id===route.challenge);
+      return `<button type="button" class="challenge-option" data-run-route="${esc(route.id)}"><small>${drive?.role==='def'?'DEFENSE':'OFFENSE'}</small><strong>${esc(route.name)}</strong><span>${esc(route.brief)}</span>${route.reward?`<small>${esc(route.reward)}</small>`:''}</button>`;
+    }).join('')}</div>`;
+  }else{
+    const won=clears===run.routes.length;
+    if(!state.receipt){
+      state.receipt=awards.finish(run.id,null,{won,snaps:state.results.reduce((total,drive)=>total+drive.snaps,0)});
+      if(won&&awards.earn(run.id))S.fanfare();
+    }
+    const earned=awards.get(run.id);
+    actions=`<p class="challenge-record">${clears} of ${run.routes.length} drives cleared${challengeProgressHTML(state.receipt?.record)}</p>${won&&earned?`<p>${challengeSticker(earned)}</p>`:''}<button class="btn go" id="retryChallengeRun">Play all three again</button>`;
+  }
+  const m=$('#modal');
+  const carried=state.loans.map(id=>esc(D.TACTICS[id].name)).join(', ');
+  m.innerHTML=`<section class="challenge-result"><p class="statline">${esc(challengeLabel())} · ${esc(state.playbook.name)}</p><h1 tabindex="-1">${next?(result.won?'Drive cleared':'Drive over'):(clears===run.routes.length?'Three drives cleared':'Run complete')}</h1><p>${esc(result.reason)}</p>
+    ${bonus?'<p class="challenge-record">Bonus earned · One more tactic to choose from for your last drive.</p>':''}${carried?`<p class="challenge-progress">Borrowed tactics · ${carried}</p>`:''}<ol class="challenge-calls">${recap}</ol>${coachedSnapReviewHTML()}${actions}<button class="btn" id="challengeMenu">All challenges</button></section>`;
+  m.classList.add('on');m.scrollTop=0;
+  m.querySelector('h1').focus({preventScroll:true});
+  bindCoachedSnapReview(m);
+  function advanceRun(loan){
+    if(challengeRun!==state||!nextRoute||!loans.includes(loan))return;
+    startChallenge(nextRoute.challenge,null,{...state,stage:state.stage+1,route:nextRoute,loans:[...state.loans,loan]});
+  }
+  for(const option of m.querySelectorAll('[data-run-route]'))option.onclick=()=>{
+    const route=next.find(entry=>entry.id===option.dataset.runRoute);
+    if(route)finishChallengeRun(result,route);
+  };
+  for(const option of m.querySelectorAll('[data-challenge-loan]'))option.onclick=()=>advanceRun(option.dataset.challengeLoan);
+  if($('#backToRunRoutes'))$('#backToRunRoutes').onclick=()=>finishChallengeRun(result);
+  if($('#retryChallengeRun'))$('#retryChallengeRun').onclick=()=>startChallengeRun();
+  $('#challengeMenu').onclick=challengeMenu;
+}
 function challengeFinish(result){
+  if(challengeRun){finishChallengeRun(result);return}
   const c=activeChallenge,awards=window.ChallengeAwards,look=b.challengeLook||null,alt=c.alternate;
   const receipt=b._challengeReceipt??=(awards.finish(c.id,look,{won:result.won,snaps:b.log.filter(e=>e.type==='snap').length}));
   const first=result.won&&!look&&awards.earn(c.id);
@@ -2027,8 +2209,9 @@ function challengeFinish(result){
   const review=calls.length?`<details class="challenge-calls" open><summary>Your calls</summary><ol>${calls.join('')}</ol></details>`:'';
   const other=alt?(look?`<button class="btn" id="challengeOriginal">Original look</button>`:`<button class="btn" id="challengeAlt">${esc(alt.name)}</button><p class="mini">${esc(alt.change)} Same clock, down, distance and field position. Helmet stickers are earned on the original look.</p>`):'';
   const progress=record?`<p class="challenge-record"><strong>${receipt.improved?'New personal best':'This drive'} · ${challengeSnapCount(record.last.snaps)}</strong>${challengeProgressHTML(record)}</p>`:'';
-  m.innerHTML=`<section class="challenge-result"><p class="statline">${esc(c.name)}${look?' · '+esc(alt.name):''}</p><h1>${result.won?'Challenge cleared':'Drive over'}</h1><p class="challenge-score">${esc(teamOf(b.user).short)} ${score[b.user]} · ${esc(teamOf(opponent).short)} ${score[opponent]}</p><p><strong>${esc(result.reason)}</strong></p><p>${esc(result.recap)}</p>${progress}${result.won&&earned&&!look?`<p>${first?'Helmet sticker earned':'Helmet sticker collected'} · ${challengeSticker(earned)}</p>`:''}${review}<button class="btn go" id="challengeRetry">Retry this situation</button>${other}<button class="btn" id="challengeMenu">All challenges</button></section>`;
+  m.innerHTML=`<section class="challenge-result"><p class="statline">${esc(c.name)}${look?' · '+esc(alt.name):''}</p><h1>${result.won?'Challenge cleared':'Drive over'}</h1><p class="challenge-score">${esc(teamOf(b.user).short)} ${score[b.user]} · ${esc(teamOf(opponent).short)} ${score[opponent]}</p><p><strong>${esc(result.reason)}</strong></p><p>${esc(result.recap)}</p>${progress}${result.won&&earned&&!look?`<p>${first?'Helmet sticker earned':'Helmet sticker collected'} · ${challengeSticker(earned)}</p>`:''}${coachedSnapReviewHTML()}${review}<button class="btn go" id="challengeRetry">Retry this situation</button>${other}<button class="btn" id="challengeMenu">All challenges</button></section>`;
   m.classList.add('on');m.scrollTop=0;
+  bindCoachedSnapReview(m);
   if(first)S.fanfare();
   $('#challengeRetry').onclick=()=>startChallenge(c.id,look);$('#challengeMenu').onclick=challengeMenu;
   if($('#challengeAlt'))$('#challengeAlt').onclick=()=>startChallenge(c.id,alt.id);
@@ -2155,8 +2338,8 @@ function dynastyStart(){
   const AD=window.CallSheet.adapter;
   const opp=DYN.oppPlaybook?sanitizePlaybook(DYN.oppPlaybook):null;if(opp)SG.registerAll(opp);
   const deckFor=side=>DYN.userSide===side?P.decksOf(save.playbook):(opp?P.decksOf(opp):null);
-  b=B.create({coachingWindows:true,openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
-    classicSide:DYN.userSide,user:DYN.userSide,mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:DYN.seed,weather:DYN.weather||'clear',rivalry:!!DYN.rivalry,conditions:DYN.conditions||null});
+  b=B.create({coachingWindows:true,defensivePlan:'auto',openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:AD.battleTeam(DYN.home,deckFor('home'),DYN.program?.home),away:AD.battleTeam(DYN.away,deckFor('away'),DYN.program?.away),
+    classicSide:DYN.userSide,user:DYN.userSide,mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:DYN.seed,weather:DYN.weather||'clear',rivalry:!!DYN.rivalry,rivalryPlan:DYN.rivalryPlan,conditions:DYN.conditions||null});
   b._trainingRates=DYN.trainingRates||{};
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);$('#ticker').innerHTML='';
@@ -2210,7 +2393,7 @@ function resumeBattle(){
 }
 function startGame(){
   const oid=oppId(),me=W.teamFor(save.team,save.playbook,save.world.userLineup),opp=W.teamFor(oid,save.world.programs[oid].playbook,save.world.programs[oid].lineup);
-  b=B.create({coachingWindows:true,openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
+  b=B.create({coachingWindows:true,defensivePlan:'auto',openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
   if(save.settings.guidedDrivePending)O.start(b);
   setWeather(b.weather);
   seen=0;staffFrom=0;staffRecaps=[];sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
