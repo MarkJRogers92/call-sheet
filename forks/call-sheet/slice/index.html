@@ -204,7 +204,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 @keyframes holoShine{to{background-position:300% 300%}}
 .card.small{width:104px;height:150px}.card.small .ctext{display:none}
 /* ---------- modals */
-#modal{position:fixed;inset:0;z-index:20;display:none;align-items:center;justify-content:center;background:radial-gradient(ellipse at center,rgba(10,14,24,.88),rgba(0,0,0,.96));overflow:auto;padding:20px}
+#modal{position:fixed;inset:0;z-index:20;display:none;align-items:flex-start;justify-content:center;background:radial-gradient(ellipse at center,rgba(10,14,24,.88),rgba(0,0,0,.96));overflow:auto;padding:max(14px,env(safe-area-inset-top,14px)) 16px max(18px,env(safe-area-inset-bottom,18px))}
 #modal.on{display:flex}
 .pinned-call{margin:0 0 4px;font:13px/1.35 system-ui,sans-serif;color:#c9d3e3}.pinned-call span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#9fb0c8}.pinned-call b{color:#f4edda}.pinned-call em{font-style:normal}.pinned-call .lost{color:#ffb4a8}.pinned-call .won{color:#b9f0c2}
 .fourth-last{max-width:460px;margin:0 auto 14px;padding:9px 13px;border:1px solid #dfc36566;border-radius:9px;background:#101722;display:grid;gap:3px;text-align:left;font:14px/1.35 system-ui,sans-serif;color:#f4edda}
@@ -219,7 +219,7 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .look-certainty{display:block;flex-basis:100%;color:#b9c4d4}
 .challenge-calls{margin:12px 0;font:14px/1.4 system-ui,sans-serif}.challenge-calls ol{margin:6px 0 0;padding-left:20px}.challenge-calls li{margin:0 0 6px}.challenge-calls li span{display:block;color:#c9d3e3}
 .drive-log{margin:10px auto;max-width:520px;text-align:left;font:13px/1.4 system-ui,sans-serif}.drive-log ol{padding-left:20px}
-.mwrap{width:min(1000px,100%);text-align:center}
+.mwrap{width:min(1000px,100%);margin:auto;text-align:center}
 .big{font-family:var(--cond);font-weight:800;font-size:clamp(56px,12vw,140px);line-height:.9;letter-spacing:.03em;margin:0}
 .gold{background:linear-gradient(180deg,#fff6c8,#ffd84d 50%,#c98a0a);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 24px rgba(255,216,77,.5))}
 .red{background:linear-gradient(180deg,#ffc2bb,#ff5a4f 55%,#9a1a12);-webkit-background-clip:text;background-clip:text;color:transparent}
@@ -567,6 +567,32 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
 .call-forecast b{color:#f6dc91;font-variant-numeric:tabular-nums}
 .quick-board .call-forecast{margin-top:6px;width:fit-content}
 @media(max-width:860px){#hand .cmd .call-forecast{grid-column:1/-1}}
+@media(max-height:820px){
+  .mwrap .big{font-size:clamp(34px,7vw,84px)}
+  .mwrap .howto{margin:10px auto;gap:10px}.mwrap .howto>div{padding:10px 12px}
+  .mwrap .statline{margin:6px 0;font-size:16px}
+  .mwrap .btn{padding:9px 20px;font-size:18px;margin:4px}
+}
+@media(max-width:600px){
+  .mwrap .big{font-size:clamp(28px,8vw,54px)}
+  .mwrap .howto{grid-template-columns:1fr;gap:8px;margin:8px auto}.mwrap .howto>div{padding:8px 10px}
+  .mwrap .btn{padding:9px 16px;font-size:16px;margin:4px}
+}
+.card .setup-pip{display:inline-block;margin-top:4px;padding:1px 6px;border-radius:6px;font:800 10px/1.2 var(--cond);letter-spacing:.06em;text-transform:uppercase;background:rgba(63,193,255,.16);border:1px solid rgba(63,193,255,.5);color:#9ee3ff}
+.card .tactic-syn{display:inline-block;margin-top:4px;padding:1px 6px;border-radius:6px;font:800 10px/1.2 var(--cond);letter-spacing:.06em;text-transform:uppercase;background:rgba(114,240,138,.16);border:1px solid rgba(114,240,138,.5);color:#9ef5b0}
+.coin.rebate{border:2px solid #72f08a;background:rgba(114,240,138,.22);box-shadow:0 0 10px rgba(114,240,138,.55)}
+.quick-bar{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0}
+.quick-chip{font:800 12px/1.1 var(--cond);letter-spacing:.06em;text-transform:uppercase;padding:3px 8px;border-radius:7px;border:1px solid #72f08a;background:rgba(114,240,138,.12);color:#d8ffe0}
+.quick-chip.lean{border-color:var(--hot);background:rgba(255,154,60,.15);color:#ffd9b3}
+.quick-bar .tbtn{min-height:34px;padding:4px 9px;font-size:12px}
+.quick-bar select.tbtn{text-transform:none;font-family:system-ui,sans-serif;font-weight:600}
+.quick-badge{display:inline-block;font-style:normal;font:800 11px/1.1 var(--cond);letter-spacing:.06em;text-transform:uppercase;margin-top:4px;padding:2px 7px;border-radius:6px;background:rgba(255,216,77,.16);border:1px solid rgba(255,216,77,.5);color:#ffe484}
+#hand .cmd .tbtn[data-redraw]{min-height:34px;font-size:12px;padding:4px 10px}
+@media(max-width:860px){#hand .cmd .tbtn[data-redraw]{grid-column:1/-1;justify-self:start}}
+@keyframes cardDeal{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
+#hand .fan .card.dealt{animation:cardDeal .22s ease-out backwards;animation-delay:calc(var(--deal-i,0)*35ms)}
+html.motion-reduced #hand .fan .card.dealt{animation:none!important}
+@media(prefers-reduced-motion:reduce){#hand .fan .card.dealt{animation:none!important}}
 
 /* While plays run, only the scoreboard, playing surface and live result occupy the viewport. */
 #root.playback{display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr);overflow:hidden}

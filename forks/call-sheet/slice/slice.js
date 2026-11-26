@@ -802,33 +802,72 @@ function quickSheetHTML(view){
   const cards=view.choices.map(c=>{
     const p=opt.plays.find(p=>p.id===c.id);
     const m=c.matchup?`<span class="quick-choice-matchup">Projected ${esc(c.matchup.label)}: ${esc(c.matchup.offense)} vs ${esc(c.matchup.defense)} <i class="chip ${c.matchup.chip==='?'?'fogchip':esc(c.matchup.chip)}" title="${c.matchup.chip==='?'?'Opponent grade uncertain':'Projected matchup from the shown look'}">${esc(c.matchup.chip)}</i></span>`:'';
-    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${m}<span class="trade">${esc(c.detail)}</span></button>`;
+    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${c.badge?`<em class="quick-badge">${esc(c.badge)}</em>`:''}${m}<span class="trade">${esc(c.detail)}</span></button>`;
   }).join('');
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   return `<div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':view.ownDrive?'Your drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
     ${req.role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}
     ${b.challenge?`<p class="challenge-objective">${esc(activeChallenge.name)}${b.challengeLook?' · '+esc(activeChallenge.alternate?.name||''):''} · ${esc(activeChallenge.objective)}</p>`:''}
-    ${view.staffRecap||''}${pinnedCallHTML()}${view.setupCue||''}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
+    ${view.quickBarHTML||''}${view.staffRecap||''}${pinnedCallHTML()}${view.setupCue||''}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${assignmentHTML()}${matchupHTML()}${tacticNoteHTML(true)}
-    ${callForecastHTML()}<div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button><button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
+    ${callForecastHTML()}<div class="quick-actions"><button type="button" class="snap" id="snapBtn" ${!selected||selected.blocked||blockedSelection(selected)||cost>opt.command?'disabled':''}>${selected?`Snap: ${esc(selected.card.name)} · ${cost}`:'Select a call'}</button>${view.redrawHTML||''}<button type="button" class="auto" id="autoBtn">Let staff call it</button></div>
     ${guidedDriveHTML()}${err?`<div role="status" class="quick-error">${esc(err)}</div>`:''}</div>`;
 }
 function renderQuickHand(h){
+  const l=req.look||{},o=req.options,chips=[];
+  if(req.role==='off'){
+    if(l.coverage?.confirmed)chips.push(`<span class="quick-chip">COV: ${esc(l.coverage.value)} ✓</span>`);
+    else if(l.covTend)chips.push(`<span class="quick-chip lean">TENDENCY: ${esc(l.covTend)} ✓</span>`);
+    if(l.pressure?.confirmed)chips.push(`<span class="quick-chip">RUSH: ${l.pressure.value?'BLITZ':'NONE'} ✓</span>`);
+    if(l.shell?.confirmed&&req.info?.some(id=>['audible','check_with_me'].includes(id)))chips.push(`<span class="quick-chip">SHELL: ${l.shell.value===0?'NO SAFETY':l.shell.value===1?'1-HIGH':'2-HIGH'} ✓</span>`);
+  }else if(req.offLook?.family?.confirmed){
+    chips.push(`<span class="quick-chip">PLAY: ${esc(req.offLook.family.value)} ✓</span>`);
+  }
+  const infoBtns=(o.tactics||[]).filter(t=>t.card?.info&&t.cost<=o.command&&(req.role==='off'?(t.id==='motion'&&!l.coverage?.confirmed)||(t.id==='hard_count'&&l.pressure?.value&&!l.pressure?.confirmed)||(t.id==='audible'&&!l.shell?.confirmed):(t.id==='film_tell'&&!req.offLook?.family?.confirmed))).slice(0,2)
+    .map(t=>`<button type="button" class="tbtn" data-quick-info="${t.slot}">Scout: ${esc(t.card.name)} · ${t.cost} CMD</button>`).join('');
+  const grpOpts=req.role==='off'&&B.groupingOptions?B.groupingOptions(b,req.side):null,grpMode=b.grouping?.[req.side]||'auto';
+  const grpSel=grpOpts?`<select class="tbtn" data-quick-personnel aria-label="Personnel">${grpOpts.map(p=>`<option value="${esc(p.id)}" ${p.id===grpMode?'selected':''} ${p.available===false?'disabled':''}>${esc(p.name)}</option>`).join('')}</select>`:'';
+  const quickBarHTML=(chips.length||infoBtns||grpSel)?`<div class="quick-bar">${chips.join('')}${infoBtns}${grpSel}</div>`:'';
+  const redrawHTML=o.redraw?`<button type="button" class="tbtn" data-redraw>↻ Check plays · ${o.redraw.cost} CMD</button>`:'';
   h.innerHTML=quickSheetHTML({...B.snapDecisions(b,req,{...sel,read:readMode},DYN?.scouting?.confidence),
-    ownDrive:!!B.sidelineOptions(b)?.coachDrive,staffRecap:staffRecapHTML(),setupCue:setupCueHTML()});
+    ownDrive:!!B.sidelineOptions(b)?.coachDrive,staffRecap:staffRecapHTML(),setupCue:setupCueHTML(),quickBarHTML,redrawHTML});
   {const story=$('#matchupStory');if(story&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
   for(const el of h.querySelectorAll('[data-quick-call]'))el.onclick=()=>{
     if(busy)return;const id=el.dataset.quickCall,wasFocused=document.activeElement===el;
     S.init();choosePlay(id);S.tick(6);renderQuickHand(h);
     if(wasFocused)[...h.querySelectorAll('[data-quick-call]')].find(c=>c.dataset.quickCall===id)?.focus({preventScroll:true});
   };
+  for(const el of h.querySelectorAll('[data-quick-info]'))el.onclick=()=>{
+    const t=req.options.tactics.find(x=>x.slot===Number(el.dataset.quickInfo));
+    if(t)tacticClick(t,null);
+  };
+  const qPers=h.querySelector('[data-quick-personnel]');
+  if(qPers)qPers.onchange=()=>{if(busy)return;try{const prev=sel;req=B.setGrouping(b,req.side,qPers.value)||b.pending;const ok=prev.play&&req?.options?.plays?.some(x=>x.id===prev.play&&!x.blocked);sel=ok?{play:prev.play,tac:prev.tac.filter(slot=>req.options.tactics.some(t=>t.slot===slot))}:{play:null,tac:[]};writeSave();setFormation(sitNow(),0);refresh()}catch(e){err=e.message;renderHand()}};
+  const rd=h.querySelector('[data-redraw]');
+  if(rd)rd.onclick=()=>{if(busy)return;try{req=B.submit(b,{type:'redraw'});sel={play:null,tac:[]};err='';writeSave();S.whoosh();refresh()}catch(e){err=e.message;renderHand()}};
   bindAssignment(h);bindGuide(h);bindTwoDown(h);bindSetupCue(h);
   const pair=h.querySelector('[data-tactic-slot]');if(pair)pair.onclick=()=>{const t=req.options.tactics.find(t=>t.slot===Number(pair.dataset.tacticSlot));if(t)tacticClick(t,tacticBlock(t,req.options.plays.find(p=>p.id===sel.play)))};
   $('#snapBtn').onclick=snap;
   $('#autoBtn').onclick=()=>{if(!busy){S.whoosh();go({type:'auto'})}};
   h.classList.remove('away');
+}
+let lastHandSeries=null;
+function tacticSynergy(t,play){
+  if(!play||t.card?.info||tacticBlock(t,play))return '';
+  const root=play.card?.evolvedFrom||play.card?.upgradeOf||play.id;
+  if(t.id==='seal_block')return '+2 GATE';
+  if(t.id==='max_protect')return '+2 PROT';
+  if(t.id==='route_adjust')return req.info?.includes('motion')?'+2 SEP':'+1 SEP';
+  if(['kill_kill','giant_killer','timeout_settle','timeout_ice'].includes(t.id))return '+1 KEY';
+  if(t.id==='disguise')return 'HIDE SHELL';
+  if(t.id==='press')return '+1 REL';
+  if(t.id==='lock')return '+1 COV';
+  if(t.id==='stunt')return '+1 RUSH';
+  if(t.id==='bracket')return '+2 WR';
+  if(t.id==='spy'&&['read_option','triple_option','qb_draw'].includes(root))return '+2 SPY';
+  return '';
 }
 function renderHand(){
   const h=$('#hand'),live=req?.kind==='snap';
@@ -838,32 +877,43 @@ function renderHand(){
   const toggle=$('#sheetToggle');toggle.hidden=!live;toggle.textContent=fullSheet?'Quick calls':'Full call sheet';toggle.setAttribute('aria-expanded',String(live&&fullSheet));
   if(!live){h.classList.add('away');return}
   if(!fullSheet){renderQuickHand(h);return}
+  const freshDeal=b.seriesKey!==lastHandSeries;lastHandSeries=b.seriesKey;
   const o=req.options,role=req.role,lean=role==='off'&&req.look.lean.confirmed?req.look.lean.value:null;
+  const blitz=role==='off'&&(req.look.heat||(req.look.pressure?.confirmed&&req.look.pressure.value));
   const play=o.plays.find(p=>p.id===sel.play);
   const previousScroll=h.querySelector('.sheet-cards')?.scrollTop||0;
   h.innerHTML='';
   const fanP=document.createElement('div');fanP.className='fan';fanP.style.position='relative';fanP.innerHTML='<span class="fanlab">CALL SHEET</span>';
   o.plays.forEach((p,i)=>{
-    const c=p.card,notch=lean&&(c.punishes===lean||(c.id==='vertical_shot'&&lean==='quick'));
-    const el=card(p.id,{cost:p.cost,base:p.base,blocked:!!p.blocked,selected:sel.play===p.id,why:p.blocked,notch,mastery:req.side===b.user?EV.progress(save.playbook,p.id):null});
+    const c=p.card,origin=c.evolvedFrom||c.upgradeOf||c.id;
+    const notch=lean&&(c.punishes===lean||(c.id==='vertical_shot'&&lean==='quick'))?'COUNTERS THEIR READ'
+      :(blitz&&(['screen','draw','qb_draw'].includes(origin)||c.punishes==='pressure'))?'BEATS THE BLITZ':false;
+    const cb=role==='off'?B.comboFor(b,c):(B.comboFor(b,D.PLAYS.inside_zone,c)||B.comboFor(b,D.PLAYS.quick_slant,c));
+    const ready=cb&&cb.side===(role==='off'?'off':'def');
+    const pip=!ready&&B.setupProgress?.(b,c,role)?.label;
+    const el=card(p.id,{cost:p.cost,base:p.base,blocked:!!p.blocked,selected:sel.play===p.id,why:p.blocked,notch,setupPip:pip||'',mastery:req.side===b.user?EV.progress(save.playbook,p.id):null});
+    if(freshDeal){el.classList.add('dealt');el.style.setProperty('--deal-i',i)}
     const n=o.plays.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*4}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);el.style.zIndex=i;
-    {// Defense never sees their committed play: the marker asks "would this call complete a combo if they run or pass?"
-    const cb=role==='off'?B.comboFor(b,c):(B.comboFor(b,D.PLAYS.inside_zone,c)||B.comboFor(b,D.PLAYS.quick_slant,c));if(cb&&cb.side===(role==='off'?'off':'def')){el.insertAdjacentHTML('beforeend',`<span class="setup-ready">SET UP · ${cb.duel==='G'?'GATE':cb.duel==='F'?'FINISH':'KEY'} +1</span>`);el.title=`${cb.name} is ready${cb.id==='wall_up'?' if they run':''}`}}
+    if(ready){el.insertAdjacentHTML('beforeend',`<span class="setup-ready">SET UP · ${cb.duel==='G'?'GATE':cb.duel==='F'?'FINISH':'KEY'} +1</span>`);el.title=`${cb.name} is ready${cb.id==='wall_up'?' if they run':''}`}
     wirePlayCard(el,p);fanP.appendChild(el);
   });
   const cmd=document.createElement('div');cmd.className='cmd';
   const cost=selCost(),total=Math.max(D.RULES.seriesCommand,o.command);
+  const comboRebate=!!(play&&B.comboFor(b,play.card)?.side===(role==='off'?'off':'def'));
   let coins='';for(let i=0;i<total;i++){const gone=i>=o.command,spend=!gone&&i>=o.command-cost;coins+=`<span class="coin ${gone?'gone':''} ${spend?'spend':''}"></span>`}
+  if(comboRebate)coins+=`<span class="coin rebate" title="+1 Command back from combo"></span>`;
   const over=cost>o.command,why=play&&(play.blocked||blockedSelection(play));
   const grpOpts=role==='off'&&B.groupingOptions?B.groupingOptions(b,req.side):null;
   const grpMode=b.grouping?.[req.side]||'auto';
   const grpHTML=grpOpts?`<label class="assignment cmd-personnel"><span>Personnel</span><select data-cmd-personnel>${grpOpts.map(p=>`<option value="${esc(p.id)}" ${p.id===grpMode?'selected':''} ${p.available===false?'disabled':''}>${esc(p.name)}</option>`).join('')}</select></label>`:'';
-  cmd.innerHTML=`${sel.play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}</strong>`:''}${grpHTML}${assignmentHTML()}${role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
-    ${callForecastHTML()}<button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
+  const redrawBtn=o.redraw?`<button type="button" class="tbtn" data-redraw>↻ Check plays · ${o.redraw.cost} CMD</button>`:'';
+  cmd.innerHTML=`${sel.play?`<strong class="call-receipt">${esc(play.card.name)}${sel.tac.length?' + '+sel.tac.map(slot=>esc(o.tactics.find(t=>t.slot===slot)?.card.name)).join(', '):''}${comboRebate?' · +1 CMD COMBO':''}</strong>`:''}${grpHTML}${assignmentHTML()}${role==='off'&&req.situation?.down===3&&req.situation.period<=4?twoDownButton():''}<div class="coins" aria-label="${o.command} Command left">${coins}</div><div class="cmdl">${o.command} COMMAND · THIS SERIES</div>
+    ${callForecastHTML()}${redrawBtn}<button class="snap" id="snapBtn" ${!sel.play||over||why?'disabled':''}>SNAP IT${sel.play?` · ${cost}`:''}</button><button class="auto" id="autoBtn">Coordinator, call it</button>`;
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
     const why=tacticBlock(t,play),selected=sel.tac.includes(t.slot);
-    const el=card(t.id,{cost:t.cost,selected,blocked:!!why&&!selected,why:selected&&why?'Remove: '+why:why});
+    const el=card(t.id,{cost:t.cost,selected,blocked:!!why&&!selected,why:selected&&why?'Remove: '+why:why,synergy:play?tacticSynergy(t,play):''});
+    if(freshDeal){el.classList.add('dealt');el.style.setProperty('--deal-i',o.plays.length+i)}
     if(!t.card.info)el.setAttribute('aria-pressed',String(selected));
     const n=o.tactics.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*5}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);
     el.dataset.tacticSlot=t.slot;el.onclick=()=>tacticClick(t,why);fanT.appendChild(el);
@@ -874,6 +924,8 @@ function renderHand(){
   cards.style.setProperty('--tactics',Math.max(1,o.tactics.length)+'fr');
   cards.append(fanP,fanT);h.append(cards,cmd);cards.scrollTop=previousScroll;
   bindAssignment(h);bindTwoDown(h);
+  const rd=h.querySelector('[data-redraw]');
+  if(rd)rd.onclick=()=>{if(busy)return;try{req=B.submit(b,{type:'redraw'});sel={play:null,tac:[]};err='';writeSave();S.whoosh();refresh()}catch(e){err=e.message;renderHand()}};
   const cmdPers=h.querySelector('[data-cmd-personnel]');
   if(cmdPers)cmdPers.onchange=()=>{if(busy)return;try{const prev=sel;req=B.setGrouping(b,req.side,cmdPers.value)||b.pending;const ok=prev.play&&req?.options?.plays?.some(x=>x.id===prev.play&&!x.blocked);sel=ok?{play:prev.play,tac:prev.tac.filter(slot=>req.options.tactics.some(t=>t.slot===slot))}:{play:null,tac:[]};writeSave();setFormation(sitNow(),0);refresh();$('[data-cmd-personnel]')?.focus({preventScroll:true})}catch(e){err=e.message;renderHand()}};
   if(err)cmd.insertAdjacentHTML('afterbegin',`<span class="sheet-error" role="status">${esc(err)}</span>`);
@@ -1205,6 +1257,9 @@ async function eventCallout(ev){
   }else if(ev.type==='fire'){
     if(mine){S.fire();PT.embers(innerWidth/2,innerHeight*.55)}
     await callout('ON FIRE!',mine?'hotc':'bad',1300,`${ev.name} (${ev.role})`);
+  }else if(ev.type==='surge'){
+    if(mine)S.chime();
+    await callout(ev.name.toUpperCase(),mine?'hotc small':'bad small',950,ev.reward);
   }else if(ev.type==='cooled'){
     await callout('COOLED OFF',mine?'cool small':'small',900,ev.name);
   }
@@ -1886,6 +1941,7 @@ function sanitizePlaybook(pb){
     if(!(d.base||[]).every(known)||(d.base||[]).length!==4)d.base=[...D.DEFAULT_DECKS[side].base];
     d.wrinkles=(d.wrinkles||[]).filter(known);d.tactics=(d.tactics||[]).filter(known);}
   pb.signatures=(pb.signatures||[]).filter(sg=>known(sg.id));
+  P.repairMinimum?.(pb);
   return pb;
 }
 function dynastyStart(){

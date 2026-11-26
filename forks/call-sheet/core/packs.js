@@ -322,6 +322,17 @@ function underMinimum(pb){
   }
   return null;
 }
+function repairMinimum(pb){
+  if(!pb?.off||!pb?.def)return pb;
+  const col=ensureCollection(pb);
+  for(const side of ['off','def'])for(const pile of ['wrinkles','tactics']){
+    const min=MIN_CAPACITY[pile]||6,active=pb[side][pile],res=col[side][pile],fallback=D.DEFAULT_DECKS[side][pile];
+    while(active.length<min&&res.length)active.push(res.shift());
+    let fi=0;
+    while(active.length<min&&fallback.length){const f=fallback[fi++%fallback.length];active.push(awardedId(pb,f))}
+  }
+  return pb;
+}
 function cut(pb,side,pile,index){
   const list=pb[side][pile];if(index<0||index>=list.length)throw new Error('No card at that slot.');
   const [id]=list.splice(index,1);
@@ -405,5 +416,5 @@ function grantCard(pb,id,how={}){
 }
 function cardDef(id){return D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id]||null}
 
-return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,MIN_CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,underMinimum,cut,cardDef};
+return{updateStarterBook,opponentIdentity,packStakes,lossSwap,lastGameCard,reconcileAwards,awardedId,packFit,rewardDestination,freezeGamePack,cleanGamePack,gamePackChoices,claimGamePack,clearStaleOpener,setOpeningScript,rollFinish,rewardPack,grantCard,categoryOf,STAGE_PACKS,ensureCollection,moveCard,setBase,ACHIEVEMENTS,awardAchievements,POOL,COUNTERS,CAPACITY,MIN_CAPACITY,newPlaybook,decksOf,openPack,applyPick,overCapacity,underMinimum,repairMinimum,cut,cardDef};
 });

@@ -45,6 +45,7 @@ function normalizeCardPlaybook(pb,maxSignatures=3){
   pb.mastery=intMap(pb.mastery);pb.evolved=strMap(pb.evolved);pb.finishes=Object.fromEntries(Object.entries(strMap(pb.finishes)).filter(([,v])=>v==='foil'||v==='gold').slice(0,400));pb.history=objs(pb.history,300);
   if(pb.staffLoans)pb.staffLoans=cleanStaffCards(pb.staffLoans);
   CS.packs.reconcileAwards(pb);
+  CS.packs.repairMinimum?.(pb);
   const validSignature=x=>{
     if(!CS?.signatures||!['string','number'].includes(typeof x.playerId)||x.id!==`${x.legacy?'leg':'sig'}_${x.playerId}`||(x.legacy&&(typeof x.legacy!=='object'||typeof x.legacy.name!=='string'||typeof x.legacy.last!=='string'))||typeof x.name!=='string'||typeof x.last!=='string')return false;
     if(!Object.hasOwn(D.OFF_ROLES,x.role)&&!Object.hasOwn(D.DEF_ROLES,x.role))return false;

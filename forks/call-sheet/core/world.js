@@ -74,14 +74,16 @@ function aiCut(spec,pb,over){
   P.cut(pb,over.side,over.pile,worst);
 }
 // The AI's games feed reps to the cards it leans on.
-function aiReps(spec,pb,rng){
+function aiReps(spec,pb,rng,lineup=null){
   for(const side of ['off','def']){
     for(const id of pb[side].base)EV.addReps(pb,EV.rootOf(id),2+rng.int(0,3));
     for(const id of new Set(pb[side].wrinkles))if(rng.next()<.5)EV.addReps(pb,EV.rootOf(id),1+rng.int(0,2));
   }
-  for(const r of EV.ready(pb)){
-    const opts=r.options,pick=fit(spec,opts[0])+rng.next()>=fit(spec,opts[1])+rng.next()?opts[0]:opts[1];
-    EV.evolve(pb,r.rootId,pick);
+  for(const r of EV.ready(pb,{lineup})){
+    const opts=r.options.filter(id=>!r.locks?.[id]);
+    if(!opts.length)continue;
+    const pick=opts.length===1?opts[0]:(fit(spec,opts[0])+rng.next()>=fit(spec,opts[1])+rng.next()?opts[0]:opts[1]);
+    EV.evolve(pb,r.rootId,pick,{lineup});
     return{type:'evolve',from:r.rootId,to:pick};
   }
   return null;
@@ -102,7 +104,7 @@ function aiWeek(world,userPb,id,won,oppTendency){
     let guard=0;let over=res.over;while(over&&guard++<4){aiCut(spec,prog.playbook,over);over=P.overCapacity(prog.playbook)}
     news.push({type:'pick',program:id,card:pick.id,rarity:pick.rarity});
   }
-  const evo=aiReps(spec,prog.playbook,rng);if(evo)news.push({...evo,program:id});
+  const evo=aiReps(spec,prog.playbook,rng,prog.lineup||teamFor(id).lineup);if(evo)news.push({...evo,program:id});
   // AI breakouts: now and then a player on their roster earns a signature card.
   if((prog.playbook.signatures||[]).length<2&&rng.next()<.16){
     const lu=prog.lineup||teamFor(id).lineup,pool=[...Object.values(lu.off).filter(p=>['QB','RB','X','Z','SLOT','TE'].includes(p.role)),...Object.values(lu.def).filter(p=>['RUSH','MIKE','FCB','FS'].includes(p.role))];

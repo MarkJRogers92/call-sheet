@@ -654,7 +654,15 @@ const COMBOS=[
   {id:'show_and_bail',name:'Show and Bail',side:'def',duel:'K',v:-1,how:'Defense: blitz, then show the same look and drop into a two-deep shell',reward:'Their Key −1 and +1 Command',
     test:c=>!!c.call&&c.call.shell===2&&c.call.pressure===0&&!!c.call.look?.pressureShown&&!!c.calls.length&&c.calls.at(-1).pressure>0},
   {id:'wall_up',name:'Wall Up',side:'def',duel:'G',v:-1,how:'Defense: stuff two runs in a row, then they run again',reward:'Their Gate −1 and +1 Command',
-    test:c=>!!c.call&&c.play.family==='run'&&!!lastN(c.results,2)?.every(r=>r.family==='run'&&r.yards<=2)}
+    test:c=>!!c.call&&c.play.family==='run'&&!!lastN(c.results,2)?.every(r=>r.family==='run'&&r.yards<=2)},
+  {id:'rhythm_and_bruise',name:'Tempo Body Blow',side:'off',duel:'G',v:1,how:'Two 5+ yard quick passes, then an inside or power run',reward:'Gate +1 and +1 Command',
+    test:c=>['inside_zone','power','draw','qb_draw','wishbone_dive','power_lead'].includes(c.root)&&!!lastN(c.results,2)?.every(r=>r.family==='quick'&&r.yards>=5)},
+  {id:'change_of_pace',name:'Change of Pace',side:'off',duel:'K',v:1,how:'An 8+ yard run, then Read Option, Triple Option or RPO Bubble',reward:'Key +1 and +1 Command',
+    test:c=>['read_option','triple_option','rpo_bubble'].includes(c.root)&&c.results.at(-1)?.family==='run'&&c.results.at(-1)?.yards>=8},
+  {id:'bait_the_throw',name:'Bait the Throw',side:'def',duel:'K',v:-1,how:'Defense: two passive zone calls with a 3+ yd gain, then man coverage',reward:'Their Key −1 and +1 Command',
+    test:c=>!!c.call&&c.call.coverage==='man'&&c.call.pressure===0&&(c.results.at(-1)?.yards??0)>=3&&!!lastN(c.calls,2)?.every(x=>x.coverage==='zone'&&x.pressure===0)},
+  {id:'heat_check',name:'Bring the House',side:'def',duel:'G',v:-1,how:'Defense: force a loss of 3+ yards or sack, then blitz on the next snap',reward:'Their Gate −1 and +1 Command',
+    test:c=>!!c.call&&c.call.pressure>0&&(c.results.at(-1)?.yards??0)<=-3}
 ];
 
 // Which program card each coordinator background teaches (Dynasty Lab scheme names).
