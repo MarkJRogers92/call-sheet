@@ -1082,7 +1082,8 @@ function setupCue(b,req){
   const usable=(opts.plays||[]).filter(o=>!o.blocked&&o.cost<=opts.command);
   const catalog=offense?D.PLAYS:D.CALLS;
   const ready=usable.map(o=>({card:catalog[o.id],hit:comboRead(b,req,catalog[o.id])})).filter(o=>o.hit);
-  const choice=ready.find(o=>!o.hit.condition)||ready[0];
+  const plan=b.decks?.[req.side]?.[req.role]?.comboPlan;
+  const choice=ready.find(o=>o.card.id===plan?.play&&o.hit.id===plan.id)||ready.find(o=>!o.hit.condition)||ready[0];
   if(!choice)return null;
   const {hit,card}=choice;
   const def=(D.COMBOS||[]).find(x=>x.id===hit.id);
@@ -1425,13 +1426,21 @@ function falseStart(b,side){
 
 // The first combo (rules v0.8, data.COMBOS) this play/call would complete, from this drive's memory. Offense combos
 // need only the play; defense combos also need the call (null when only the offense is known).
+const comboById=new Map(D.COMBOS.map(recipe=>[recipe.id,recipe]));
 function comboFor(b,play,call=null,role=null){
   if(!play)return null;
   const mine=b.drive?.key===driveKey(b.game,offSide(b)),dr=mine?b.drive:{};
   const c={play,call,root:play.evolvedFrom||play.upgradeOf||play.id,fams:dr.fams||[],plays:dr.plays||[],calls:dr.calls||[],results:dr.results||[]};
   // Each team completes each combo at most once per half (overtime is its own half).
   const half=b.game.period<=2?1:b.game.period<=4?2:3,usedBy=side=>b.comboLog?.[side]?.[half]||[];
-  const hit=(D.COMBOS||[]).find(x=>(!role||x.side===role)&&!usedBy(x.side==='def'?defSide(b):offSide(b)).includes(x.id)&&(x.side==='off'||call)&&x.test(c));
+  const eligible=x=>(!role||x.side===role)&&!usedBy(x.side==='def'?defSide(b):offSide(b)).includes(x.id)&&x.test(c);
+  const installed=(unit,card,side)=>{
+    const plan=b.decks?.[side]?.[unit]?.comboPlan;
+    const recipe=plan?.play===card.id?comboById.get(plan?.id):null;
+    return recipe?.side===unit&&eligible(recipe)?recipe:null;
+  };
+  const hit=installed('off',play,offSide(b))||(call&&installed('def',call,defSide(b)))||
+    D.COMBOS.find(x=>(x.side==='off'||call)&&eligible(x));
   return hit?{id:hit.id,name:hit.name,duel:hit.duel,v:hit.v,side:hit.side,reward:hit.reward}:null;
 }
 function combosFor(b,play,call){
@@ -1445,8 +1454,39 @@ function comboRead(b,req,card){
   const read=req.offLook?.family;
   if(read?.confirmed)return comboFor(b,{family:read.value},card,'def');
   const ready=comboFor(b,{},card,'def'),ifRun=comboFor(b,{family:'run'},card,'def');
+  const plan=b.decks?.[req.side]?.def?.comboPlan;
+  if(ifRun&&ready?.id!==ifRun.id&&plan?.id===ifRun.id&&plan.play===card.id)return{...ifRun,condition:'if they run'};
   if(ready)return ifRun&&ifRun.id!==ready.id?{...ready,alternate:ifRun.name}:ready;
   return ifRun?{...ifRun,condition:'if they run'}:null;
+}
+// Track the setup steps of the installed offensive sequence on public drive
+// history. The combo's real predicate still determines payoff readiness.
+const OFFENSIVE_SETUP={
+  sell_the_sneak:{steps:1,plays:['qb_sneak']},
+  establish:{steps:2,family:'run'},
+  shot_after_run:{steps:2,family:'run'},
+  sell_the_slant:{steps:2,family:'quick'},
+  counter_the_flow:{steps:1,plays:['outside_zone','buck_sweep','jet_sweep','toss_crack','jet_reverse']},
+  rhythm_and_bruise:{steps:2,family:'quick',yards:5},
+  change_of_pace:{steps:1,family:'run',yards:8}
+};
+function equippedComboSetup(b,req=b?.pending){
+  if(!b?.game||req?.kind!=='snap'||req.side!==b.user||!['off','def'].includes(req.role))return null;
+  const deck=b.decks?.[req.side]?.[req.role],plan=deck?.comboPlan,recipe=comboById.get(plan?.id);
+  const card=(req.role==='off'?D.PLAYS:D.CALLS)[plan?.play];
+  if(!card||recipe?.side!==req.role||!deck.wrinkles?.includes(card.id)||
+    b.comboLog?.[req.side]?.[halfOf(b.game)]?.includes(recipe.id))return null;
+  const hit=comboRead(b,req,card),ready=hit?.id===recipe.id;
+  const view={id:recipe.id,name:recipe.name,play:card.id,playName:card.name,how:recipe.how,reward:recipe.reward,ready};
+  if(ready&&hit.condition)view.condition=hit.condition;
+  const spec=OFFENSIVE_SETUP[recipe.id];
+  if(!spec)return view;
+  const drive=b.drive?.key===driveKey(b.game,offSide(b))?b.drive:{};
+  const history=(spec.plays?drive.plays:spec.yards?drive.results:drive.fams)||[];
+  const counts=value=>spec.plays?spec.plays.includes(value):spec.yards?value?.family===spec.family&&value.yards>=spec.yards:value===spec.family;
+  let step=0;
+  for(let i=history.length-1;i>=0&&step<spec.steps&&counts(history[i]);i--)step++;
+  return{...view,step,steps:spec.steps};
 }
 function setupProgress(b,card,role='off'){
   if(!b?.game||!card)return null;
@@ -2612,6 +2652,7 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
   const fits=o=>{const c=catalog[o.id],sit=req.situation||{};
     if(sit.down>=3&&sit.distance>=5&&c.family==='run')return false;
     const r=reads.get(o.id);return !r||best==null||r.u>=best-1;};
+  let comboSetup=equippedComboSetup(b,req);
   const chosen=[],families=new Set(),aims=new Map();
   const pick=(o,aim)=>{
     if(!o||chosen.includes(o))return;
@@ -2644,9 +2685,23 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
   if(outLook&&chosen.length<3)pick(readyShot||qo,readyShot?'Take a shot':'Set up the double move');
   if(chosen.length<3){
     const counter=ranked.find(o=>counters(catalog[o.id]));
-    pick(counter||ranked.find(o=>setup(catalog[o.id])&&fits(o)),counter?'Play the counter':'Use the setup');
+    const payoff=comboSetup?.ready&&ranked.find(o=>o.id===comboSetup.play&&fits(o));
+    pick(counter||payoff||ranked.find(o=>setup(catalog[o.id])&&fits(o)),counter?'Play the counter':'Use the setup');
   }
   if(chosen.length<3)pick(legal.find(o=>o.id===req.options?.openingScript),'Opening script');
+  const sequence=comboSetup&&!comboSetup.ready&&comboSetup.step<comboSetup.steps&&OFFENSIVE_SETUP[comboSetup.id];
+  if(sequence&&chosen.length<3&&!twoDown&&(!sequence.yards||100-(req.situation?.field??0)>sequence.yards)){
+    const next=ranked.find(o=>{
+      const c=catalog[o.id];
+      const prepares=sequence.plays?sequence.plays.includes(origin(c)):c.family===sequence.family;
+      return prepares&&!c.quickKick&&!c.drill&&fits(o);
+    });
+    if(next){
+      const card=catalog[next.id];
+      comboSetup={...comboSetup,nextCall:{id:next.id,name:card.name}};
+      pick(next,'Build the setup');
+    }
+  }
   if(offense&&!twoDown&&reads.size&&chosen.length<3){
     const sit=req.situation,goal=sit.field+sit.distance>=100;
     const protectClock=sit.period===4&&sit.clock<=120&&sit.score?.[req.side]>sit.score?.[other(req.side)];
@@ -2675,6 +2730,9 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
   const names=(roles,fallback)=>[...new Set((roles||[]).map(r=>lineup[r]?.name).filter(Boolean))].join(' & ')||fallback;
   const choices=chosen.map(o=>{
     const card=catalog[o.id],c=offense&&selection.play===card.id?R.targetedPlay(card,selection.target,lineup):card,combo=setup(c);let detail;
+    const actorRole=offense&&!c.quickKick&&origin(c)!=='read_option'&&(c.pass?c.target:c.carrier);
+    const actorPlayer=actorRole&&lineup[actorRole];
+    const actor=actorPlayer?.id!=null&&actorPlayer.name?{id:actorPlayer.id,name:actorPlayer.name,role:actorRole,kind:c.pass?'target':'runner'}:null;
     if(offense){
       const actor=names([c.target||c.carrier],c.pass?'Your receiver':'Your runner');
       if(c.quickKick)detail=`${b?.teams?.[req.side]?.specialists?.P?.name||'Your punter'} punts; give up possession for field position.`;
@@ -2718,10 +2776,10 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
     const refund=req.options.command-cost<D.RULES.seriesCommand;
     const badge=combo?(combo.condition?(refund?'+1 CMD IF THEY RUN':'COMBO IF THEY RUN'):(refund?'COMBO READY · +1 CMD':'COMBO READY')):counterBadge(req,card);
     return{id:o.id,label:c.name,detail:twoDown&&aim?aim+'. '+detail:detail,
-      ...(aim?{aim}:{}),...(forecast?{forecast}:{}),...(badge?{badge}:{}),...(matchup?{matchup}:{})};
+      ...(aim?{aim}:{}),...(forecast?{forecast}:{}),...(badge?{badge}:{}),...(matchup?{matchup}:{}),...(actor?{actor}:{})};
   });
   const defensePlan=opponentPlanRead(b,req);
-  return{clue,choices,...(defensePlan?{defensePlan}:{})};
+  return{clue,choices,...(defensePlan?{defensePlan}:{}),...(comboSetup?{comboSetup}:{})};
 }
 
 // Save/resume: the whole battle is plain data except nothing — it serializes as-is.
@@ -2824,5 +2882,5 @@ function duelTally(b){
   }
   return out;
 }
-return{driveSummary,delegatedRecap,driveLog,tendencyCounts,covTendFor,setupProgress,canRedraw,redrawCost,setupCue,lookCertainty,snapVerdict,coachedSnapReview,practiceCoachedSnap,DRIVE_CHALLENGES,THREE_DRIVE_CHALLENGE,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,quickForecast,quickTactics,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,comboRead,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,counterBadge,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{driveSummary,delegatedRecap,driveLog,tendencyCounts,covTendFor,setupProgress,canRedraw,redrawCost,setupCue,equippedComboSetup,lookCertainty,snapVerdict,coachedSnapReview,practiceCoachedSnap,DRIVE_CHALLENGES,THREE_DRIVE_CHALLENGE,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,quickForecast,quickTactics,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,comboRead,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,counterBadge,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

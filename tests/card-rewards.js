@@ -201,17 +201,32 @@ test('three-drive challenge starts the real combo setup and lends an opening tac
   assert.throws(() => B.createChallenge('goal_line_stand', {runStage: 1, loan: 'max_protect'}), /not offered/);
 });
 
-test('the three-drive record and sticker are separate from the individual drives', () => {
+test('three-drive playbooks track separate records alongside existing overall records and stickers', () => {
   const db = new Map([['callsheet.slice.v1', 'career']]);
   const storage = {getItem: key => db.get(key), setItem: (key, value) => db.set(key, value)};
   const awards = stickerSession(storage);
-  awards.finish('three_drive', null, {won: false, snaps: 10});
-  awards.finish('three_drive', null, {won: true, snaps: 8});
+  awards.finish('three_drive', null, {won: true, snaps: 10});
+  assert.equal(awards.progress('three_drive', 'power'), null, 'old overall runs have no playbook attribution');
+  for (const [playbook, run] of [
+    ['power', {won: false, snaps: 12}],
+    ['power', {won: true, snaps: 9}],
+    ['tempo', {won: true, snaps: 8}],
+  ]) {
+    awards.finish('three_drive', null, run);
+    awards.finish('three_drive', playbook, run);
+  }
+  assert.equal(awards.finish('need_six', 'power', {won: true, snaps: 2}), null);
+  assert.equal(awards.finish('three_drive', 'stacked_box', {won: true, snaps: 6}), null);
   assert.equal(awards.earn('three_drive'), true);
   const reload = stickerSession(storage);
   assert.equal(reload.get('three_drive').name, 'Complete Game');
   assert.equal(reload.progress('three_drive').best, 8);
-  assert.equal(reload.progress('three_drive').attempts, 2);
+  assert.equal(reload.progress('three_drive').attempts, 4);
+  assert.equal(reload.progress('three_drive', 'power').attempts, 2);
+  assert.equal(reload.progress('three_drive', 'power').clears, 1);
+  assert.equal(reload.progress('three_drive', 'power').best, 9);
+  assert.equal(reload.progress('three_drive', 'tempo').attempts, 1);
+  assert.equal(reload.progress('three_drive', 'tempo').best, 8);
   for (const id of ['need_six','goal_line_stand','four_minute_offense']) {
     assert.equal(reload.get(id), null);
     assert.equal(reload.progress(id), null);
