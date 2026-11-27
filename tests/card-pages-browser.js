@@ -15,8 +15,13 @@ const go=async(page,tab)=>{await page.evaluate(t=>document.querySelector(`[data-
       page.on('pageerror',e=>errors.push(String(e)));
       await page.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(page,{cardGame:true});
       const rosterSize=await page.evaluate(()=>window.__DL_TEST__.selected().roster.length);
-      // The matchup shows their four best starters.
+      // The matchup shows their four best starters, and This Week shows the Saturday rundown + singleton Game Day guard.
       assert.equal(await page.locator('#broadcastFeature #matchupCards .cs-mini').count(),4,'players to beat on the matchup');
+      assert.equal(await page.locator('#cardDeskLink .cpn-rundown-cell').count(),4,'Saturday rundown renders 4 cells');
+      while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
+      await page.evaluate(()=>{window.DynastyCardGameDay.open();window.DynastyCardGameDay.open()});
+      assert.equal(await page.locator('#cardGameDay').count(),1,'opening Game Day twice keeps a single overlay');
+      await page.evaluate(()=>{document.getElementById('cardGameDay')?.remove();document.body.classList.remove('cs-open')});
       // Roster: cards by default, every player, opens his profile; the table is one click away.
       await go(page,'roster');
       await page.locator('#rosterCards .cs-mini').first().waitFor();
@@ -54,6 +59,16 @@ const go=async(page,tab)=>{await page.evaluate(t=>document.querySelector(`[data-
       assert.deepEqual(errors,[],errors.join('\n'));
       await page.close();
     }
+    const battlePage=await browser.newPage({viewport:{width:390,height:844}});
+    await battlePage.goto('file://'+path.join(__dirname,'..','forks/call-sheet/slice/index.html'));
+    const challengeHit=await battlePage.evaluate(()=>{
+      const btn=document.getElementById('driveChallenges');
+      if(!btn)return false;
+      const r=btn.getBoundingClientRect(),hit=document.elementFromPoint(r.left+r.width/2,r.top+r.height/2);
+      return hit===btn||btn.contains(hit);
+    });
+    assert.equal(challengeHit,true,'Drive Challenges button is hit-targetable on title screen');
+    await battlePage.close();
     console.log('ok  cards across the dynasty: matchup, roster cards/classic, card lineup, prospect cards, coach cards (desktop and phone)');
   }finally{await browser.close()}
 })().catch(err=>{console.error(err);process.exit(1)});

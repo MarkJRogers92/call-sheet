@@ -63,9 +63,12 @@ test('card protection metadata names only the participants of the blocking duel'
  let sacks=0;
  for(let i=0;i<4;i++){
   const b=B.simulate({home:Ro.preset('aerial'),away:Ro.preset('control'),seed:`blockers-${i}`});
+  const sackSnaps=b.log.filter(s=>s.type==='snap'&&s.kind==='sack');
+  let sackIdx=0;
   for(const ev of b.game.events.filter(e=>e.sack)){
    sacks++;
-   const duel=D.PLAYS[ev.card.play].duels.G,lu=b.teams[ev.team].lineup.off;
+   const snap=sackSnaps[sackIdx++];
+   const duel=D.PLAYS[ev.card.play].duels.G,lu=snap?B.snapLineup(b,snap,'off'):b.teams[ev.team].lineup.off;
    assert.deepEqual(ev.card.actors.blockers,duel.protect?[...new Set(duel.off.map(role=>String(lu[role].id)))]:[]);
   }
  }

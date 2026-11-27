@@ -241,7 +241,7 @@ function seasonGoalStatus(t,g,final=false){
  if(g.type==='takeoverWins'){
   const takeover=takeoverSeason(t);if(!takeover)return{state:'pending',progress:'—'};
   const {w,l}=takeoverRegularRecord(t,takeover),left=Math.max(0,12-takeover.completedWeeks-w-l);
-  return {state:w>=g.target?'complete':final?'failed':w+left<g.target?'at_risk':'on_track',progress:`${w}/${g.target} wins since the takeover`};
+  return {state:w>=g.target?'complete':(final||left===0)?'failed':w+left<g.target?'at_risk':'on_track',progress:`${w}/${g.target} wins since the takeover${left===0&&w<g.target?' (regular season complete)':''}`};
  }
  if(g.type==='wins'){const done=(t.w||0)>=g.target,impossible=(t.w||0)+remaining<g.target,atRisk=!done&&(impossible||(played>=6&&((t.w||0)/Math.max(1,played))<(g.target/12)*.8));return{state:done?'complete':final?'failed':atRisk?'at_risk':'on_track',progress:`${t.w||0}/${g.target} wins`}}
  if(g.type==='rivalry'){const s=t.rivalry?.series,hasPlayed=s?.lastYear===universe.year;if(!hasPlayed)return{state:final?'failed':'on_track',progress:'Game pending'};return{state:s.lastResult==='W'?'complete':'failed',progress:s.lastResult==='W'?'Won rivalry':'Lost rivalry'}}

@@ -6,6 +6,7 @@ const D=require('../forks/call-sheet/core/data');
 const R=require('../forks/call-sheet/core/resolver');
 const Ro=require('../forks/call-sheet/core/roster');
 const A=require('../forks/call-sheet/core/adapter');
+const SG=require('../forks/call-sheet/core/signatures');
 
 function opening(home=Ro.preset('ground')){
   const b=B.create({home,away:Ro.preset('tempo'),user:'home',mode:'snap',control:'offense',seed:'personnel-final'});
@@ -38,6 +39,39 @@ test('a substituted player gets the snap, replay and fatigue credit across a sav
   assert.equal(b.workload[activeId],activeWear+1);
   assert.equal(b.workload[benchId]||0,benchWear);
   assert.deepEqual(e,resumed.log[previous]);
+});
+
+function lineupSnap(player,role){
+  return{type:'snap',offSide:'home',defSide:'away',lineups:{off:{[role]:player.id},def:{}},
+    duels:[{offRoles:[role],defRoles:[]}],duelResults:[{won:true}]};
+}
+
+test('package reserves earn offensive Signatures for their on-field roles',()=>{
+  for(const [mode,role,reserveLabel,pos,template] of [
+    ['10','TE','WR4','WR','te_seam'],['12','SLOT','TE2','TE','wr_special'],['21','SLOT','RB2','RB','wr_special']
+  ]){
+    const b=opening();B.setGrouping(b,'home',mode);
+    const reserve=b.teams.home.lineup.off[role];
+    assert.equal(reserve.role,reserveLabel);
+    b.log=Array.from({length:15},()=>lineupSnap(reserve,role));
+    const breakout=SG.candidate(b,'home',{});
+    assert.equal(breakout?.p.id,reserve.id);
+    const spec=SG.breakoutCard(b,'home',breakout),{def}=SG.describe(spec);
+    assert.equal(spec.role,role);assert.equal(spec.pos,pos);assert.equal(spec.template,template);assert.equal(spec.side,'off');
+    assert.equal(spec.number,reserve.number);
+    assert.equal(R.signatureBlocked(def,b.teams.home.lineup.off),null);
+    assert.equal(reserve.role,reserveLabel);
+  }
+});
+
+test('reserve Signatures use the most-played alignment, favoring the first on a tie',()=>{
+  const b=opening(),reserve=b.teams.home.packageDepth.find(p=>p.role==='WR4');
+  b.log=['TE','Z'].flatMap(role=>Array.from({length:8},()=>lineupSnap(reserve,role)));
+  const award=()=>SG.breakoutCard(b,'home',SG.candidate(b,'home',{}));
+  assert.equal(award().role,'TE');
+  b.log.push(lineupSnap(reserve,'Z'));
+  assert.equal(award().role,'Z');
+  assert.match(award().earned,/17 of 17 duels won/);
 });
 
 test('Dynasty depth charts and eligibility control the extra tight end; unavailable packages are atomic',()=>{

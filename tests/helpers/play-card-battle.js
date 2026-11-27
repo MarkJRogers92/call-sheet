@@ -12,8 +12,10 @@ async function finishPackChoice(frame,prefer='deck'){
 async function playCardBattle(page,{timeout=120000,stopAtFinal=false}={}){
   const frame=await (await page.waitForSelector('#cardGameDay iframe',{timeout:15000})).contentFrame();
   const until=Date.now()+timeout,tick=()=>page.waitForTimeout(150);
-  await frame.waitForSelector('#gotIt, #sheetToggle:not([hidden]), #bSim, #openPack',{timeout:30000});
+  await frame.waitForSelector('#gotIt, #skipWalkout, #sheetToggle:not([hidden]), #bSim, #openPack',{timeout:30000});
   if(await frame.$('#gotIt'))await frame.click('#gotIt',{force:true});
+  await page.waitForTimeout(80);
+  if(await frame.$('#skipWalkout'))await frame.click('#skipWalkout',{force:true}).catch(()=>{});
   if(!await frame.$('#openPack')){
     await frame.waitForSelector('#sheetToggle:not([hidden]), #bSim',{timeout:30000});
     if(!await frame.locator('#bSim').isVisible())await frame.click('#sheetToggle');

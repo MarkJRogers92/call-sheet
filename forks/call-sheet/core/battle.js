@@ -601,16 +601,40 @@ function chasing(b,side){
   const g=b.game,deficit=g.score[other(side)]-g.score[side];
   return g.period>=3&&g.period<=4&&(deficit>=17||(g.period===4&&g.clock<=360&&deficit>=9)||(g.period===4&&g.clock<=120&&deficit>0));
 }
-// Rest the offense's skill starters once a second-half lead reaches 28; bring them back if it falls to 20.
+// Rest starters once a second-half lead reaches 24 (Q3) or 21 (Q4); bring them back if it falls to 16.
 // Backups play at their own ratings and appear in the box score. The person's side follows the headset setting.
+function applyRestLineup(b,side,rest){
+  const team=b.teams?.[side];if(!team?.bench)return;
+  b._starterLineup??={};
+  if(rest){
+    if(!b._starterLineup[side]){
+      b._starterLineup[side]={off:{...team.lineup.off},def:{...team.lineup.def}};
+    }
+    for(const unit of ['off','def']){
+      for(const [role,bp] of Object.entries(team.bench[unit]||{})){
+        if(!bp||role==='K'||role==='P')continue;
+        team.lineup[unit][role]=bp;
+        b.personnel??={};
+        if(!b.personnel[bp.id])b.personnel[bp.id]={id:bp.id,name:bp.name,pos:bp.pos,number:bp.number,side,archetype:bp.archetype,portraitSeed:bp.portraitSeed,height:bp.height,weight:bp.weight};
+      }
+    }
+  }else if(b._starterLineup[side]){
+    team.lineup.off={...b._starterLineup[side].off};
+    team.lineup.def={...b._starterLineup[side].def};
+    delete b._starterLineup[side];
+  }
+}
 function updateRest(b,side){
   const g=b.game,lead=g.score[side]-g.score[other(side)];
   b.resting??={home:false,away:false};
   const allowed=(b.user||b.headsetSide)!==side||b.headset?.restStarters!==false;
   const was=!!b.resting[side];
-  if(!was&&allowed&&g.period>=3&&g.period<=4&&lead>=28)b.resting[side]=true;
-  else if(was&&(lead<=20||!allowed))b.resting[side]=false;
-  if(was!==b.resting[side])b.log.push({type:'rest',side,resting:b.resting[side],sit:situation(b),text:b.resting[side]?`${b.teams[side].short} rests its offensive starters, up ${lead}.`:`${b.teams[side].short} sends its starters back in.`});
+  if(!was&&allowed&&((g.period===3&&lead>=24)||(g.period===4&&lead>=21)))b.resting[side]=true;
+  else if(was&&(lead<=16||!allowed))b.resting[side]=false;
+  if(was!==b.resting[side]){
+    applyRestLineup(b,side,b.resting[side]);
+    b.log.push({type:'rest',side,resting:b.resting[side],sit:situation(b),text:b.resting[side]?`${b.teams[side].short} rests its starters, up ${lead}.`:`${b.teams[side].short} sends its starters back in.`});
+  }
 }
 function aiOffense(b,side,look,opts={}){
   const o=offOptions(b,side),team=b.teams[side],sit=situation(b),def=b.teams[other(side)].lineup.def;
@@ -1669,9 +1693,12 @@ function resolveSnap(b){
     const out=withRng(b,rng=>R.resolve(snap,rng,sit));
     if(b.momentum?.side===off)b.momentum.left=0;
     if(out.turnover)b.momentum={side:def,left:1};
-    const before={down:g.down,distance:g.distance,field:g.fieldPosition,score:{...g.score}};
+    const before={down:g.down,distance:g.distance,field:g.fieldPosition,quarter:g.period,score:{...g.score}};
     const evStart=g.events.length;armSpecials(b,off);
     const clockNote=manageClock(b,out,play);
+    if(!drillOn(b)&&before.quarter>=3&&before.quarter<=4&&!b.snap?.hurried&&(before.score[off]-before.score[def]>=17)&&!out.turnover&&out.kind!=='inc'&&!play.clockStop&&out.clock>0){
+      out.clock=Math.max(out.clock,Math.min(42,out.clock+10));
+    }
     Engine.applyScrimmage(g,{yards:out.yards,clock:out.clock,kind:out.engineKind,completed:out.completed,turnover:out.turnover});
     const specialNotes=settleSpecials(b,off,evStart);
     // Tag the play the way Dynasty Lab's attribution expects (run/pass, completion, sack), plus who actually played it.
@@ -1986,6 +2013,7 @@ function recordStats(b,off,def,out,before){
 }
 function finalize(b){
   if(b.final)return;b.final={score:{...b.game.score},winner:b.game.score.home>b.game.score.away?'home':'away'};
+  for(const side of ['home','away'])if(b._starterLineup?.[side])applyRestLineup(b,side,false);
   // Postgame rewards and evolution read the regular starters. Recorded snaps
   // keep their package IDs and continue to resolve through snapLineup.
   for(const team of Object.values(b.teams)){
@@ -2127,6 +2155,7 @@ function tacticRead(req,playId,lineup={},selected=[],primaryTarget,b=null,fog=fa
       case 'identify_protection':return play.pressure&&!req.offLook?.protection?.confirmed?'Check for extra blockers before sending pressure.':'';
       case 'press':case 'lock':return family?.confirmed&&family.value==='quick'?'Crowd their receivers if the quick throw starts with a release duel.':'';
       case 'stunt':return family?.confirmed&&family.value==='deep'?'Twist the rushers if the deep route needs protection.':'';
+      case 'bracket':return !off?'Take away their primary receiver so the quarterback has to win elsewhere.':'';
       case 'timeout_settle':case 'timeout_ice':return req.situation?.down>=3?'Spend a timeout for help on the Key duel this down.':'';
       default:return '';
     }
@@ -2332,21 +2361,24 @@ for(const role of ['off','def']){
     ]));
   }
 }
-const filmDefenses=['cover1','two_high','cover3','run_fit','cover0','zone_pressure','sim_pressure','two_man','robber','bear'];
+const filmDefenses=['two_high','cover3','cover1','run_fit','zone_pressure','cover0','sim_pressure','cover2_trap','robber','two_man','bear'];
 // Read Option is a public scenario when comparing the coach's edge assignment.
 const filmOffense={...REP_PLAYS,run:[...REP_PLAYS.run,'read_option']};
 const quickTargets=sit=>[Math.min(4,sit.distance),Math.min(20,100-sit.field)];
+function lookUncertain(look){return !look?.coverage?.confirmed||!look?.pressure?.confirmed||!look?.shell?.confirmed}
 function possibleFilmCalls(look){
   const fits=(fact,value)=>!fact?.confirmed||fact.value===value;
   const pressure=look.pressure;
   const fitsPressure=c=>pressure.confirmed
     ?(Number.isFinite(pressure.realLevel)?c.pressure===pressure.realLevel:(c.pressure>0)===pressure.value)
     :c.look.pressureShown===pressure.value;
+  const fitsShell=c=>look.shell?.confirmed?c.shell===look.shell.value:(c.look?.shellShown?c.look.shellShown===look.shell.value:true);
   const calls=filmDefenses.map(id=>D.CALLS[id]).filter(c=>
-    fits(look.box,c.box)&&fits(look.shell,c.shell)&&fits(look.coverage,c.coverage)&&fitsPressure(c));
+    fits(look.box,c.box)&&fitsShell(c)&&fits(look.coverage,c.coverage)&&fitsPressure(c));
   // The shown alignment is one possible read even when no base defense matches the film.
   // A strong safety can disguise shell. A shown rush can still drop out.
-  return [presumedCall(look,true),...calls];
+  const shown=presumedCall(look,true);
+  return calls.some(c=>c.id===shown.id)?calls:[shown,...calls];
 }
 function scoutedProjection(b,req,choice,confidence){
   const fog=filmFog(confidence),role=req?.role,offense=role==='off',sit=req?.situation;
@@ -2460,6 +2492,42 @@ function chartRivalryWin(win,e,side){
   if(payoff)current.combo=payoff.id;
   win.set(root,current);
 }
+function turningPointSnaps(b,limit=3){
+  if(!b?.log?.length)return [];
+  const scored=[];
+  let index=0;
+  for(const e of b.log){
+    if(e.type!=='snap'||e.penalty||e.category==='kick')continue;
+    index++;
+    const sit=e.sit||{},down=sit.down||1,dist=sit.distance||10,yards=Number(e.yards)||0;
+    const td=/touchdown/i.test(e.text||'');
+    const converted=down>=3&&!e.turnover&&yards>=dist;
+    const stopped=down>=3&&(e.turnover||yards<dist);
+    let score=0,swungBy='';
+    if(td){score+=5;swungBy='Touchdown strike'}
+    if(e.turnover){score+=6;swungBy=e.turnover==='interception'?'Interception':'Fumble'}
+    if(down===4){score+=4;swungBy=swungBy||(converted?'4th-down conversion':'4th-down stop')}
+    else if(down===3){score+=2.5;swungBy=swungBy||(converted?'3rd-down conversion':'3rd-down stop')}
+    if(Math.abs(yards)>=18){score+=2.5;swungBy=swungBy||'Explosive gain'}
+    if(e.kind==='sack'){score+=2.5;swungBy=swungBy||'Pass rush sack'}
+    if(score<3)continue;
+    const play=D.PLAYS[e.play],call=D.CALLS[e.call];
+    const userOff=e.offSide===b.user;
+    let counterId=null;
+    if(userOff&&(e.turnover||e.kind==='sack'||stopped))counterId=e.kind==='sack'?'max_protect':'inside_zone';
+    else if(!userOff&&(td||converted||yards>=15))counterId=play?.family==='run'?'run_fit':'two_high';
+    else counterId=D.PLAYS[e.play]?.id||D.CALLS[e.call]?.id||null;
+    const counterDef=counterId?(D.PLAYS[counterId]||D.CALLS[counterId]||D.TACTICS[counterId]):null;
+    scored.push({
+      score,snap:index,quarter:sit.quarter||1,clock:sit.clock||0,down,distance:dist,spot:sit.field||25,
+      offSide:e.offSide,playId:e.play,playName:play?.name||e.play||'Play',
+      defId:e.call,defName:call?.name||e.call||'Defense',yards,
+      result:e.text||`${yards} yd`,swungBy:swungBy||'Key snap',
+      counterId:counterDef?counterId:null,counterName:counterDef?.name||null
+    });
+  }
+  return scored.sort((a,b)=>b.score-a.score||a.snap-b.snap).slice(0,limit).map(({score,...rest})=>rest);
+}
 function callFilm(b,side=b?.user){
   if(!b?.log||!side)return null;const opp=side==='home'?'away':'home',film={def:{pressure:0,man:0,zone:0,total:0},off:{run:0,pass:0,total:0,thirdDown:{}},own:{plays:{},snaps:0,mine:0}};
   const protectionPrep='Weekly prep: Pass Protection',runPrep='Weekly prep: Run Fits';
@@ -2496,7 +2564,9 @@ function callFilm(b,side=b?.user){
   const memory=win&&[...win.values()].filter(t=>t.count>=2||t.combo||t.scored||t.peak>=20)
     .sort((a,b)=>b.count-a.count||Number(!!b.combo)-Number(!!a.combo)||b.yards-a.yards)[0];
   if(memory){const {play,count,yards,combo}=memory;film.rivalryWin={play,count,yards,...(combo?{combo}:{})}}
-  return film.def.total||film.off.total||film.own.snaps?film:null;
+  const tp=turningPointSnaps(b);
+  if(tp.length)film.turningPoints=tp;
+  return film.def.total||film.off.total||film.own.snaps||tp.length?film:null;
 }
 // A season of card battles summed by the dynasty: { games, snaps, mine, plays:{id:{n,yards,stops,mine}}, players:{id:{name,w,l}} }.
 // The recap names the best call and the worst habit (each with 5+ calls) and the season's top duel winner on your side.
@@ -2589,7 +2659,7 @@ function adaptationRead(b,req=b?.pending){
 
 // What a call looks like on public information only: the Look the offense sees (confirmed lean only), the players on
 // the field and labeled edges. The same inputs the full-sheet preview uses; the defense's committed call never enters.
-function publicRead(b,req,id,confidence,target,tactics=[],read='auto'){
+function publicRead(b,req,id,confidence,target,tactics=[],read='auto',includeSpread=false){
   const side=req.side,printed=D.PLAYS[id],def=b?.teams?.[other(side)]?.lineup?.def;
   const sit=req.situation;
   if(!printed||printed.quickKick||id==='spike'||!def||!b.game||!req.look?.box||!Number.isFinite(sit?.field)||!Number.isFinite(sit.distance))return null;
@@ -2608,11 +2678,24 @@ function publicRead(b,req,id,confidence,target,tactics=[],read='auto'){
     offTactics:activeTactics(b,'off',tactics),read,situation:sit,lean,heat:!!req.look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
   const result=R.evaluate(snap,sit,quickTargets(sit)),ev={...result,yards:Math.max(-sit.field,Math.min(100-sit.field,result.yards)),
     floor:result.targetOdds[0],chunk:result.targetOdds[1]};
-  const yards=Math.round(ev.yards*10)/10,first=Math.round(ev.first*100);
-  return{u:utility(ev,sit),ev,gate:snap.duels[0],forecast:{yards:[yards,yards],first:[first,first],goal,confidence:confidence==null?'Shown look':'Full film'}};
+  const calls=includeSpread?possibleFilmCalls(req.look):[];
+  let yardsRange=[Math.round(ev.yards*10)/10,Math.round(ev.yards*10)/10];
+  let firstRange=[Math.round(ev.first*100),Math.round(ev.first*100)];
+  if(calls.length>1){
+    const perCall=calls.map(c=>{
+      const s=R.buildSnap({weather:b.weather,...edgesFor(b,side),off,def,play,...knownEffects(b,play,c),call:c,
+        offTactics:activeTactics(b,'off',tactics),read,situation:sit,lean,heat:!!req.look.heat,motionConfirmed:!!b.snap?.motionConfirmed});
+      const r=R.evaluate(s,sit,quickTargets(sit));
+      return{yards:Math.max(-sit.field,Math.min(100-sit.field,r.yards)),first:r.first};
+    });
+    yardsRange=[Math.round(Math.min(...perCall.map(x=>x.yards))*10)/10,Math.round(Math.max(...perCall.map(x=>x.yards))*10)/10];
+    firstRange=[Math.round(Math.min(...perCall.map(x=>x.first))*100),Math.round(Math.max(...perCall.map(x=>x.first))*100)];
+  }
+  const unconfirmed=yardsRange[0]!==yardsRange[1]||firstRange[0]!==firstRange[1];
+  return{u:utility(ev,sit),ev,gate:snap.duels[0],forecast:{yards:yardsRange,first:firstRange,goal,confidence:confidence==null?(unconfirmed?'Unconfirmed look':'Shown look'):(unconfirmed?'Unconfirmed look':'Full film')}};
 }
 function publicChoiceRead(b,req,choice,confidence){
-  if(req.role==='off')return publicRead(b,req,choice.play,confidence,choice.target,choice.tactics,choice.read);
+  if(req.role==='off')return publicRead(b,req,choice.play,confidence,choice.target,choice.tactics,choice.read,true);
   const projection=scoutedProjection(b,req,choice,confidence);
   if(!projection)return null;
   const {yards,first,confidence:label}=projection.range,sit=req.situation;
@@ -2917,5 +3000,5 @@ function duelTally(b){
   }
   return out;
 }
-return{driveSummary,delegatedRecap,driveLog,tendencyCounts,covTendFor,setupProgress,canRedraw,redrawCost,setupCue,equippedComboSetup,lookCertainty,snapVerdict,coachedSnapReview,practiceCoachedSnap,practiceRoleReps,DRIVE_CHALLENGES,THREE_DRIVE_CHALLENGE,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,quickForecast,quickTactics,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,comboRead,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,counterBadge,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{driveSummary,delegatedRecap,driveLog,tendencyCounts,covTendFor,setupProgress,canRedraw,redrawCost,setupCue,equippedComboSetup,lookUncertain,lookCertainty,snapVerdict,coachedSnapReview,practiceCoachedSnap,practiceRoleReps,turningPointSnaps,DRIVE_CHALLENGES,THREE_DRIVE_CHALLENGE,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,quickForecast,quickTactics,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,comboRead,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,counterBadge,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

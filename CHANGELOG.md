@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.39.0 — Signature sculptures, stadium walkouts, honest reads, and drive film
+
+- **3D signature art, equipment & foil packs:** Position signature sculptures with team-color tinting across cards, Deck Room, and Ring of Honor; equipment illustrations on tactics and weekly drills; interactive peel-open foil reward packs.
+- **Stadium walkout intros:** Postseason, rivalry, and home-opener tunnel walkouts with skip and reduced-motion support.
+- **Honest pre-snap uncertainty & smoother duels:** Unconfirmed defensive looks show yardage/conversion ranges until scouted; extreme duel stacks and second-half blowouts taper smoothly with earlier backup rotation (`+24` Q3 / `+21` Q4).
+- **Saturday rundown & turning-point drive film:** One-tap This Week rundown strip, postgame/Deck Room turning-point snaps with practice reps, and meaningful visit pitch focuses.
+- **Integrity & mobile polish:** Fixed Drive Challenges title click-through, camp/preseason depth preservation, takeover regular-season goal tracking, and compact 390px Full Call Sheet layout.
+
 ## v0.38.0 — Recruiting weekends and midseason takeover
 
 - Choose a home date for up to three priority recruits. Position pairings and rivalry games can strengthen the pitch, and the recap shows the observed interest change.

@@ -40,17 +40,28 @@ function conditionsOf(p,role,traits){
 }
 // team: a Dynasty Lab team object. Returns {lineup:{off,def}, missing:[roles filled from fallback]}.
 function lineupFromTeam(team,info={}){
-  const excluded=new Set((info.unavailableIds||[]).map(String)),eligible=p=>available(p)&&!excluded.has(String(p.id));
-  const byId=new Map((team.roster||[]).map(p=>[p.id,p])),used=new Set(),lineup={off:{},def:{}},missing=[];
+  const excluded=new Set((info.unavailableIds||[]).map(String)),limited=new Set((info.limitedIds||[]).map(String));
+  const eligible=p=>available(p)&&!excluded.has(String(p.id));
+  const byId=new Map((team.roster||[]).map(p=>[p.id,p])),used=new Set(),lineup={off:{},def:{}},bench={off:{},def:{}},missing=[];
   const pick=role=>{
     const ids=team.roleDepth?.[ROLE_MAP[role]]||[];
-    for(const id of ids){const p=byId.get(id);if(eligible(p)&&!used.has(p.id))return p}
+    for(const pass of limited.size?[false,true]:[true]){
+      for(const id of ids){const p=byId.get(id);if(eligible(p)&&!used.has(p.id)&&(pass||!limited.has(String(p.id))))return p}
+    }
     missing.push(role);
-    return(team.roster||[]).filter(p=>POS_FALLBACK[role].includes(p.pos)&&eligible(p)&&!used.has(p.id)).sort((a,b)=>(b.trueNow||0)-(a.trueNow||0))[0]||null;
+    const pool=(team.roster||[]).filter(p=>POS_FALLBACK[role].includes(p.pos)&&eligible(p)&&!used.has(p.id)).sort((a,b)=>(b.trueNow||0)-(a.trueNow||0));
+    return (limited.size&&pool.find(p=>!limited.has(String(p.id))))||pool[0]||null;
+  };
+  const pickBench=role=>{
+    const ids=team.roleDepth?.[ROLE_MAP[role]]||[];
+    for(const id of ids){const p=byId.get(id);if(eligible(p)&&!used.has(p.id)&&!limited.has(String(p.id)))return p}
+    return (team.roster||[]).filter(p=>POS_FALLBACK[role].includes(p.pos)&&eligible(p)&&!used.has(p.id)&&!limited.has(String(p.id))).sort((a,b)=>(b.trueNow||0)-(a.trueNow||0))[0]||null;
   };
   for(const role of Object.keys(D.OFF_ROLES)){const p=pick(role);if(p){used.add(p.id);lineup.off[role]=toBattlePlayer(p,role)}}
   for(const role of Object.keys(D.DEF_ROLES)){const p=pick(role);if(p){used.add(p.id);lineup.def[role]=toBattlePlayer(p,role)}}
-  return{lineup,missing};
+  for(const role of Object.keys(D.OFF_ROLES)){const p=pickBench(role);if(p)bench.off[role]=toBattlePlayer(p,role)}
+  for(const role of Object.keys(D.DEF_ROLES)){const p=pickBench(role);if(p)bench.def[role]=toBattlePlayer(p,role)}
+  return{lineup,bench,missing};
 }
 // A coordinator personality from the program's schemes and staff, so AI opponents play like themselves.
 function coachFromTeam(team){
@@ -91,7 +102,7 @@ function staffCommand(team){
   return{off:Number(team.staff?.OC?.playCall)>=80?1:0,def:Number(team.staff?.DC?.playCall)>=80?1:0};
 }
 function battleTeam(team,decks,info){
-  const {lineup,missing}=lineupFromTeam(team,info),coach=coachFromTeam(team);
+  const {lineup,bench,missing}=lineupFromTeam(team,info),coach=coachFromTeam(team);
   const excluded=new Set((info?.unavailableIds||[]).map(String)),eligible=p=>available(p)&&!excluded.has(String(p.id));
   // Keep the depth-chart starter first; never borrow a player already filling another role.
   const occupied=new Set([...Object.entries(lineup.off).filter(([r])=>r!=='RB').map(([,p])=>p.id),...Object.values(lineup.def).map(p=>p.id)]);
@@ -119,7 +130,7 @@ function battleTeam(team,decks,info){
   const programOn=info?.enabled!==false;
   coach.commandBonus=programOn?staffCommand(team):{off:0,def:0};
   return{id:team.id,name:team.name,short:String(team.name).slice(0,3).toUpperCase(),colors:[team.primary||'#2a3550',team.secondary||'#e8e2d0'],
-    ...(info?.rivalryBracketId?{rivalryBracketId:String(info.rivalryBracketId)}:{}),lineup,backfield,packageDepth,coach,specialists,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
+    ...(info?.rivalryBracketId?{rivalryBracketId:String(info.rivalryBracketId)}:{}),lineup,bench,backfield,packageDepth,coach,specialists,decks:decks||undefined,missing,edges:programOn?programEdges(team,info||{}):{off:[],def:[]}};
 }
 return{ROLE_MAP,POS_FALLBACK,toBattlePlayer,conditionsOf,lineupFromTeam,coachFromTeam,programEdges,staffCommand,battleTeam};
 });
