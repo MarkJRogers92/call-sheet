@@ -414,12 +414,13 @@ function renderProgressionControls(){
  for(const id of ['#simWeek','#seasonWeek']){$(id).disabled=!regular||!weekGate.allowed;$(id).title=weekHint}
  renderGateNote('#weekGateNote',weekGate,[],{extra:seasonGate.allowed?'Or use Sim Regular Season and your staff will decide.':''});
  $('#simSeason').disabled=!regular||!seasonGate.allowed;$('#simSeason').title=weekBlocked&&seasonGate.allowed?'Your staff will make the pending decisions each week.':'';
+ renderSeasonAdvance(u,seasonGate.allowed);
  const hub=$('#hubAdvance');hub.dataset.openingPreseason=preseason?'true':'false';hub.__beginSeason=beginSeason;
  if(preseason){hub.textContent='Begin Season';hub.disabled=false;hub.classList.add('recommended')}
  else{if(hub.textContent==='Begin Season')hub.textContent='Advance Week';hub.disabled=!weekGate.allowed;hub.classList.remove('recommended')}
 }
 function render(){
- const order=ranked(),u=selected();if(!u)return;ensureSeasonGoals(u);$('#seasonGoalsDashboard')&&($('#seasonGoalsDashboard').innerHTML=seasonGoalsHTML(u));const p=profiles(u),preseason=openingPreseason();
+ const order=ranked(),u=selected();if(!u||universe?.setup?.completed===false)return;ensureSeasonGoals(u);$('#seasonGoalsDashboard')&&($('#seasonGoalsDashboard').innerHTML=seasonGoalsHTML(u));const p=profiles(u),preseason=openingPreseason();
  $('#teamName').textContent=u.name;{const nick=globalThis.DynastyMascots?.nickname(u),eyebrow=$('#dashboard .program-masthead .eyebrow');if(eyebrow&&nick){eyebrow.textContent=`THE ${nick.toUpperCase()}`;eyebrow.dataset.nickname=nick}}const mm=$('.masthead-mark');if(mm){mm.innerHTML=teamLogoHTML(u.id,48);mm.classList.add('has-logo')}
  $('#teamMeta').textContent=`${u.conference} · ${u.offScheme} / ${u.defScheme} · Prestige ${u.prestige} · Ceiling ${u.program_ceiling}`;
  $('#teamMetrics').innerHTML=[['Offense',grade(p.offense)],['Defense',grade(p.defense)],['Scheme Fit',grade((p.offFit+p.defFit)/2)],['Development',grade(u.development)]].map(x=>`<div class="metric"><div class="small muted">${x[0]}</div><div class="v">${x[1]}</div></div>`).join('');

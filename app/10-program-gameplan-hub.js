@@ -335,6 +335,94 @@ function simWeek(skipDecisions=false){
 function announceUserPostseason(fromIndex){const u=selected(),games=universe.gameArchive||[];if(!u)return;let r=null;for(let i=games.length-1;i>=Math.max(0,fromIndex);i--){const g=games[i];if(g?.home?.id===u.id||g?.away?.id===u.id){r=g;break}}if(!r?.label)return;const home=r.home?.id===u.id,us=Number(r.score?.[home?'home':'away'])||0,them=Number(r.score?.[home?'away':'home'])||0,opp=(home?r.away:r.home)?.name||'opponent',won=us>them;setStatus(`${r.label} final: ${won?'W':'L'} ${us}-${them} ${home||r.venue==='Neutral site'?'vs':'at'} ${opp}.${won&&r.label==='National Championship'?' National champions!':''}`)}
 function weekResultStatus(week,u,g){if(!g?.score)return `Week ${week} complete.`;const home=g.home===u.name,us=home?g.score[1]:g.score[0],them=home?g.score[0]:g.score[1];return `Week ${week} final: ${g.winner===u.name?'W':'L'} ${us}-${them} ${home?'vs':'at'} ${home?g.away:g.home}.`}
 function simSeason(){const gate=guidanceActionEligibility('simulate-season');if(!gate.allowed){if(gate.blockers[0])setStatus(gate.blockers[0].message);return}while(universe.phase==='regular'){if(!delegateWeeklyDecisions(selected())){autosaveAfter('management');render();return}const week=universe.week;simWeek(true);if(universe.week===week)break}render()}
+function seasonAdvanceVisitor(r,t){
+ if(!r?.visit||!(r.stars>=5)||r.committed||(r.funnel?.season===universe.year&&r.funnel.cut))return false;
+ const owner=globalThis.DynastyRecruitingActions?.visitWeekendOwner?.(r);
+ return (!owner||owner===String(t.id))&&!recruitBlocked(t,r);
+}
+function seasonAdvanceStops(t=selected()){
+ if(!t||universe.phase!=='regular'||universe.week>=12)return [];
+ const remaining=(t.schedule||[]).filter(g=>!g.played&&g.week>universe.week);
+ const rivalry=rivalryGameFor(t);
+ const homeDates=new Set(remaining.filter(g=>g.home===t.name).map(g=>g.week));
+ const visitor=(universe.recruits||[]).filter(r=>homeDates.has(r.visitWeek)&&seasonAdvanceVisitor(r,t))
+  .sort((a,b)=>a.visitWeek-b.visitWeek||a.nationalRank-b.nationalRank)[0];
+ const stops=[];
+ if(remaining.includes(rivalry))stops.push({id:'rivalry',label:`Rivalry game · Week ${rivalry.week}`,week:rivalry.week});
+ if(visitor)stops.push({id:'visit',label:`5★ ${visitor.name} visits · Week ${visitor.visitWeek}`,week:visitor.visitWeek,recruitId:visitor.id,recruitName:visitor.name});
+ stops.push({id:'redshirt',label:'Next redshirt decision'});
+ return stops;
+}
+function seasonAdvanceLiveGame(){
+ const t=selected(),game=(t?.schedule||[]).find(g=>g.week===universe.week+1);
+ return !!universe.liveGameDay||!!(game&&universe.callSheet?.activeBattle?.seed===`card:${universe.year}:${game.week}:${t.id}`);
+}
+function advanceSeasonTo(id){
+ const team=selected(),gate=guidanceActionEligibility('simulate-season',team);
+ if(!gate.allowed){if(gate.blockers[0])setStatus(gate.blockers[0].message);return null}
+ if(seasonAdvanceLiveGame()){setStatus('Finish your current game before advancing to another week.');return null}
+ const target=seasonAdvanceStops(team).find(stop=>stop.id===id);
+ if(!target){setStatus('That stopping point is no longer available.');return null}
+ const startWeek=universe.week,games=[],commitsBefore=new Set((team.commits||[]).map(r=>r.id));
+ const eventsBefore=universe.events?.length||0;
+ let reason='';
+ while(universe.phase==='regular'&&universe.week<12){
+  if(id==='visit'){
+   const recruit=universe.recruits.find(r=>r.id===target.recruitId);
+   if(!seasonAdvanceVisitor(recruit,team)||recruit.visitWeek!==target.week){
+    reason=`${target.recruitName}’s visit is no longer on the calendar.`;
+    break;
+   }
+  }
+  if(universe.week+1===target.week){reason=id==='visit'?`${target.recruitName} visits this week.`:'Rivalry week is next.';break}
+  if(id==='redshirt'){
+   const pending=currentWeeklyDecisions(team).find(d=>['REDSHIRT_DECISION','PLAYER_REDSHIRT_DISCUSSION'].includes(d.type));
+   if(pending){reason=pending.title;break}
+  }
+  const week=universe.week;
+  if(!delegateWeeklyDecisions(team)){
+   reason='A Coach’s Desk decision needs your attention.';
+   break;
+  }
+  simWeek(true);
+  if(universe.week===week){reason='The current week needs your attention.';break}
+  const game=team.schedule.find(g=>g.week===week+1);
+  if(game?.played&&game.winner)games.push({week:game.week,opponent:game.home===team.name?game.away:game.home,won:game.winner===team.name});
+ }
+ const staffDecisions=(universe.events||[]).slice(eventsBefore).filter(e=>e.type==='WEEKLY_DECISION_RESOLVED'&&
+  e.schoolIds?.includes(team.id)&&e.metadata?.selectedBy==='staff'&&e.metadata.decisionType!=='WEEKLY_GAMEPLAN').length;
+ const report={year:universe.year,teamId:team.id,startWeek,endWeek:universe.week,reason:reason||'Regular season complete.',
+  games,staffDecisions,commits:(team.commits||[]).filter(r=>!commitsBefore.has(r.id)).map(r=>r.name)};
+ universe.seasonAdvanceReport=report;
+ autosaveAfter(games.length?'week':'management');
+ setStatus(report.reason);
+ render();
+ return report;
+}
+function renderSeasonAdvance(t=selected(),enabled=guidanceActionEligibility('simulate-season',t).allowed){
+ const panel=$('#seasonAdvance'),receipt=$('#seasonAdvanceReceipt');
+ if(!panel||!receipt)return;
+ const stops=seasonAdvanceStops(t),form=$('#seasonAdvanceForm'),select=$('#seasonAdvanceStop'),submit=$('#seasonAdvanceSubmit');
+ panel.hidden=!stops.length;
+ const previous=select.value;
+ select.innerHTML=stops.map(stop=>`<option value="${stop.id}">${gameEscape(stop.label)}</option>`).join('');
+ if(stops.some(stop=>stop.id===previous))select.value=previous;
+ select.disabled=submit.disabled=!enabled||!stops.length||seasonAdvanceLiveGame();
+ form.onsubmit=event=>{
+  event.preventDefault();
+  if(advanceSeasonTo(select.value))receipt.focus?.();
+ };
+ const report=universe.seasonAdvanceReport;
+ const current=report&&report.teamId===t?.id&&report.year===universe.year&&report.endWeek===universe.week;
+ receipt.hidden=!current;
+ if(!current){receipt.innerHTML='';return}
+ const weeks=report.endWeek-report.startWeek,wins=report.games.filter(g=>g.won).length;
+ const staff=report.staffDecisions? ` · Staff handled ${report.staffDecisions} ${report.staffDecisions===1?'decision':'decisions'}`:'';
+ const recap=weeks?`${weeks} ${weeks===1?'week':'weeks'} advanced · ${wins}–${report.games.length-wins}${staff}`:'';
+ const more=report.commits.length>3?` and ${report.commits.length-3} more`:'';
+ const commitments=report.commits.length?`New commitments: ${report.commits.slice(0,3).join(', ')}${more}.`:'';
+ receipt.innerHTML=`<strong>${gameEscape(report.reason)}</strong>${recap?`<span>${gameEscape(recap)}</span>`:''}${commitments?`<span>${gameEscape(commitments)}</span>`:''}`;
+}
 function confStand(c){return universe.teams.filter(t=>t.conference===c).map(t=>({t,s:rankingScore(t)})).sort((a,b)=>b.t.cw-a.t.cw||b.t.w-a.t.w||b.s-a.s).map(x=>x.t)}
 function simConferenceChampionships(){if(universe.phase!=='confReady')return;const archiveStart=(universe.gameArchive||[]).length;universe.latest=[];universe.confChamps=[];universe.playoffFieldIds=[];universe.playoffFieldUnavailable=false;allConfs().forEach(c=>{let s=confStand(c);if(s.length<2)return;let r=gameSim(s[0],s[1],true,false,{week:13,label:c+' Championship'}),w=T(r.winner);w.champ=true;universe.confChamps.push(w.id);universe.latest.push({...r,label:c+' Championship'})});ranked();freezePlayoffField();universe.phase='bowlReady';buildWeeklyHub();announceUserPostseason(archiveStart);autosaveAfter('postseason');render()}
 function seedField(){if(universe.playoffFieldUnavailable)return [];const frozen=playoffFieldFromIds();return frozen.length===16?frozen:selectPlayoffField()}
@@ -374,7 +462,17 @@ function recruitPitch(t,r){
  if(recruitBlocked(t,r))return -1e6;
  return recruitPitchBreakdown(t,r).reduce((total,[,value])=>total+value,0);
 }
-function scheduleVisit(r){const u=selected();if(r.visitWeek){r.visitWeek=null;r.visit=false;return}let g=u.schedule.find(g=>!g.played&&g.home===u.name&&g.week>=universe.week+1);r.visitWeek=g?g.week:Math.min(12,universe.week+1);r.visit=true;firstRecruitEvaluation(r,u);refreshScoutingIntel(r,u,5,'VISIT',true)}
+function scheduleVisit(r,week){
+ const t=selected(),reschedule=!!r.visitWeek;
+ if(reschedule&&week==null){r.visitWeek=null;r.visit=false;return}
+ const next=t.schedule.find(g=>!g.played&&g.home===t.name&&g.week>=universe.week+1);
+ r.visitWeek=week??next?.week??Math.min(12,universe.week+1);
+ r.visit=true;
+ if(!reschedule){firstRecruitEvaluation(r,t);refreshScoutingIntel(r,t,5,'VISIT',true)}
+}
+function scheduledVisitPitch(r,t,game){
+ return game?.played?(game.winner===t.name?13:5):7;
+}
 function decommitRecruit(r,reason){if(!r.committed)return false;let from=r.committed,t=T(from);r.committed=null;r.commitWeek=null;r.flippedFrom=from;universe.recruitClassCounts[from]=Math.max(0,classCommitCount(from)-1);if(t?.commits)t.commits=t.commits.filter(x=>x.id!==r.id);universe.decommitLog??=[];universe.decommitLog.push({year:universe.year,week:universe.week,id:r.id,name:r.name,pos:r.pos,stars:r.stars,from,to:null,reason});if(universe.decommitLog.length>300)universe.decommitLog.splice(0,universe.decommitLog.length-300);return true}
 function pressureCommit(r,u){if(universe.week<6||(r.commitWeek??0)+2>universe.week)return;let home=T(r.committed);if(!home)return;let mine=r.committed===u.name,boost=(r.targeted?10:0)+r.relationship*.12+recruitPromiseBoost(r,u)+(r.visitWeek===universe.week?7:0)+(mine?recruitKeepBoost(r,u):0);if(r.visitWeek===universe.week)r.visit=false;let hold=recruitPitch(home,r)+(mine?boost:0)+6;let best=null,bestPitch=-1e9;for(const t of sample(universe.teams,12)){if(t.name===r.committed||!canTakeCommit(t.name))continue;let v=recruitPitch(t,r)+(t.name===u.name?(r.targeted&&userMayCommit(r,u)?boost:-1e9):0);if(v>bestPitch){bestPitch=v;best=t}}if(!best)return;let gap=bestPitch-hold;r.pressure=Math.round(gap);r.challenger=gap>-14?best.name:null;if(gap<-30)return;if(gameplayRandom()<.07/(1+Math.exp(-(gap+11)/4))){let from=r.committed;decommitRecruit(r,'flip');r.interest=clamp(Math.round(best.name===u.name?Math.max(r.interest,70):40+gauss()*8),1,100);if(commitRecruit(r,best.name)){let e=universe.decommitLog[universe.decommitLog.length-1];if(e&&e.id===r.id)e.to=best.name}r.trend=0}}
 // --- v0.9.11: scholarship scarcity ------------------------------------------

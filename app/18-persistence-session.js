@@ -22,6 +22,7 @@ function autosaveBlocked(){
 }
 function autosaveAfter(kind){
  if(!AUTOSAVE_KINDS.includes(kind))throw new Error(`Unknown autosave checkpoint "${kind}".`);
+ if(universe?.setup?.completed===false)return;
  sessionCheckpointVersion++;
  if(!universe||!autosaveEnabled){cancelQueuedAutosave();setSessionSaveStatus('unsaved',autosaveEnabled?'No dynasty open.':'Autosave is off. Use Save to preserve your progress.');return}
  autosaveKind=kind;autosaveContext={target:universe,slot:activeSaveSlot};

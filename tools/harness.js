@@ -112,6 +112,7 @@ globalThis.__ENGINE__ = {
   recruitScoutingRecord: typeof recruitScoutingRecord === 'undefined' ? undefined : recruitScoutingRecord,
   scoutingHoursInfo: typeof scoutingHoursInfo === 'undefined' ? undefined : scoutingHoursInfo,
   recruitStaffVerdict: typeof recruitStaffVerdict === 'undefined' ? undefined : recruitStaffVerdict,
+  seasonAdvanceStops, advanceSeasonTo,
   gameplayRandom, syncGameplayRng, setGameplayRng(seed){activateGameplayRng(seed,universe);syncGameplayRng()},
   weeklyPrepFocusHTML: typeof v0102WeeklyFocusButton==='function'?v0102WeeklyFocusButton:undefined,
   ...(typeof v2GameDayUIRun==='function'?{gameDayRun:v2GameDayUIRun,gameDayPrepare:v2GameDayUIPrepare,gameDayRestore:v2GameDayUIRestore,gameDaySession:()=>v2InteractiveGameDay?.session,gameDayMode:()=>v2InteractiveGameDay?.mode,gameDayForget:()=>{v2InteractiveGameDay=null},gameDayBigStart:typeof v2GameDayUIStartBigMoments==='function'?v2GameDayUIStartBigMoments:undefined}:{}),

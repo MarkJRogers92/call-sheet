@@ -20,6 +20,17 @@
 .ra-history{display:flex;gap:6px;flex-wrap:wrap}
 .ra-history span{font-size:10px;border:1px solid var(--line);border-radius:999px;padding:3px 6px;color:var(--muted)}
 .recruiting-desk>small{color:var(--muted)}
+.ra-weekend,.ra-weekend-recap{border:1px solid var(--line);border-radius:9px;padding:8px 10px}
+.ra-weekend summary{cursor:pointer;font-size:.84rem;font-weight:700}
+.ra-weekend p,.ra-weekend small,.ra-visit-report,.ra-weekend-recap li{font-size:.76rem;line-height:1.4;color:var(--muted)}
+.ra-weekend p,.ra-visit-report{margin:5px 0}
+.ra-weekend-controls{display:flex;flex-wrap:wrap;align-items:end;gap:6px;margin:7px 0}
+.ra-weekend-controls label{display:grid;gap:4px;max-width:100%;min-width:0;font-size:.74rem}
+.ra-weekend-controls select{max-width:100%;min-width:0}
+.ra-weekend-controls button{font-size:.76rem;padding:6px 9px}
+.ra-weekend small{display:block}
+.ra-weekend-recap ul{margin:5px 0 0;padding-inline-start:17px}
+.ra-weekend-recap li+li{margin-top:4px}
 @media(max-width:700px){.ra-actions button{flex:1 1 auto}.ra-pitch{width:100%}.ra-pitch select{flex:1 1 auto;max-width:none}.recruiting-hours-strip button{margin-left:0;width:100%}}
 .ra-nav{display:grid;gap:5px;margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
 .ra-nav strong{font-size:1rem}

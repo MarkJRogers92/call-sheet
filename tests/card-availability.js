@@ -46,6 +46,6 @@ test('postseason card simulation honors eligibility and still records exactly on
 });
 test('unavailable nemesis players neither receive game edges nor trigger victory moments',async()=>{
  const {cg,u,me,CS}=await setup(),first=cg.launch(),side=first.userSide==='home'?'away':'home',opp=first[side],id=teamOf(CS,first,side).lineup.off.QB.id,p=opp.roster.find(x=>String(x.id)===id);
- p.recruitment={schoolId:opp.id,offerSchoolIds:[me.id,opp.id],topFiveSchoolIds:[me.id,opp.id]};p.redshirtActive=true;
+ p.recruitingMemory={recruitId:'rival-qb',season:u.year-1,schoolId:opp.id,pursuit:[{schoolId:me.id,action:'offer',finalist:true}]};p.redshirtActive=true;
  const cfg=cg.launch();assert.ok(!cfg.program[side].conds?.[p.id]);cg.programAwards({won:true,us:20,them:10,opp});assert.ok(!(u.callSheet.moments||[]).some(m=>/Should've signed/.test(m.text)));
 });

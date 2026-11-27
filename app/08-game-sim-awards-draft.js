@@ -37,7 +37,7 @@ function detailedGame(home,away,neutral=false,confOverride=null,context={}){
 function seasonScore(p,t){let s=p.stats||{},teamBonus=(t?.w||0)*1.5,base=p.perceived*.12;if(p.pos==='QB')return base+s.passYds*.010+s.passTD*2.4-s.int*1.4+(s.passAtt?((s.passComp/s.passAtt)-.58)*35:0)+(s.rushYds||0)*.018+(s.rushTD||0)*2-(s.fumbles||0)*.8+teamBonus;if(p.pos==='RB')return base+s.rushYds*.026+s.rushTD*3+(s.receptions||0)*.12+(s.recYds||0)*.012+(s.recTD||0)*1.6-(s.fumbles||0)*.8+teamBonus;if(['WR','TE'].includes(p.pos))return base+s.recYds*.028+s.recTD*3.1+(s.receptions||0)*.28-(s.drops||0)*.8+teamBonus;if(['EDGE','DT','LB','CB','S'].includes(p.pos))return base+s.tackles*.30+s.tfl*.65+s.sacks*4.7+s.pressures*.22+s.intDef*6.2+s.passBreakups*.45+teamBonus;if(['OT','OG','C'].includes(p.pos))return base+(s.snaps||0)*.012-(s.sacksAllowed||0)*2.8-(s.pressuresAllowed||0)*.32+playerSchemeFit(p,t)*.22+teamBonus;if(p.pos==='K')return base+(s.fgMade||0)*1.5-Math.max(0,(s.fgAtt||0)-(s.fgMade||0))*.8+teamBonus;if(p.pos==='P')return base+(s.punts||0)*.12+(s.punts?(s.puntYds/s.punts-40)*1.4:0)+teamBonus;return base+playerSchemeFit(p,t)*.25+teamBonus}
 function allActivePlayers(){let a=[];for(const t of universe.teams)for(const p of t.roster)a.push({p,t});return a}
 function awardOne(name,list,scoreFn=x=>seasonScore(x.p,x.t)){let w=list.slice().sort((a,b)=>scoreFn(b)-scoreFn(a))[0];if(!w)return null;return {name,playerId:w.p.id,playerName:w.p.name,team:w.t.name,pos:w.p.pos}}
-function projectedAwards(){let all=allActivePlayers(),off=all.filter(x=>OFF_POS.has(x.p.pos)&&!['K','P'].includes(x.p.pos)),def=all.filter(x=>!OFF_POS.has(x.p.pos));let awards=[];for(const x of [awardOne('National Player of the Year',all),awardOne('Offensive Player of the Year',off),awardOne('Defensive Player of the Year',def),awardOne('Quarterback of the Year',all.filter(x=>x.p.pos==='QB')),awardOne('Running Back of the Year',all.filter(x=>x.p.pos==='RB')),awardOne('Receiver of the Year',all.filter(x=>['WR','TE'].includes(x.p.pos))),awardOne('Lineman of the Year',all.filter(x=>['OT','OG','C'].includes(x.p.pos))),awardOne('Freshman of the Year',all.filter(x=>eligibilityBase(x.p)===0&&!x.p.redshirtActive))])if(x)awards.push(x);let coach=universe.teams.slice().sort((a,b)=>(b.w*7-b.prestige*.3)-(a.w*7-a.prestige*.3))[0];if(coach)awards.push({name:'Coach of the Year',playerId:null,playerName:coach.staff.HC.name,team:coach.name,pos:'HC'});return awards}
+function projectedAwards(){let all=allActivePlayers(),off=all.filter(x=>OFF_POS.has(x.p.pos)&&!['K','P'].includes(x.p.pos)),def=all.filter(x=>!OFF_POS.has(x.p.pos));let awards=[];for(const x of [awardOne('National Player of the Year',all),awardOne('Offensive Player of the Year',off),awardOne('Defensive Player of the Year',def),awardOne('Quarterback of the Year',all.filter(x=>x.p.pos==='QB')),awardOne('Running Back of the Year',all.filter(x=>x.p.pos==='RB')),awardOne('Receiver of the Year',all.filter(x=>['WR','TE'].includes(x.p.pos))),awardOne('Lineman of the Year',all.filter(x=>['OT','OG','C'].includes(x.p.pos))),awardOne('Freshman of the Year',all.filter(x=>eligibilityBase(x.p)===0&&!x.p.redshirtActive))])if(x)awards.push(x);const coachScore=t=>coachSeasonRecord(t).w*7-t.prestige*.3;let coach=universe.teams.slice().sort((a,b)=>coachScore(b)-coachScore(a))[0];if(coach)awards.push({name:'Coach of the Year',playerId:null,playerName:coach.staff.HC.name,team:coach.name,pos:'HC'});return awards}
 function finalizeSeasonHonors(){if(universe.awards[universe.year])return universe.awards[universe.year];let awards=projectedAwards();for(const a of awards){if(!a.playerId)continue;let f=findPlayer(a.playerId);if(f?.p){f.p.awards??=[];if(!f.p.awards.some(x=>x.year===universe.year&&x.name===a.name))f.p.awards.push({year:universe.year,name:a.name})}}universe.awards[universe.year]=awards;updateSeasonRecords();return awards}
 function updateSeasonRecords(){universe.records??={nationalSeason:{},nationalCareer:{}};universe.records.nationalSeason??={};for(const t of universe.teams){t.records??={};for(const p of t.roster){for(const [k,label] of Object.entries(RECORD_CATS)){let v=p.stats?.[k]||0;if(v>(universe.records.nationalSeason[k]?.value||0))universe.records.nationalSeason[k]={label,value:v,playerId:p.id,playerName:p.name,team:t.name,year:universe.year};if(v>(t.records[k]?.value||0))t.records[k]={label,value:v,playerId:p.id,playerName:p.name,year:universe.year}}}}}
 function updateCareerRecords(){universe.records??={nationalSeason:{},nationalCareer:{}};universe.records.nationalCareer??={};let all=[];for(const t of universe.teams)for(const p of t.roster)all.push({p,t:t.name});for(const p of universe.playerArchive||[])all.push({p,t:p.lastTeam||'—'});for(const x of all)for(const [k,label] of Object.entries(RECORD_CATS)){let v=x.p.career?.[k]||0;if(v>(universe.records.nationalCareer[k]?.value||0))universe.records.nationalCareer[k]={label,value:v,playerId:x.p.id,playerName:x.p.name,team:x.t,year:universe.year}}}
@@ -184,7 +184,21 @@ function rivalryHubItems(t){
 // The administration. Every AI program already lives with consequences — carousel() fires coaches
 // on admin_patience — while the controlled program never did. This is that same judgement, applied
 // to the program you run, on the same expectation scale so you are held to the AI's standard.
-function seasonExpectation(t){return clamp(Math.round(((t?.prestige??60)-30)/8),4,10)}
+function takeoverSeason(t){
+ const setup=universe?.setup,takeover=setup?.takeover;
+ return takeover&&t?.id===setup.programId&&takeover.year===universe.year?takeover:null;
+}
+function takeoverRegularRecord(t,takeover){
+ const record={w:0,l:0};
+ for(const g of t.schedule||[])if(g.played&&g.week>takeover.completedWeeks&&g.week<=12)record[g.winner===t.name?'w':'l']++;
+ return record;
+}
+function coachSeasonRecord(t,coach=t.staff?.HC){
+ const takeover=takeoverSeason(t),inherited=takeover&&takeover.coachId===coach?.id?takeover.inherited:null;
+ return {w:Math.max(0,(t.w||0)-(inherited?.w||0)),l:Math.max(0,(t.l||0)-(inherited?.l||0))};
+}
+function regularSeasonExpectation(t){return clamp(Math.round(((t?.prestige??60)-30)/8),4,10)}
+function seasonExpectation(t){const takeover=takeoverSeason(t);return takeover?takeover.inherited.w+takeover.targetWins:regularSeasonExpectation(t)}
 function ensureAdminState(t){
  if(!t)return null;
  t.adminConfidence??=clamp(Math.round(((t.admin_patience??60)*.6)+30),15,95);
@@ -224,6 +238,11 @@ function seasonGoalStatus(t,g,final=false){
  // Once the season is complete, on-field goals are settled; recruiting goals stay open until signing day.
  final=final||(universe.phase==='complete'&&g.type!=='classSize'&&g.type!=='bluechips');
  const played=(t.w||0)+(t.l||0),remaining=Math.max(0,12-played),late=(universe.week||0)>=8;
+ if(g.type==='takeoverWins'){
+  const takeover=takeoverSeason(t);if(!takeover)return{state:'pending',progress:'—'};
+  const {w,l}=takeoverRegularRecord(t,takeover),left=Math.max(0,12-takeover.completedWeeks-w-l);
+  return {state:w>=g.target?'complete':final?'failed':w+left<g.target?'at_risk':'on_track',progress:`${w}/${g.target} wins since the takeover`};
+ }
  if(g.type==='wins'){const done=(t.w||0)>=g.target,impossible=(t.w||0)+remaining<g.target,atRisk=!done&&(impossible||(played>=6&&((t.w||0)/Math.max(1,played))<(g.target/12)*.8));return{state:done?'complete':final?'failed':atRisk?'at_risk':'on_track',progress:`${t.w||0}/${g.target} wins`}}
  if(g.type==='rivalry'){const s=t.rivalry?.series,hasPlayed=s?.lastYear===universe.year;if(!hasPlayed)return{state:final?'failed':'on_track',progress:'Game pending'};return{state:s.lastResult==='W'?'complete':'failed',progress:s.lastResult==='W'?'Won rivalry':'Lost rivalry'}}
  if(g.type==='bluechips'){const n=(universe.recruits||[]).filter(r=>r.committed===t.name&&(r.stars||0)>=4).length,done=n>=g.target;return{state:done?'complete':final?'failed':late&&n<Math.ceil(g.target/2)?'at_risk':'on_track',progress:`${n}/${g.target} blue chips`}}
@@ -256,17 +275,19 @@ function programOverviewHTML(t){
 // an impatient board (25) moves roughly twice as fast as a patient one (78).
 function adminSeasonReview(t){
  ensureAdminState(t);
- const exp=seasonExpectation(t),diff=(t.w||0)-exp,
+ const takeover=takeoverSeason(t),record=takeover?takeoverRegularRecord(t,takeover):{w:t.w||0,l:t.l||0};
+ const exp=takeover?.targetWins??seasonExpectation(t),diff=record.w-exp,
   swing=clamp(1.6-((t.admin_patience??60)/100),.7,1.5),
   goalReview=evaluateSeasonGoals(t,true),
   titleBonus=(t.champ?14:0)+(conferenceChampionIdsFor().includes(t.id)?6:0),
   pull=diff*6*swing,delta=Math.round((pull<0?pull/gameSetting('boardPatience'):pull)+titleBonus+goalReview.adjustment);
  const before=t.adminConfidence;
  t.adminConfidence=clamp(before+delta,0,100);
- const review={year:universe.year,w:t.w||0,l:t.l||0,champ:!!t.champ,confChamp:conferenceChampionIdsFor().includes(t.id),expected:exp,delta,before,after:t.adminConfidence,
+ const review={year:universe.year,...record,...(takeover?{takeover:true}:{}),champ:!!t.champ,confChamp:conferenceChampionIdsFor().includes(t.id),expected:exp,delta,before,after:t.adminConfidence,
   goalAdjustment:goalReview.adjustment,goals:goalReview.results,label:adminConfidenceLabel(t.adminConfidence)};
- t.mandate=t.adminConfidence<40?{year:universe.year+1,wins:exp,
-  text:`The administration expects ${exp} wins in ${universe.year+1}.`}:null;
+ const nextTarget=regularSeasonExpectation(t);
+ t.mandate=t.adminConfidence<40?{year:universe.year+1,wins:nextTarget,
+  text:`The administration expects ${nextTarget} wins in ${universe.year+1}.`}:null;
  return review;
 }
 // The review in one sentence that adds up: the record against the target, what the season goals added or cost, and
@@ -274,7 +295,8 @@ function adminSeasonReview(t){
 function adminReviewSummary(t,review){
  const winPart=review.w===review.expected?`met the ${review.expected}-win target`:review.w>review.expected?`beat the ${review.expected}-win target by ${review.w-review.expected}`:`fell ${review.expected-review.w} short of the ${review.expected}-win target`;
  const missed=(review.goals||[]).filter(g=>g&&g.weight!=='Critical'&&g.state!=='complete').length,goalPart=review.goalAdjustment?`; season goals ${review.goalAdjustment>0?'added':'cost'} ${Math.abs(review.goalAdjustment)}${review.goalAdjustment<0&&missed?` (${missed} missed)`:''}`:'';
- return `${t.name} review: ${review.w}-${review.l} ${winPart}${goalPart}. Confidence ${review.before} to ${review.after} (${review.label}).`;
+ const contract=review.appointment==='permanent'?' The board awarded a permanent three-year contract.':review.appointment==='ended'?' The interim contract ended. Choose a new job.':'';
+ return `${t.name} review: ${review.w}-${review.l}${review.takeover?' since the takeover':''} ${winPart}${goalPart}. Confidence ${review.before} to ${review.after} (${review.label}).${contract}`;
 }
 // Applied to the controlled program only, and recorded so the tenure has a history.
 function reviewControlledProgram(t){
@@ -286,7 +308,13 @@ function reviewControlledProgram(t){
  if(universe.tenure.school!==t.name){closeTenure('stepped away');universe.jobOffers=[];
   universe.tenure={startYear:universe.year,school:t.name,seasons:[],ended:null,closed:false}}
  const review=adminSeasonReview(t);
- universe.tenure.seasons.push(review);
+ const coachedRecord=coachSeasonRecord(t);
+ const takeover=takeoverSeason(t),coach=t.staff.HC;
+ if(takeover?.appointment==='interim'&&takeover.coachId===coach.id&&universe.phase==='complete'){
+  takeover.appointment=review.appointment=review.w>=review.expected?'permanent':'ended';
+  if(review.appointment==='permanent'){coach.interim=false;coach.contractYears=3}
+ }
+ universe.tenure.seasons.push(review.takeover?{...review,...coachedRecord,boardRecord:{w:review.w,l:review.l}}:review);
  const order=universe.nextEventId++;
  universe.events??=[];
  universe.events.push({id:`EVT_${order}`,season:universe.year,week:universe.week,timestampOrder:order,
@@ -294,10 +322,10 @@ function reviewControlledProgram(t){
   recruitIds:[],gameIds:[],
   summary:adminReviewSummary(t,review),
   metadata:{...review}});
- if(t.adminConfidence<=0&&!universe.tenure.ended){
-  universe.tenure.ended={year:universe.year,record:`${review.w}-${review.l}`,
+ if((review.appointment==='ended'||(review.appointment!=='permanent'&&t.adminConfidence<=0))&&!universe.tenure.ended){
+  universe.tenure.ended={year:universe.year,record:`${coachedRecord.w}-${coachedRecord.l}`,
    seasons:universe.tenure.seasons.length};
-  closeTenure('let go');
+  closeTenure(review.appointment==='ended'?'Interim contract ended':'let go');
  }
  openCareerInvitations(t,review);
  if(typeof updateCareerMilestones==='function')updateCareerMilestones();
@@ -315,15 +343,16 @@ function reviewControlledProgram(t){
 function adminHubItems(t){
  if(!t)return[];
  ensureAdminState(t);
- const exp=seasonExpectation(t),played=(t.w||0)+(t.l||0),left=12-played,
-  reachable=(t.w||0)+left,conf=t.adminConfidence,out=[];
+ const takeover=takeoverSeason(t),{w,l}=takeover?takeoverRegularRecord(t,takeover):{w:t.w||0,l:t.l||0};
+ const exp=takeover?.targetWins??seasonExpectation(t),left=Math.max(0,12-(takeover?.completedWeeks||0)-w-l),
+  reachable=w+left,conf=t.adminConfidence,out=[];
  if(universe.week<3)return[];
  if(reachable<exp)out.push({type:'bad-news',tab:'program',importance:82,
   kicker:'ADMINISTRATION',main:`${exp} wins is now out of reach`,
-  sub:`${t.w}-${t.l} with ${left} to play · confidence ${conf} (${adminConfidenceLabel(conf)})${typeof adminOutlookModel==='function'&&adminOutlookModel(t)?.mode==='pace'?` → ${adminOutlookModel(t).projected} at this pace`:''}`});
+  sub:`${w}-${l} with ${left} to play · confidence ${conf} (${adminConfidenceLabel(conf)})${typeof adminOutlookModel==='function'&&adminOutlookModel(t)?.mode==='pace'?` → ${adminOutlookModel(t).projected} at this pace`:''}`});
  else if(conf<40)out.push({type:'alert',tab:'program',importance:72,
   kicker:'ADMINISTRATION',main:t.mandate?t.mandate.text:`The administration expects ${exp} wins`,
-  sub:`${t.w}-${t.l} · confidence ${conf} (${adminConfidenceLabel(conf)})`});
+  sub:`${w}-${l} · confidence ${conf} (${adminConfidenceLabel(conf)})`});
  // Early warning: the current pace would drop confidence into a worse band at the review.
  else if(typeof adminOutlookModel==='function'){const o=adminOutlookModel(t);if(o?.mode==='pace'&&o.projected<conf&&o.projectedLabel!==adminConfidenceLabel(conf))out.push({type:'alert',tab:'dashboard',importance:66,
   kicker:'ADMINISTRATION',main:`On pace to slip to ${o.projectedLabel}`,sub:`${o.projectedWins} projected wins against ${exp} expected · confidence ${conf} → ${o.projected}`})}

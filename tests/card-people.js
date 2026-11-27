@@ -17,7 +17,7 @@ test('a recruit who chose a rival plays up on money downs against you, labeled, 
   const {e,cg,u,me,CS}=await setup(931);
   const g=e.findUserGame(),opp=e.T(g.home===me.name?g.away:g.home),oppSide=g.home===me.name?'away':'home';
   const star=CS.adapter.lineupFromTeam(opp).lineup.off.QB,p=opp.roster.find(x=>String(x.id)===String(star.id));
-  p.recruitment={...(p.recruitment||{}),schoolId:opp.id,offerSchoolIds:[me.id,opp.id],topFiveSchoolIds:[opp.id,me.id]};
+  p.recruitingMemory={recruitId:'rival-qb',season:u.year-1,schoolId:opp.id,pursuit:[{schoolId:me.id,action:'offer',finalist:true}]};
   assert.equal(cg.isNemesis(p,opp,me),true);
   const cfg=cg.launch(),conds=cfg.program[oppSide].conds;
   assert.match(conds[p.id][0].src,/Nemesis/);assert.equal(conds[p.id][0].when,'money');
@@ -101,6 +101,62 @@ test('a real scholarship offer on the published final five becomes a nemesis on 
   assert.ok(p);assert.equal(cg.isNemesis(p,opp,me),true);
   assert.equal(cg.isNemesis(p,opp,others[0]),false,'being a finalist alone is not a scholarship offer');
   assert.match(cg.playerCard(p.id),/NEMESIS/);
+});
+
+test('a signed recruiting target earns a factual Game Day matchup and a bracket for this meeting',async()=>{
+  const {e,cg,u,me}=await setup(953),g=e.findUserGame(),opp=e.T(g.home===me.name?g.away:g.home);
+  const r=u.recruits.find(r=>!r.committed&&r.pos==='WR'),actions=globalThis.DynastyRecruitingActions;
+  assert.equal(actions.perform(r,me,'offer').ok,true);
+  assert.equal(actions.perform(r,me,'visit').ok,true);
+  assert.equal(e.commitRecruit(r,opp.name),true);
+  u.phase='complete';u.offseason=e.makeOffseasonState(u.year,'signing',['review','departures']);
+  e.offseasonEnrollment();
+  const p=opp.roster.find(p=>p.recruitingMemory?.recruitId===r.id);
+  assert.ok(p);p.name='Lee <Cross>';
+  assert.deepEqual(p.recruitingMemory.pursuit,[{schoolId:String(me.id),action:'visit',finalist:false}]);
+  p.recruitingMemory=JSON.parse(JSON.stringify(e.packPlayer(p))).recruitingMemory;
+  p.stats.games=4;p.stats.recYds=241;
+  u.phase='regular';
+  for(const key of Object.keys(opp.roleDepth))opp.roleDepth[key]=opp.roleDepth[key].filter(id=>id!==p.id);
+  assert.deepEqual(cg.recruitingMatchup().rows,[],'an available player outside the starting lineup stays off the preview');
+  opp.roleDepth.X.unshift(p.id);
+  const before=JSON.stringify(u),{rows,html}=cg.recruitingMatchup();
+  assert.equal(JSON.stringify(u),before,'reading the scouting preview makes no changes');
+  assert.equal(rows[0]?.role,'X');assert.equal(rows[0]?.bracket,true);
+  assert.match(html,/Lee &lt;Cross&gt;/);assert.match(html,/Your program arranged a campus visit/);
+  assert.match(html,/4 games · 241 receiving yards/);assert.doesNotMatch(html,/hosted him/);
+  const id=String(p.id);
+  assert.equal(cg.setRecruitingBracket(id,true),true);
+  u.callSheet=JSON.parse(JSON.stringify(u.callSheet));e.normalizeCallSheet(u);
+  let cfg=cg.launch();assert.equal(cfg.rivalry,false);assert.equal(cfg.program[cfg.userSide].rivalryBracketId,id);
+  assert.match(cg.recruitingMatchup().html,/aria-pressed="true">Clear bracket/);
+  u.callSheet.activeBattle={seed:cfg.seed};assert.equal(cg.setRecruitingBracket(id,false),false);
+  assert.doesNotMatch(cg.recruitingMatchup().html,/data-recruiting-bracket/);
+  u.callSheet.activeBattle=null;
+  p.redshirtActive=true;assert.deepEqual(cg.recruitingMatchup().rows,[]);
+  cfg=cg.launch();assert.equal(cfg.program[cfg.userSide].rivalryBracketId,undefined);
+  p.redshirtActive=false;
+  const past={...u.callSheet.rivalryPrep,match:'old game'};u.callSheet.rivalryPrep=past;
+  cfg=cg.launch();assert.equal(cfg.program[cfg.userSide].rivalryBracketId,undefined);
+  const memory=p.recruitingMemory;p.recruitingMemory={...memory,schoolId:me.id};
+  assert.deepEqual(cg.recruitingMatchup().rows,[],'a player who signed elsewhere cannot inherit this opponent tie');
+});
+
+test('a verified host receipt is distinguished from a booking, and legacy projections stay off Game Day',async()=>{
+  const {e,cg,u,me}=await setup(954),g=e.findUserGame(),opp=e.T(g.home===me.name?g.away:g.home);
+  const r=u.recruits.find(r=>!r.committed&&r.pos==='QB'),legacy=u.recruits.find(x=>x!==r&&!x.committed&&x.pos==='WR');
+  const rec={season:u.year,contacts:0,offered:true,grandfathered:true,history:[]};
+  r.recruitingActions={[me.id]:{...rec,visitWeekend:{receipt:{attended:true}}}};
+  legacy.recruitingActions={[me.id]:rec};legacy.funnel={season:u.year,top5:[opp.name,me.name]};
+  assert.equal(e.commitRecruit(r,opp.name),true);assert.equal(e.commitRecruit(legacy,opp.name),true);
+  u.phase='complete';u.offseason=e.makeOffseasonState(u.year,'signing',['review','departures']);e.offseasonEnrollment();
+  const p=opp.roster.find(p=>p.recruitingMemory?.recruitId===r.id),q=opp.roster.find(p=>p.recruitingMemory?.recruitId===legacy.id);
+  assert.ok(p);assert.ok(q);assert.deepEqual(q.recruitingMemory.offerSchoolIds,[opp.id,me.id]);
+  assert.equal(q.recruitingMemory.pursuit,undefined);assert.equal(cg.isNemesis(q,opp,me),false);
+  u.phase='regular';opp.roleDepth.QB1.unshift(p.id);opp.roleDepth.X.unshift(q.id);
+  const {rows,html}=cg.recruitingMatchup();assert.deepEqual(rows.map(x=>x.id),[String(p.id)]);
+  assert.match(html,/Your program hosted him on campus/);assert.match(html,/No recorded appearances/);
+  assert.match(html,/Review Pressure Package prep/);assert.equal(cg.setRecruitingBracket(String(p.id),true),false);
 });
 
 test('a prospect previews an unearned signature from his public style, without minting it',async()=>{

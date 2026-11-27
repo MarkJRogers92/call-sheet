@@ -55,7 +55,7 @@ function renderProgramAttributes(u){
 // Wins against what the administration expected, with its confidence as a line: direction at a
 // glance, from the tenure records the game already keeps (no extra save data).
 function programTrendsHTML(){
- const rows=(universe.tenure?.seasons||[]).slice(-10);
+ const rows=(universe.tenure?.seasons||[]).slice(-10).map(row=>row.boardRecord?{...row,...row.boardRecord}:row);
  const head='<div class="eyebrow">THIS TENURE</div><h3>Season by season</h3>';
  if(rows.length<2)return `${head}<div class="muted">Complete two seasons to see the trend.</div>`;
  const W=Math.max(320,rows.length*56+48),H=130,top=14,base=H-24,step=(W-40)/rows.length,barW=Math.min(30,step*.56);
@@ -274,6 +274,61 @@ function recruitmentFallback(t,pos){
  return{id:prospect.id,name:prospect.name,interest:Math.round(prospect.interest),onBoard:!!prospect.targeted,
   read:verdict?verdict.label:null,confidence:verdict?verdict.confidence:null};
 }
+function successionAuditionStage(done){
+ if(universe.phase==='regular'||openingPreseason())return 'season';
+ if(universe.phase==='complete'&&done.includes('departures')&&['spring','fall','preseason'].includes(universe.offseason?.phase))return 'camp';
+ return null;
+}
+function successionAuditionReady(p){return gameAvailable(p)&&weeklyPlayerPlan(p)?.role!=='limited'}
+function successionAuditionLive(){return !!(universe.liveGameDay||universe.callSheet?.activeBattle)}
+function successionAuditionReports(t,stage){
+ const all=Array.isArray(t.successionAuditions)?t.successionAuditions:[];
+ return all.filter(report=>report?.outgoing&&Array.isArray(report.players)&&report.players.length===2&&report.players.every(p=>p?.id)&&(
+  report.year===universe.year&&report.stage===stage||
+  stage==='season'&&report.year===universe.year-1&&report.stage==='camp'&&(!report.selectedId||report.selectedWeek===universe.week)
+ ));
+}
+function successionAuditionOptions(t,roleId,reserve,outgoing,stage){
+ const CS=globalThis.CallSheet,role=ROLE_BY_ID[roleId],roleKey=Object.keys(CS?.adapter?.ROLE_MAP||{}).find(key=>CS.adapter.ROLE_MAP[key]===roleId);
+ if(!stage||!reserve||!roleKey||!CS.battle?.practiceRoleReps)return null;
+ const otherRoles=new Set(successionStarters(t).filter(row=>row.roleId!==roleId).map(row=>row.id));
+ const eligible=p=>p&&role.eligible.includes(p.pos)&&!otherRoles.has(p.id)&&successionAuditionReady(p);
+ const opponent=stage==='season'?t.roster.find(p=>p.id===outgoing.id)
+  : (t.roleDepth?.[roleId]||[]).map(id=>t.roster.find(p=>p.id===id)).find(p=>eligible(p)&&p.id!==reserve.id);
+ if(!eligible(reserve)||!eligible(opponent)||opponent.id===reserve.id)return{reason:'Two available players are needed for first-team reps.'};
+ if(successionAuditionLive())return{reason:'Finish the live game before running practice.'};
+ return{roleKey,candidates:[reserve,opponent]};
+}
+function updateSuccessionAudition(roleId,chosenId){
+ const t=selected();if(!t||successionAuditionLive())return false;
+ const done=universe.phase==='complete'&&universe.offseason?.year===universe.year?universe.offseason.completed||[]:[];
+ const stage=successionAuditionStage(done),row=rosterSuccession(t,done).find(r=>r.roleId===roleId),role=ROLE_BY_ID[roleId];
+ if(!row||!stage||!role)return false;
+ if(chosenId!==undefined){
+  const report=successionAuditionReports(t,stage).find(r=>r.outgoing.roleId===roleId);
+  const p=t.roster.find(p=>p.id===chosenId);
+  if(!report||!row.audition?.choices.some(x=>x.id===chosenId)||!successionAuditionReady(p))return false;
+  t.roleDepth[roleId]=[p.id,...(t.roleDepth[roleId]||[]).filter(id=>id!==p.id)];
+  report.selectedId=p.id;
+  report.selectedWeek=universe.week;
+  setStatus(`${p.name} is listed first at ${role.label}.`);
+ }else{
+  if(row.audition?.report)return false;
+  const reserve=t.roster.find(p=>p.id===row.understudy?.id),options=successionAuditionOptions(t,roleId,reserve,row.outgoing,stage);
+  if(!options?.candidates)return false;
+  const CS=globalThis.CallSheet,{candidates,roleKey}=options;
+  const unavailableIds=t.roster.filter(p=>!successionAuditionReady(p)||candidates.includes(p)).map(p=>p.id);
+  const {lineup}=CS.adapter.lineupFromTeam(t,{unavailableIds});
+  const players=candidates.map(p=>CS.adapter.toBattlePlayer(p,roleKey));
+  const result=CS.battle.practiceRoleReps({lineup,role:roleKey,players,seed:`succession-practice:${universe.year}:${t.id}:${roleId}`});
+  if(!result){setStatus('The staff could not field a full practice group for these reps.');return false}
+  const report={year:universe.year,stage,outgoing:row.outgoing,players:result.map((r,i)=>({...r,id:candidates[i].id,name:candidates[i].name}))};
+  t.successionAuditions=[...(Array.isArray(t.successionAuditions)?t.successionAuditions:[]).filter(r=>r?.year>=universe.year-1),report];
+  setStatus(`${role.label} audition complete. Review the practice reps before picking a starter.`);
+ }
+ autosaveAfter('management');
+ return true;
+}
 function rosterSuccession(t,done){
  const projected=p=>eligibilityBase(p)>=3&&!(p.redshirtActive&&canRedshirt(p));
  const departed=done.includes('departures'),roster=new Map((t.roster||[]).map(p=>[p.id,p])),starters=successionStarters(t);
@@ -281,21 +336,39 @@ function rosterSuccession(t,done){
  const leaving=departed
   ? (Array.isArray(saved)?saved:[])
   : starters.filter(row=>projected(roster.get(row.id))).map(row=>({...row,reason:'Eligibility ends'}));
+ const stage=successionAuditionStage(done),reports=successionAuditionReports(t,stage);
+ const prior=new Map(reports.map(report=>[report.outgoing.roleId,report]));
+ const auditionRows=[...leaving,...reports.filter(report=>!leaving.some(row=>row.roleId===report.outgoing.roleId)).map(report=>report.outgoing)];
  const returning=new Map([...roster].filter(([,p])=>departed||!projected(p)));
  const spring=universe.developmentState?.year===universe.year?universe.developmentState.springReport||[]:[];
  const observations=new Map(spring.map(row=>[row.id,row.perceivedDelta]));
  const recruitingOpen=universe.phase==='regular'||(universe.phase==='preseason'&&universe.week===0);
- const rows=leaving.flatMap(outgoing=>{
+ const rows=auditionRows.flatMap(outgoing=>{
   const role=ROLE_BY_ID[outgoing.roleId];
   if(!role||!role.eligible.includes(outgoing.pos))return [];
   const occupied=new Set(starters.filter(row=>row.roleId!==role.id).map(row=>row.id));
   const depth=t.roleDepth?.[role.id]||[];
-  const reserve=depth.map(id=>returning.get(id)).find(p=>p&&!occupied.has(p.id)&&role.eligible.includes(p.pos));
+  const report=prior.get(role.id);
+  const reserve=(report&&returning.get(report.players[0].id))||depth.map(id=>returning.get(id)).find(p=>p&&!occupied.has(p.id)&&role.eligible.includes(p.pos));
   const understudy=reserve?{id:reserve.id,name:reserve.name,year:eligibilityLabel(reserve),rating:Math.round(reserve.perceived||0),
    training:reserve.trainingFocus||'Balanced',springDelta:observations.get(reserve.id)??null}:null;
-  return[{roleId:role.id,label:role.label,outgoing,understudy}];
+  const options=!report&&successionAuditionOptions(t,role.id,reserve,outgoing,stage);
+  const canChoose=report&&!report.selectedId&&report.players.every(p=>p.assignments>0)&&!successionAuditionLive()&&stage==='season';
+  const choices=canChoose?report.players.filter(x=>{
+   const p=roster.get(x.id);return successionAuditionReady(p)&&role.eligible.includes(p.pos)&&!occupied.has(p.id);
+  }).map(({id,name})=>({id,name})):[];
+  let next=null;
+  if(report&&!report.selectedId&&!choices.length){
+   if(stage==='camp')next='Pick a starter when the next season opens.';
+   else if(successionAuditionLive())next='Finish the live game before choosing.';
+   else if(report.players.some(p=>!p.assignments))next='The staff needs contested duels from both players to compare them.';
+   else next='A player must be available and eligible for this role to start.';
+  }
+  const audition=report?{report:{...report,outgoing:{...report.outgoing},players:report.players.map(p=>({...p}))},choices,next}
+   :options?{ready:!!options.candidates,reason:options.reason}:null;
+  return[{roleId:role.id,label:role.label,outgoing,understudy,audition}];
  });
- return rows.sort((a,b)=>Number(!b.understudy)-Number(!a.understudy)
+ return rows.sort((a,b)=>Number(prior.has(b.roleId))-Number(prior.has(a.roleId))||Number(!b.understudy)-Number(!a.understudy)
    || (b.outgoing.rating-(b.understudy?.rating||0))-(a.outgoing.rating-(a.understudy?.rating||0))
    || b.outgoing.rating-a.outgoing.rating).slice(0,3).map(row=>({...row,
     fallback:recruitingOpen?recruitmentFallback(t,row.outgoing.pos):null,recruitingOpen
@@ -303,7 +376,7 @@ function rosterSuccession(t,done){
 }
 // Staff-facing depth, known scouting reads and observed camp results only.
 if(typeof globalThis!=='undefined')globalThis.DynastyRecruitingNeeds=Object.freeze({posCounts:POS_COUNTS,
- openRecruit:id=>showRecruitProfile(id),openDevelopment:()=>goToTab('development'),snapshot:({includeSuccession=false}={})=>{
+ openRecruit:id=>showRecruitProfile(id),openDevelopment:()=>goToTab('development'),audition:updateSuccessionAudition,snapshot:({includeSuccession=false}={})=>{
  if(!universe)return null;const t=selected();if(!t)return null;
  const committed={},targeted={},watched={};
  for(const r of universe.recruits||[]){if(r.committed===t.name)committed[r.pos]=(committed[r.pos]||0)+1;else if(r.targeted&&!r.committed)targeted[r.pos]=(targeted[r.pos]||0)+1}

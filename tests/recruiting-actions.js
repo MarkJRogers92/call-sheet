@@ -16,7 +16,8 @@ function fixture(over={}){
   recruitBlocked:over.blocked||(()=>false),
   growRecruiterRelationship:()=>{calls.grown++},
   ensureTargeted:r=>{r.targeted=true},
-  scheduleVisit:r=>{calls.visit++;r.visitWeek=universe.week+1;r.visit=true},
+  scheduleVisit:(r,week)=>{calls.visit++;r.visitWeek=week??universe.week+1;r.visit=true},
+  isRivalry:(_t,g)=>!!g.rival,
   topRivals:(r,t,n)=>(over.rivals||['Kentucky Commonwealth','Texas Tech Plains','Ohio Valley']).slice(0,n),
   // Programs as he ranks them this week. Yours stands where `over.userScore` puts it before his interest is added.
   rankTeams:(r,t)=>[['Kentucky Commonwealth',100],['Texas Tech Plains',95],['Ohio Valley',90],['Alpha State',85],['Beta Tech',80],['Gamma University',70],[t.name,over.userScore??60]]
@@ -28,6 +29,65 @@ function fixture(over={}){
 }
 const team=(over={})=>({id:1,name:'Chicago Metropolitan',prestige:70,nil:60,development:65,academics:55,facilities:60,fan_support:58,w:3,l:1,resources:70,staff:{RC:{recruiting:80},HC:{recruiting:70,loyalty:65}},...over});
 const recruit=(id='R1',over={})=>({id,name:`Recruit ${id}`,pos:'WR',stars:3,priority:'Prestige',interest:30,relationship:10,committed:null,targeted:false,nationalRank:50,...over});
+
+test('priority weekends book only actual open home dates, cap guests and allow free rebooking',()=>{
+ const {universe,api}=fixture(),t=team(),home=t.name;
+ t.schedule=[
+  {week:2,home,away:'Northern State',played:true},
+  {week:3,home:'Away State',away:home},
+  {week:4,home,away:'Western State'},
+  {week:8,home,away:'Rival State',rival:true}
+ ];
+ const guests=['QB','WR','OT','RB'].map((pos,i)=>recruit(String(i),{pos}));
+ universe.recruits=guests;
+ assert.deepEqual(api.visitDates(t).map(d=>[d.week,d.rival]),[[4,false],[8,true]]);
+ assert.equal(api.perform(guests[0],t,'visit',{visitWeek:3}).ok,false);
+ for(const r of guests.slice(0,3))assert.equal(api.perform(r,t,'visit',{visitWeek:4}).cost,5);
+ assert.equal(api.hoursLeft(t),api.weekInfo(t).budget-15);
+ assert.equal(api.perform(guests[3],t,'visit',{visitWeek:4}).ok,false);
+ assert.equal(api.perform(guests[0],team({id:2,name:'Other School',schedule:t.schedule}),'visit',{visitWeek:8}).ok,false);
+ const interest=guests[0].interest,relationship=guests[0].relationship;
+ assert.equal(api.perform(guests[0],t,'visit',{visitWeek:8}).cost,0);
+ assert.equal(api.hoursLeft(t),api.weekInfo(t).budget-15);
+ assert.equal(guests[0].relationship,relationship);
+ assert.equal(guests[0].interest,interest);
+ assert.equal(api.perform(guests[3],t,'visit',{visitWeek:4}).cost,5);
+ assert.equal(api.cancelWeekend(guests[3],t).ok,true);
+ assert.equal(api.cancelWeekend(guests[3],t).ok,false);
+ assert.equal(guests[3].visitWeek,null);
+ assert.equal(api.hoursLeft(t),api.weekInfo(t).budget-20);
+});
+
+test('saved weekend attendance pairs eligible guests once and records actual interest movement',()=>{
+ const {universe,api}=fixture(),t=team(),home=t.name;
+ t.schedule=[{week:4,home,away:'Rival State',rival:true},{week:6,home,away:'Later State'}];
+ const guests=['QB','WR','WR'].map((pos,i)=>recruit(String(i),{pos}));
+ universe.recruits=guests;
+ for(const r of guests)assert.ok(api.perform(r,t,'visit',{visitWeek:4}).ok);
+ universe.recruits=JSON.parse(JSON.stringify(guests));
+ const [qb,wr,drop]=universe.recruits;
+ assert.equal(api.visitWeekendOwner(qb),String(t.id));
+ assert.equal(api.visitWeekend(qb,t).week,4);
+ drop.committed='Other School';
+ universe.week=4;t.schedule[0].played=true;t.schedule[0].winner=t.name;
+ const rows=api.prepareWeekend(t);
+ assert.equal(api.weekendPitch(rows,qb,t,13),17);
+ assert.equal(api.weekendPitch(rows,wr,t,13),17);
+ qb.interest+=4;wr.interest-=2;
+ qb.visit=wr.visit=false;
+ const [first,second,withdrawn]=api.finishWeekend(rows);
+ assert.equal(first.pair,'QB/WR pairing');
+ assert.equal(first.pairBonus,2);
+ assert.equal(first.rivalBonus,2);
+ assert.equal(first.interestDelta,4);
+ assert.equal(second.interestDelta,-2);
+ assert.match(withdrawn.reason,/committed to other school/i);
+ assert.equal(withdrawn.attended,false);
+ assert.equal(drop.visitWeek,null);
+ assert.equal(api.prepareWeekend(t).size,0);
+ assert.equal(api.weekendPitch(new Map(),qb,t,13),0);
+ assert.equal(api.perform(qb,t,'visit',{visitWeek:6}).ok,false);
+});
 
 test('the weekly recruiting budget is bounded and follows the recruiting staff',()=>{
  const {api}=fixture();
@@ -713,6 +773,33 @@ async function engine(seed){
  e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
  return{e,A:globalThis.DynastyRecruitingActions,team:()=>e.universe.teams.find(x=>x.name==='Chicago Metropolitan')};
 }
+
+test('a saved priority weekend resolves against the real home result during weekly recruiting',async()=>{
+ const {e,A,team}=await engine(713),t=team(),u=e.universe,date=A.visitDates(t)[0];
+ const guests=['QB','WR'].map(pos=>u.recruits.find(r=>r.pos===pos));
+ assert.ok(date&&date.week<=4,'the fixture starts recruiting before decisions are announced');
+ for(const r of guests)assert.ok(A.perform(r,t,'visit',{visitWeek:date.week}).ok);
+ const restored=JSON.parse(JSON.stringify(e.packUniverse(u)));
+ e.universe=restored;e.normalizeUniverse();
+ for(let week=0;week<date.week;week++)e.simWeek(true);
+ assert.equal(e.universe.week,date.week);
+ const school=team(),game=school.schedule.find(g=>g.week===date.week);
+ assert.ok(game.played);
+ const base=game.winner===school.name?13:5;
+ assert.equal(school.recruitingLastWeek.visits.length,2);
+ const receipts=guests.map(p=>{
+  const r=e.universe.recruits.find(x=>x.id===p.id);
+  const receipt=A.visitWeekend(r,school).receipt;
+  assert.equal(r.visit,false);
+  assert.equal(receipt.attended,true);
+  assert.equal(receipt.pitch,base+2+(date.rival?2:0));
+  assert.equal(receipt.interest,r.interest);
+  return receipt;
+ });
+ e.advanceRecruiting();
+ const byRecruit=rows=>new Map(rows.map(row=>[row.id,row]));
+ assert.deepEqual(byRecruit(school.recruitingLastWeek.visits),byRecruit(receipts));
+});
 
 test('a new universe is stamped as using the desk, so nothing is grandfathered',async()=>{
  const {e}=await engine(7101);

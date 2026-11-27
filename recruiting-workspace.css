@@ -63,6 +63,11 @@
 .roster-succession-card h5{margin:0;font-size:14px}
 .roster-succession-card p{margin:7px 0;font-size:12px;line-height:1.35}
 .roster-succession-card .roster-outlook-actions button{min-height:44px}
+.roster-succession-card [data-succession-audition]{display:block;width:100%;min-height:44px;margin-top:8px}
+.succession-audition{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.succession-audition h6{margin:0;font-size:13px}
+.succession-audition p{font-weight:400;letter-spacing:normal;text-transform:none}
+.succession-audition ul{display:grid;gap:6px;margin:8px 0;padding-left:16px;font-size:12px}
 
 #recruitingNeeds .roster-outlook-note{font-size:12px;font-weight:400;line-height:1.5;letter-spacing:normal;text-transform:none;color:var(--muted)}
 

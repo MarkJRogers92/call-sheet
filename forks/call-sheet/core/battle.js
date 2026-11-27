@@ -1796,6 +1796,41 @@ function practiceCoachedSnap(b,tactic){
   return{actual:verdict?.result||snapResultLabel(sampled),detail:verdict?.detail};
 }
 
+// Two players run the same eight scripted snaps with the same teammates and draws. Count only
+// assignments that reached their duel. A lost protection/blocking Gate can end the rep early.
+function practiceRoleReps({lineup,role,players,seed}){
+  const side=Object.hasOwn(D.OFF_ROLES,role)?'off':Object.hasOwn(D.DEF_ROLES,role)?'def':null;
+  if(!side||players?.length!==2||!(lineup?.off?.QB||role==='QB'))return null;
+  const plays=[...new Set([...D.DEFAULT_DECKS.off.base,...D.DEFAULT_DECKS.off.wrinkles])];
+  const calls=D.DEFAULT_DECKS.def.base;
+  const situations=[{down:1,distance:10,field:30},{down:2,distance:6,field:45},
+    {down:3,distance:4,field:62},{down:3,distance:8,field:72}];
+  const roles=`${side}Roles`,script=plays.flatMap((id,i)=>{
+    const play=D.PLAYS[id],call=D.CALLS[calls[i%calls.length]],situation=situations[i%situations.length];
+    const ctx={...lineup,[side]:{...lineup[side],[role]:players[0]},play,call,situation};
+    return R.buildSnap(ctx).duels.some(d=>d[roles].includes(role))?[ctx]:[];
+  });
+  if(!script.length)return null;
+  return players.map(player=>{
+    const result={snaps:0,assignments:0,wins:0,conversions:0};
+    for(let i=0;i<8;i++){
+      const ctx=script[i%script.length],rng=DynastyRng.create(`${seed}:${i}`);
+      const snap=R.buildSnap({...ctx,[side]:{...lineup[side],[role]:player},cornerRoll:rng.next()});
+      const out=R.resolve(snap,rng,ctx.situation),yards=out.turnover==='interception'?0:out.yards;
+      result.snaps++;
+      if(!out.turnover&&yards>=ctx.situation.distance)result.conversions++;
+      for(const [index,duel] of snap.duels.entries()){
+        if(duel[roles].includes(role)){
+          result.assignments++;
+          if(out.wins[index]===(side==='off'))result.wins++;
+        }
+        if(index===0&&!out.wins[0])break;
+      }
+    }
+    return result;
+  });
+}
+
 // A reward tryout uses the players from a legal game snap, then rolls one isolated practice rep.
 function tryRewardCard({battle,team,seed},id){
   const card=D.PLAYS[id]||D.CALLS[id]||D.TACTICS[id],user=battle?.user||'home';
@@ -2882,5 +2917,5 @@ function duelTally(b){
   }
   return out;
 }
-return{driveSummary,delegatedRecap,driveLog,tendencyCounts,covTendFor,setupProgress,canRedraw,redrawCost,setupCue,equippedComboSetup,lookCertainty,snapVerdict,coachedSnapReview,practiceCoachedSnap,DRIVE_CHALLENGES,THREE_DRIVE_CHALLENGE,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,quickForecast,quickTactics,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,comboRead,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,counterBadge,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
+return{driveSummary,delegatedRecap,driveLog,tendencyCounts,covTendFor,setupProgress,canRedraw,redrawCost,setupCue,equippedComboSetup,lookCertainty,snapVerdict,coachedSnapReview,practiceCoachedSnap,practiceRoleReps,DRIVE_CHALLENGES,THREE_DRIVE_CHALLENGE,createChallenge,challengeResult,setupLook,dressPackage,packageLineup,archivedDrive,replayDrive,tryRewardCard,sameLookPair,seasonRecap,callFilm,duelSum,filmFog,scoutedForecast,quickForecast,quickTactics,lastCallRecap,lastUserCall,VERSION,HEADSET_RULES,headsetSettings,sidelineOptions,setSideline,revealedThreat,GROUPINGS,setGrouping,groupingFor,groupingOptions,bracketOptions:R.bracketOptions,kickerEdge,punterEdge,decidingMoments,comboFor,comboRead,create,advance,submit,preview,save,load,simulate,offOptions,defOptions,leanFor,presumedCall,lookFor,duelTally,BACKFIELD_MODES,setBackfield,snapLineup,leanRead,counterBadge,callReason,tacticRead,coachingRead,explainSnap,matchupStory,postgameTakeaway,adaptationRead,snapDecisions};
 });

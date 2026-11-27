@@ -29,10 +29,22 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
   else{const table=tab.querySelector(':scope > .table-wrap');if(table)table.insertAdjacentElement('beforebegin',host);else tab.append(host)}
   return host;
  }
- function successionHTML(rows,year){
+ function auditionHTML(audition,roleId,label){
+  if(!audition)return '';
+  if(audition.ready)return `<button type="button" data-succession-audition="${esc(roleId)}" aria-label="Run first-team audition for ${esc(label)}">Run first-team audition</button>`;
+  if(!audition.report)return `<p class="small muted">${esc(audition.reason)}</p>`;
+  const {report,choices,next}=audition,chosen=report.players.find(p=>p.id===report.selectedId);
+  return `<div class="succession-audition" tabindex="-1"><h6>First-team audition</h6>
+   <p class="small muted">Same eight scripted snaps per player.</p>
+   <ul>${report.players.map(p=>`<li><strong>${esc(p.name)}</strong> · ${esc(p.wins)}/${esc(p.assignments)} duels won · ${esc(p.conversions)}/${esc(p.snaps)} offense conversions</li>`).join('')}</ul>
+   ${chosen?`<p>Depth chart choice · ${esc(chosen.name)}</p>`:''}
+   ${next?`<p class="small muted">${esc(next)}</p>`:''}
+   <div class="roster-outlook-actions">${choices.map(p=>`<button type="button" data-succession-pick="${esc(roleId)}" data-audition-player="${esc(p.id)}">Start ${esc(p.name)}</button>`).join('')}</div></div>`;
+ }
+ function successionHTML(rows){
   if(!rows?.length)return '';
-  return `<section class="roster-succession" aria-labelledby="rosterSuccessionTitle"><h4 id="rosterSuccessionTitle">${esc(year+1)} starter succession</h4>
-   <div class="roster-succession-grid">${rows.map(({roleId,label,outgoing,understudy,fallback,recruitingOpen})=>{
+  return `<section class="roster-succession" aria-labelledby="rosterSuccessionTitle"><h4 id="rosterSuccessionTitle">Starter succession</h4>
+   <div class="roster-succession-grid">${rows.map(({roleId,label,outgoing,understudy,fallback,recruitingOpen,audition})=>{
     const spring=Number.isFinite(understudy?.springDelta)?` · Spring staff grade ${understudy.springDelta>0?'+':''}${understudy.springDelta}`:'';
     const fallbackRead=fallback?.read?` · ${esc(fallback.read)}${Number.isFinite(fallback.confidence)?` · ${fallback.confidence}% scouting confidence`:''}`:'';
     return `<article class="roster-outlook-position roster-succession-card" data-succession-role="${esc(roleId)}">
@@ -43,7 +55,7 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
      <div class="roster-outlook-actions">
       ${understudy?`<button type="button" data-succession-training="${esc(understudy.id)}" aria-label="Training for ${esc(understudy.name)}">Open training</button>`:''}
       ${fallback?`<button type="button" data-succession-recruit="${esc(fallback.id)}" aria-label="Recruiting file for ${esc(fallback.name)}">Open recruit</button>`:recruitingOpen?`<button type="button" data-need-current="${esc(outgoing.pos)}">Browse ${esc(outgoing.pos)} recruits</button>`:''}
-     </div></article>`;
+     </div>${auditionHTML(audition,roleId,label)}</article>`;
    }).join('')}</div></section>`;
  }
  function render(){
@@ -58,7 +70,7 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
   node.querySelector('#recruitingNeedsCount').textContent=thin.length
    ?`${thin.length} position group${thin.length===1?'':'s'} thin for ${snap.team}`
    :`No position group is thin for ${snap.team}`;
-  node.querySelector('#recruitingSuccession').innerHTML=successionHTML(snap.succession,snap.year);
+  node.querySelector('#recruitingSuccession').innerHTML=successionHTML(snap.succession);
   node.querySelector('#recruitingNeedsRows').innerHTML=rows.map(x=>`<article class="roster-outlook-position" data-outlook-pos="${esc(x.pos)}"${x.gap?` data-need-pos="${esc(x.pos)}"`:""}><div class="roster-outlook-title"><h4>${esc(x.pos)}</h4><strong>${x.gap?`${x.gap} short`:'Depth covered'}</strong></div><dl><div><dt>On roster</dt><dd>${x.current}</dd></div><div><dt>Eligibility exits</dt><dd>${x.departing}</dd></div><div><dt>Returning</dt><dd>${x.returning}</dd></div><div><dt>Committed, not enrolled</dt><dd>${x.committed}</dd></div><div><dt>Projected / target</dt><dd>${x.projected} of ${x.target}</dd></div><div><dt>Current targets</dt><dd>${x.targeted}</dd></div><div><dt>Watched · ${snap.year+1}</dt><dd data-outlook-watched>${x.watched}</dd></div></dl><div class="roster-outlook-actions"><button type="button" data-need-current="${esc(x.pos)}">Find current ${esc(x.pos)}</button><button type="button" data-need-rising="${esc(x.pos)}">Find rising ${esc(x.pos)}</button></div></article>`).join('');
   node.querySelector('.small.muted').textContent=`Projected ${snap.year+1} = returning players + commitments not yet enrolled. Targets and watched class ${snap.year+1} prospects are not roster additions. Transfers and early draft departures can change these totals.${snap.enrolled?' Signing is complete; enrolled recruits are already counted on the roster.':''}`;
   node.querySelectorAll('[data-need-current]').forEach(b=>b.onclick=()=>{
@@ -73,6 +85,11 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
    const pos=tab.querySelector('[data-rising-pos]');if(pos){pos.value=b.dataset.needRising;pos.dispatchEvent(new Event('change',{bubbles:true}));tab.querySelector('[data-rising-pos]')?.focus({preventScroll:true})}
   });
   node.querySelectorAll('[data-succession-recruit]').forEach(b=>b.onclick=()=>api.openRecruit(b.dataset.successionRecruit));
+  node.querySelectorAll('[data-succession-audition],[data-succession-pick]').forEach(b=>b.onclick=()=>{
+   const role=b.dataset.successionAudition||b.dataset.successionPick;
+   if(!api.audition(role,b.dataset.auditionPlayer))return;
+   render();node.querySelector(`[data-succession-role="${CSS.escape(role)}"] .succession-audition`)?.focus({preventScroll:true});
+  });
   node.querySelectorAll('[data-succession-training]').forEach(b=>b.onclick=()=>{
    api.openDevelopment();
    const focus=document.querySelector(`#trainingBody [data-training="${CSS.escape(b.dataset.successionTraining)}"]`);

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.38.0 — Recruiting weekends and midseason takeover
+
+- Choose a home date for up to three priority recruits. Position pairings and rivalry games can strengthen the pitch, and the recap shows the observed interest change.
+- Advance to rivalry week, a scheduled five-star visit, or the next redshirt decision and get a recap of the weeks covered.
+- Compare a backup and incumbent over matched practice snaps in Recruiting Outlook, then select the starter.
+- Card Game Day brings back verified recruiting battles with opposing starters and lets you bracket an eligible receiver.
+- Take the Vermont State interim job at 2–5 in Week 8. Win three of the final five to earn the permanent job.
+
 ## v0.37.0 — Dynasty decisions
 
 - Recruiting Outlook identifies departing starters, returning understudies, recruiting options, and spring progress.

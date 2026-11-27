@@ -24,7 +24,10 @@ function offseasonEnrollment(){
   signed.forEach(r=>{
    if(t.name===controlled){firstRecruitEvaluation(r,t);snapshotScouting(r,t,'SIGNING_DAY','RECRUITING',true)}
    const p=playerFromRecruit(r,t);
-   signPlayerPromise(p,r,t);const developmentPromise=(p.promises||[]).find(q=>q.type==='DEVELOPMENT_PLAN'&&q.status==='ACTIVE');if(developmentPromise)p.trainingFocus=developmentPromise.expectedFocus;p.recruitingMemory=r.recruitingMemory;p.primaryRecruiterCoachId=r.primaryRecruiterCoachId||r.recruitingMemory?.primaryRecruiterCoachId||r.recruitingMemory?.recruiterCoachId||null;p.coachRelationships={...(r.coachRelationships||r.recruitingMemory?.coachRelationships||{})};p.coachDeparturePressure=r.coachDeparturePressure?{...r.coachDeparturePressure}:null;p.transferHistory=[];ensurePlayerDevelopment(p,t);delete p.jerseyNumber;t.roster.push(p);
+   signPlayerPromise(p,r,t);const developmentPromise=(p.promises||[]).find(q=>q.type==='DEVELOPMENT_PLAN'&&q.status==='ACTIVE');if(developmentPromise)p.trainingFocus=developmentPromise.expectedFocus;
+   const pursuit=recruitingPursuit(r,t);
+   p.recruitingMemory=pursuit.length?{recruitId:r.id,season:universe.year,schoolId:t.id,...r.recruitingMemory,pursuit}:r.recruitingMemory;
+   p.primaryRecruiterCoachId=r.primaryRecruiterCoachId||r.recruitingMemory?.primaryRecruiterCoachId||r.recruitingMemory?.recruiterCoachId||null;p.coachRelationships={...(r.coachRelationships||r.recruitingMemory?.coachRelationships||{})};p.coachDeparturePressure=r.coachDeparturePressure?{...r.coachDeparturePressure}:null;p.transferHistory=[];ensurePlayerDevelopment(p,t);delete p.jerseyNumber;t.roster.push(p);
    recordRosterMove(t,p,'signees');
    const hs=(universe.highSchools||[]).find(h=>h.id===r.highSchoolId);if(hs)hs.d1Signees=(hs.d1Signees||0)+1;
    t.pipelines[r.homeRegion]=clamp(pipelineStrength(t,r.homeRegion)+gi(1,3),0,100);
@@ -251,8 +254,22 @@ function runOffseason(){
 runSpringCamp=calendarSpringCamp;
 runFallCamp=calendarFallCamp;
 // v0.9.1: move the same player object; preserve the reasons and relationships.
+function publishedRecruitFinalists(r){return r.funnel?.season===universe.year&&Array.isArray(r.funnel.top5)?r.funnel.top5:[]}
+function recruitingPursuit(r,t){
+ const records=Object.entries(r.recruitingActions||{});if(!records.length)return [];
+ const finalistIds=new Set(publishedRecruitFinalists(r).map(name=>String(T(name)?.id)));
+ return records.flatMap(([schoolId,rec])=>{
+  if(schoolId===String(t.id)||rec?.season!==universe.year)return [];
+  const history=Array.isArray(rec.history)?rec.history:[];
+  const did=kind=>history.some(x=>x.kind===kind);
+  const offered=did('offer')||(rec.offered&&!rec.grandfathered);
+  const action=rec.visitWeekend?.receipt?.attended===true?'hosted':rec.inHome?'inhome':did('visit')?'visit':offered?'offer':
+   (rec.contacts>0||history.some(x=>['call','pitch','keep'].includes(x.kind)))?'contact':null;
+  return action?[{schoolId,action,finalist:!!(offered&&rec.offered&&finalistIds.has(schoolId))}]:[];
+ });
+}
 function captureRecruitment(r,t){
- const published=r.funnel?.season===universe.year&&Array.isArray(r.funnel.top5)?r.funnel.top5:[];
+ const published=publishedRecruitFinalists(r);
  const finalistIds=published.map(name=>universe.teams.find(team=>team.name===name)?.id).filter(id=>id!=null);
  const topFive=finalistIds.length?[...new Set(finalistIds)].slice(0,5):universe.teams.map(team=>({id:team.id,score:recruitPitch(team,r)})).sort((a,b)=>b.score-a.score).slice(0,5).map(x=>x.id);
  const actualOffers=universe.teams.filter(team=>{const rec=r.recruitingActions?.[team.id];return rec?.offered&&rec.season===universe.year}).map(team=>team.id);

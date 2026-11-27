@@ -1,5 +1,13 @@
 # Latest session work
 
+## v0.38.0
+
+The Call Sheet release adds recruiting weekends, targeted season advancement, backup auditions, Game Day recruiting history, and Vermont State's Week 8 takeover. The release build has desktop and mobile browser coverage and an eight-season simulation check.
+
+## v0.37.0 — 2026-11-26
+
+Call Sheet source `894fb32` is on `main`. GitHub Pages deployed `06ef1d1` at [Call Sheet](https://markjrogers92.github.io/call-sheet/). The release includes roster succession, the postseason race, voluntary coaching invitations, coordinator retention, new Dynasty scenarios, and weekly follow-ups.
+
 ## v0.36.0 — 2026-11-15 (branch `claude/v036`, not merged)
 
 - `players-of-week.js`: `universe.weeklyHonors {year, rows:[{week, off, def}]}` (this season only), awarded in a `simWeek` wrap from the week's regular-season box scores; `#playersOfWeek` on This Week; `PLAYER_OF_WEEK` events.

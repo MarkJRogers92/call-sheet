@@ -149,8 +149,63 @@ const {chromiumPath}=require('./helpers/chromium-path');
     assert.match(await page.locator('#teamName').innerText(), /Lake Erie University/i);
     assert.equal(await page.evaluate(() => window.__DL_TEST__.setupDebug().setup.scenario), 'conference-crown');
     assert.match(await page.locator('#seasonGoalsDashboard').innerText(), /Win the conference championship/i);
+
+    await page.evaluate(() => document.querySelector('#newUniverse').click());
+    page.once('dialog', dialog => dialog.accept());
+    await page.click('#titleNew');
+    await page.click('#setupContinue');
+    await page.fill('#setupCoachName', 'Jordan Rivers');
+    for (let step = 0; step < 3; step++) await page.click('#setupContinue');
+    await chooseScenario('midseason-takeover');
+    await page.click('#setupContinue');
+    await page.locator('#setupContinue:enabled').waitFor({timeout: 60000});
+    assert.match(await page.locator('#setupContent').innerText(), /2–5 record and five regular-season games/);
+    const takeoverState = () => page.evaluate(() => {
+      const api = window.__DL_TEST__, team = api.selected(), setup = api.setupDebug().setup;
+      const {week, phase, played} = api.preseasonDebug();
+      return {week, phase, played, program: team.name, inherited: setup.takeover.inherited,
+        games: team.schedule.map(game => ({week: game.week, score: game.score, played: !!game.played, id: game.gameId}))};
+    });
+    const preview = await takeoverState();
+    assert.equal(preview.program, 'Vermont State');
+    assert.equal(preview.phase, 'regular');
+    assert.equal(preview.week, 7);
+    assert.equal(preview.played, 420, 'all league games in the first seven weeks have actual results');
+    assert.deepEqual(preview.inherited, {w: 2, l: 5});
+    assert.equal(preview.games.filter(game => game.played && game.score && game.id).length, 7);
+    assert.equal(preview.games.filter(game => !game.played).length, 5);
+    await page.click('#setupContinue');
+    await page.reload();
+    await page.locator('#setupContinue:enabled').waitFor({timeout: 60000});
+    assert.deepEqual(await takeoverState(), preview, 'reopening the review draft reproduces the inherited schedule');
+    const activePrograms = () => page.evaluate(async () => (await globalThis.DynastyStorage.create().listSlots())
+      .filter(slot => !slot.empty).map(slot => slot.program));
+    assert.deepEqual(await activePrograms(), ['Lake Erie University'], 'replaying inherited weeks does not write an autosave');
+    await page.click('#setupContinue');
+    assert.match(await page.locator('#setupContent').innerText(), /2027 Week 8/i);
+    await page.click('#setupContinue');
+    await page.locator('#app').waitFor({state: 'visible', timeout: 60000});
+    assert.deepEqual(await activePrograms(), ['Lake Erie University', 'Vermont State'], 'acceptance saves to a separate slot');
+    const inheritedArchive = await page.evaluate(async () => {
+      const setup = window.__DL_TEST__.setupDebug().setup;
+      const store = globalThis.DynastyStorage.create({slot: setup.saveSlot}), saved = await store.load();
+      const games = await store.readGames(saved.gameRef), former = saved.universe.coachArchive.find(coach => coach.id === setup.takeover.formerCoachId);
+      return {games: games.length, unique: new Set(games.map(game => game.id)).size,
+        priorCoach: former?.seasons.map(season => [season.wins, season.losses]), gamesCoached: saved.universe.callSheet?.games || 0};
+    });
+    assert.deepEqual(inheritedArchive, {games: 420, unique: 420, priorCoach: [[2, 5]], gamesCoached: 0},
+      'the save gives the inherited results to the former coach');
+    await page.reload();
+    await page.locator('#titleContinue:enabled:visible').waitFor({timeout: 60000});
+    await page.click('#titleLoad');
+    await page.selectOption('#titleSaveSlot', 'dynasty-2');
+    await page.locator('#titleLoadMeta').filter({hasText: 'Vermont State'}).waitFor();
+    await page.click('#titleLoadBrowser');
+    await page.locator('#app').waitFor({state: 'visible'});
+    assert.deepEqual(await takeoverState(), preview, 'resuming the inherited dynasty retains the actual archive and schedule');
+    assert.match(await page.locator('#seasonGoalsDashboard').innerText(), /Win 3 of the final 5 regular-season games/);
     assert.deepEqual(errors, [], `setup emits no console or page errors: ${errors.join(' | ')}`);
-    console.log('PASS Take the Job setup recovers, generates, saves once, and restores in preseason');
+    console.log('PASS Take the Job setup generates preseason scenarios and a saved Week 8 takeover');
   } finally {
     await browser.close();
   }

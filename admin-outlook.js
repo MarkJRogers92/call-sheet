@@ -5,14 +5,15 @@ const ADMIN_BANDS=[{min:0,label:'Final warning'},{min:20,label:'Hot seat'},{min:
 function adminOutlookModel(t=selected()){
  if(!t)return null;
  ensureAdminState(t);
- const conf=t.adminConfidence,exp=seasonExpectation(t),w=t.w||0,l=t.l||0,played=w+l,left=Math.max(0,12-played);
+ const takeover=takeoverSeason(t),{w,l}=takeover?takeoverRegularRecord(t,takeover):{w:t.w||0,l:t.l||0};
+ const conf=t.adminConfidence,exp=takeover?.targetWins??seasonExpectation(t),games=12-(takeover?.completedWeeks||0),played=w+l,left=Math.max(0,games-played);
  const reviewed=(universe.tenure?.seasons||[]).find(s=>s.year===universe.year&&universe.tenure?.school===t.name);
- if(reviewed)return{mode:'reviewed',conf,label:adminConfidenceLabel(conf),exp,before:reviewed.before,delta:reviewed.delta,
-  text:`Season review: ${reviewed.delta>=0?'+':''}${reviewed.delta} (${reviewed.w}–${reviewed.l} against ${reviewed.expected} expected wins).`};
+ if(reviewed){const record=reviewed.boardRecord||reviewed;return{mode:'reviewed',conf,label:adminConfidenceLabel(conf),exp,before:reviewed.before,delta:reviewed.delta,
+  text:`Season review: ${reviewed.delta>=0?'+':''}${reviewed.delta} (${record.w}–${record.l}${reviewed.takeover?' since the takeover':''} against ${reviewed.expected} expected wins).`}}
  if(openingPreseason()||(universe.phase==='regular'&&played===0))return{mode:'preseason',conf,label:adminConfidenceLabel(conf),exp,
-  text:`The board expects ${exp} wins this season.`};
+  text:`The board expects ${exp} wins ${takeover?`in your ${games} remaining regular-season games`:'this season'}.`};
  const settled=universe.phase==='complete';
- const projectedWins=settled||universe.phase!=='regular'?w:clamp(Math.round(w/Math.max(1,played)*12),w,w+left);
+ const projectedWins=settled||universe.phase!=='regular'?w:clamp(Math.round(w/Math.max(1,played)*games),w,w+left);
  const swing=clamp(1.6-((t.admin_patience??60)/100),.7,1.5);
  const titleBonus=(t.champ?14:0)+(conferenceChampionIdsFor().includes(t.id)?6:0);
  // Goal adjustments only count once goals are decided, so the in-season projection leaves them out.

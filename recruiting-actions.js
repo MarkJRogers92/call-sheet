@@ -88,6 +88,91 @@ function makeRecruitingActionSystem(env){
  }
  function hasOffer(r,t){return!!record(r,t,false).offered}
 
+ // A priority weekend reserves one of three spaces at an upcoming home game.
+ // The per-school action record carries it through saves and preserves the visit receipt.
+ const WEEKEND_CAP=3,PAIR_PITCH=2,RIVALRY_PITCH=2;
+ function visitWeekend(r,t){
+  const rec=r?.recruitingActions?.[String(t?.id)];
+  return t&&rec?.season===universe().year?rec.visitWeekend??null:null;
+ }
+ function weekendOwner(r){
+  if(!r?.visitWeek)return undefined;
+  return Object.keys(r?.recruitingActions||{}).find(id=>{
+   const plan=visitWeekend(r,{id});
+   return plan&&plan.week===r.visitWeek;
+  });
+ }
+ function weekendGuest(r,t,week){
+  if(r.visit!==true||r.visitWeek!==week)return false;
+  const plan=visitWeekend(r,t);
+  return !!plan&&plan.week===week&&!plan.receipt;
+ }
+ function visitDates(t,r){
+  if(!t||!isActive())return[];
+  const u=universe();
+  const guests=new Map();
+  for(const recruit of u.recruits||[]){
+   if(recruit===r||recruit.committed||funnelState(recruit)?.cut||!weekendGuest(recruit,t,recruit.visitWeek))continue;
+   const group=guests.get(recruit.visitWeek)||[];
+   group.push({id:recruit.id,name:recruit.name,pos:recruit.pos});
+   guests.set(recruit.visitWeek,group);
+  }
+  return (t.schedule||[]).filter(g=>!g.played&&g.home===t.name&&g.week>u.week&&g.week<=LAST_WEEK)
+   .map(g=>({week:g.week,opponent:g.away,rival:!!env.isRivalry?.(t,g),guests:guests.get(g.week)||[]}))
+   .sort((a,b)=>a.week-b.week);
+ }
+ function visitPair(a,b){
+  const line=pos=>pos==='OT'||pos==='OG'||pos==='C';
+  if((a==='QB'&&b==='WR')||(a==='WR'&&b==='QB'))return 'QB/WR pairing';
+  if((a==='RB'&&line(b))||(b==='RB'&&line(a)))return 'OL/RB pairing';
+  return null;
+ }
+ function prepareWeekend(t){
+  if(!t)return new Map();
+  const u=universe(),game=(t.schedule||[]).find(g=>g.home===t.name&&g.week===u.week&&g.played);
+  const rows=new Map();
+  for(const r of u.recruits||[]){
+   if(!weekendGuest(r,t,u.week))continue;
+   const reason=r.committed?`Committed to ${r.committed} before the visit`:funnelState(r)?.cut?
+    'Cut your program before the visit':!game?'The home game was unavailable':null;
+   const plan=visitWeekend(r,t);
+   rows.set(r.id,{r,plan,reason,opponent:game?.away??null,rival:!!game&&!!env.isRivalry?.(t,game),pair:null,pitch:null,before:r.interest});
+  }
+  const attendees=[...rows.values()].filter(row=>!row.reason);
+  for(const row of attendees){
+   row.pair=attendees.filter(other=>other!==row).map(other=>visitPair(row.r.pos,other.r.pos)).find(Boolean)??null;
+  }
+  // Withdrawn guests cannot receive the legacy visit boost during their recruiting pass.
+  for(const {r,reason} of rows.values())if(reason){r.visit=false;r.visitWeek=null}
+  return rows;
+ }
+ function weekendPitch(rows,r,t,base){
+  const owner=weekendOwner(r),row=rows?.get(r.id);
+  if(!owner)return base;
+  if(owner!==String(t.id)||!row||row.reason)return 0;
+  row.pitch=base+(row.pair?PAIR_PITCH:0)+(row.rival?RIVALRY_PITCH:0);
+  return row.pitch;
+ }
+ function finishWeekend(rows){
+  const results=[];
+  for(const row of rows.values()){
+   const {r,plan,reason,opponent,rival,pair,pitch,before}=row;
+   const attended=pitch!==null;
+   const result={id:r.id,name:r.name,week:plan.week,opponent,attended,reason:reason??(attended?null:'The visit never ran'),
+    pitch:pitch??0,rivalBonus:attended&&rival?RIVALRY_PITCH:0,pair:attended?pair:null,pairBonus:attended&&pair?PAIR_PITCH:0,
+    interest:attended?r.interest:null,interestDelta:attended?r.interest-before:null};
+   plan.receipt=result;results.push(result);
+  }
+  return results;
+ }
+ function cancelWeekend(r,t){
+  const owner=weekendOwner(r),plan=visitWeekend(r,t);
+  if(!plan||owner!==String(t.id)||r.visitWeek<=universe().week||!r.visit||plan.receipt)return{ok:false,reason:'There is no upcoming priority visit to cancel.'};
+  const rec=record(r,t,true);delete rec.visitWeekend;
+  r.visitWeek=null;r.visit=false;
+  return{ok:true,label:'Visit cancelled',note:'The booking hours were already spent.'};
+ }
+
  // ---------- pitching ----------
  function topicStrength(t,r,topic){
   switch(topic){
@@ -194,7 +279,8 @@ function makeRecruitingActionSystem(env){
   const f=funnelState(r);
   if(kind!=='keep'&&f&&f.cut)return{ok:false,reason:`${r.name} cut ${t.name} from his Top ${f.cut.at==='top5'?TOP_WIDE:TOP_NARROW} in week ${f.cut.week}.`};
   if(env.recruitBlocked&&env.recruitBlocked(t,r))return{ok:false,reason:`${r.name} will not consider ${t.name} again.`};
-  const rec=record(r,t,false),cost=COSTS[kind],left=hoursLeft(t);
+  const rec=record(r,t,false),left=hoursLeft(t);
+  let cost=COSTS[kind],visitDate=null;
   if(kind==='offer'){
    if(rec.offered)return{ok:false,reason:'A scholarship offer is already out.'};
    const limit=offerLimit(t),out=offersOut(u.recruits,t);
@@ -206,15 +292,33 @@ function makeRecruitingActionSystem(env){
    if(u.week<INHOME.minWeek)return{ok:false,reason:`In-home visits open in week ${INHOME.minWeek}.`};
    if((r.interest||0)<INHOME.minInterest)return{ok:false,reason:`He has to be at ${INHOME.minInterest}% interest before the family opens the door.`};
   }
-  if(kind==='visit'&&r.visitWeek)return{ok:false,reason:'A campus visit is already scheduled.'};
+  if(kind==='visit'){
+   const owner=weekendOwner(r);
+   if(owner&&owner!==String(t.id))return{ok:false,reason:'Another program booked this priority visit.'};
+   if(visitWeekend(r,t)?.receipt?.attended)return{ok:false,reason:'The campus visit is already complete.'};
+   if(opts.visitWeek!=null){
+    visitDate=visitDates(t,r).find(d=>d.week===opts.visitWeek);
+    if(!visitDate)return{ok:false,reason:'Choose an upcoming home game.'};
+    if(visitDate.guests.length>=WEEKEND_CAP)return{ok:false,reason:'This priority weekend is full.'};
+    if(r.visitWeek){
+     if(!r.visit||r.visitWeek<=u.week)return{ok:false,reason:'The campus visit is already complete.'};
+     cost=0;
+    }
+   }else if(r.visitWeek)return{ok:false,reason:'A campus visit is already scheduled.'};
+  }
   if(kind==='pitch'&&opts.topic&&!env.priorities.includes(opts.topic))return{ok:false,reason:'Unknown pitch topic.'};
   if(cost>left)return{ok:false,reason:`Only ${left} recruiting hour${left===1?'':'s'} left this week; this costs ${cost}.`};
-  return{ok:true,cost,left};
+  return{ok:true,cost,left,visitDate};
  }
  function pushHistory(rec,row){rec.history.push(row);if(rec.history.length>10)rec.history.splice(0,rec.history.length-10)}
  function perform(r,t,kind,opts={}){
   const check=availability(r,t,kind,opts);if(!check.ok)return check;
   const u=universe();
+  if(kind==='visit'&&check.visitDate&&!check.cost){
+   env.scheduleVisit(r,check.visitDate.week);
+   record(r,t,true).visitWeekend={week:check.visitDate.week,receipt:null};
+   return{ok:true,kind,label:'Priority visit updated',cost:0,remaining:hoursLeft(t),note:`Week ${r.visitWeek} vs ${check.visitDate.opponent}.`};
+  }
   if(kind!=='keep')env.ensureTargeted(r,t);
   const rec=record(r,t,true),wk=weekState(rec);
   let dI=0,dR=0,topic=null,note='';
@@ -232,7 +336,8 @@ function makeRecruitingActionSystem(env){
   }else if(kind==='inhome'){
    rec.inHome=true;dI=INHOME.interest;dR=INHOME.relationship;note='The family hosted your staff.';
   }else if(kind==='visit'){
-   env.scheduleVisit(r);dR=2;note=`Visit set for week ${r.visitWeek}.`;
+   env.scheduleVisit(r,check.visitDate?.week);dR=2;note=`Visit set for week ${r.visitWeek}.`;
+   if(check.visitDate)rec.visitWeekend={week:check.visitDate.week,receipt:null};
   }else if(kind==='keep'){
    rec.keptWeek=u.week;dR=KEEP.relationship;note='He knows you are still in his corner.';
   }
@@ -663,7 +768,8 @@ function makeRecruitingActionSystem(env){
   return true;
  }
 
- return{COSTS,LABELS,INHOME,OFFER,hoursBudgetFor,weekInfo,ensureWeek,hoursLeft,isActive,record,weekState,workedThisWeek,
+ return{COSTS,LABELS,INHOME,OFFER,WEEKEND_CAP,visitWeekend,visitWeekendOwner:weekendOwner,visitDates,prepareWeekend,weekendPitch,finishWeekend,cancelWeekend,
+  hoursBudgetFor,weekInfo,ensureWeek,hoursLeft,isActive,record,weekState,workedThisWeek,
   offerLimit,offersOut,hasOffer,topicStrength,motivesFor,dealbreakerUnmet,intel,knownBlock,pitchProjection,pitchOptions,narrowingAdvice,availability,perform,withdrawOffer,
   effort,previewEffort,effortFromSince,weeksSinceWorked,mayCommit,pitchBoost,status,workload,staffPlan,isAuto,setAuto,funnelOn,funnelState,funnelStatus,narrowingWithoutYou,runFunnel,holds,decisionsDue,keepBoost,noteWeek,newsItems,deskSummary,rivalHeat,rivalPressure,addRivalEvent,generateRivals,answerRivals,rivalMoves,liveMoves,unansweredMoves,grandfather};
 }
@@ -681,7 +787,8 @@ if(typeof module==='object'&&module.exports){
   recruitBlocked:(t,r)=>recruitBlocked(t,r),
   growRecruiterRelationship:(r,t,gain)=>growRecruiterRelationship(r,t,gain),
   ensureTargeted:(r,t)=>{if(!r.targeted)r.targeted=true;firstRecruitEvaluation(r,t)},
-  scheduleVisit:r=>scheduleVisitBeforeRecruitingActions(r),
+  scheduleVisit:(r,week)=>scheduleVisitBeforeRecruitingActions(r,week),
+  isRivalry:(t,g)=>isRivalryGame(t,g),
   // Every program ranked by how it stands with him this week: the pitch it makes (rival heat and your own
   // offers and visits included), plus the pull a recruit on your board feels toward you.
   rankTeams:(r,t)=>{
@@ -748,16 +855,30 @@ if(typeof module==='object'&&module.exports){
  // A campus visit costs hours; cancelling one is free but gives nothing back.
  const scheduleVisitBeforeRecruitingActions=scheduleVisit;
  scheduleVisit=function(r){
-  if(r.visitWeek)return scheduleVisitBeforeRecruitingActions(r);
-  const t=selected(),res=recruitingActions.perform(r,t,'visit');
+  const t=selected();
+  if(r.visitWeek){
+   if(!recruitingActions.visitWeekendOwner(r))return scheduleVisitBeforeRecruitingActions(r);
+   const res=recruitingActions.cancelWeekend(r,t);
+   setStatus(res.ok?res.note:res.reason);
+   if(res.ok)autosaveAfter('management');
+   return;
+  }
+  const res=recruitingActions.perform(r,t,'visit');
   setStatus(res.ok?`${res.label}: ${r.name}. ${res.note} ${res.remaining} recruiting hour${res.remaining===1?'':'s'} left.`:res.reason);
+ };
+ const scheduledVisitPitchBeforeRecruitingActions=scheduledVisitPitch;
+ let settlingWeekend=null;
+ scheduledVisitPitch=function(r,t,game){
+  return recruitingActions.weekendPitch(settlingWeekend,r,t,scheduledVisitPitchBeforeRecruitingActions(r,t,game));
  };
  const advanceRecruitingBeforeRecruitingActions=advanceRecruiting;
  advanceRecruiting=function(){
   const t=selected(),playedWeek=universe.week-1;passCooled=[];
   // Existing commitments still get flip pressure; visits and this week's work update before readiness.
   const held=t?new Set(universe.recruits.filter(r=>r.committed===t.name).map(r=>r.id)):null;
-  const out=advanceRecruitingBeforeRecruitingActions();
+  const weekend=recruitingActions.prepareWeekend(t),oldWeek=t?.recruitingLastWeek;
+  let out;settlingWeekend=weekend;
+  try{out=advanceRecruitingBeforeRecruitingActions()}finally{settlingWeekend=null}
   // v0.34: the funnel and rival moves ask every program's scholarship limit for every prospect. Rosters cannot change
   // here either (commitments fill classes, not rosters), so the pass's capacity cache covers them too.
   let funnel,rivalMoves=0;passCapacity=new Map();
@@ -765,8 +886,10 @@ if(typeof module==='object'&&module.exports){
   if(t){
    // The hours ledger still describes the week just played, because the counter has already moved on.
    const w=t.recruitingWeek&&t.recruitingWeek.year===universe.year&&t.recruitingWeek.week===playedWeek?t.recruitingWeek:null;
+   const visits=recruitingActions.finishWeekend(weekend);
+   const priorVisits=oldWeek?.year===universe.year&&oldWeek.week===playedWeek?oldWeek.visits||[]:[];
    t.recruitingLastWeek={year:universe.year,week:playedWeek,spent:w?w.spent:0,budget:recruitingActions.hoursBudgetFor(t),cooled:passCooled.slice(0,12),cooledCount:passCooled.length,rivalMoves,
-    funnel:null,flipped:[]};
+    funnel:null,flipped:[],visits:[...priorVisits,...visits]};
    // Your commitments that left during the pass, then everything the week did, recorded once.
    const flipped=universe.recruits.filter(r=>held.has(r.id)&&r.committed!==t.name).map(r=>({recruit:r,to:r.committed}));
    const week=recruitingActions.noteWeek(t,{decided:funnel.decided,cut:funnel.cut,flipped,rivalMoves});
@@ -816,6 +939,43 @@ if(typeof module==='object'&&module.exports){
  const raEsc=x=>String(x??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const raRecruit=id=>(universe.recruits||[]).find(x=>String(x.id)===String(id))||null;
  const hoursText=n=>`${n} hour${n===1?'':'s'}`;
+ function visitReceiptText(r){
+  if(!r.attended)return `${r.reason}.`;
+  const extras=[r.rivalBonus?`+${r.rivalBonus} rivalry`:null,r.pairBonus?`+${r.pairBonus} ${r.pair}`:null].filter(Boolean);
+  const change=`${r.interestDelta>0?'+':''}${r.interestDelta}`;
+  return `+${r.pitch} visit pitch${extras.length?' ('+extras.join(', ')+')':''}. Interest ${r.interest}% (${change} points over the week).`;
+ }
+ function weekendRecapHTML(t){
+  const last=t.recruitingLastWeek,rows=last?.year===universe.year?last.visits||[]:[];
+  if(!rows.length)return'';
+  return `<section class="ra-weekend-recap" aria-label="Last recruiting weekend"><span class="eyebrow">WEEK ${rows[0].week} VISITS</span>
+   <ul>${rows.map(r=>`<li><b>${raEsc(r.name)}</b> · ${raEsc(visitReceiptText(r))}</li>`).join('')}</ul></section>`;
+ }
+ function weekendGuestsHTML(date){
+  const names=date?.guests.map(g=>`${raEsc(g.pos)} ${raEsc(g.name)}`)||[];
+  return names.length?`Also booked ${names.join(', ')}.`:'No other priority guests booked for this date.';
+ }
+ function weekendPlannerHTML(r,t){
+  const plan=recruitingActions.visitWeekend(r,t),receipt=plan?.receipt;
+  if(receipt?.attended)return `<p class="ra-visit-report"><b>Week ${receipt.week} visit</b> · ${raEsc(visitReceiptText(receipt))}</p>`;
+  if(!recruitingActions.isActive()||(r.visitWeek&&r.visitWeek<=universe.week)||recruitingActions.funnelState(r)?.cut)return'';
+  const dates=recruitingActions.visitDates(t,r),cap=recruitingActions.WEEKEND_CAP;
+  if(!dates.length)return'';
+  const initial=dates.find(d=>d.week===plan?.week)||dates.find(d=>d.guests.length<cap);
+  const check=initial?recruitingActions.availability(r,t,'visit',{visitWeek:initial.week}):null;
+  const hint=plan&&!receipt?` · booked Week ${plan.week}`:'';
+  const label=r.visitWeek?'Update priority visit':`Book priority visit · ${recruitingActions.COSTS.visit}h`;
+  return `<details class="ra-weekend" ${plan&&!receipt?'open':''}><summary>Plan a recruiting weekend${hint}</summary>
+   <p>Host up to ${cap} priority recruits per home game. QB/WR and OL/RB pairings help both guests. Rivalry dates add atmosphere, but waiting gives other schools more time.</p>
+   <div class="ra-weekend-controls"><label>Home date
+    <select data-ra-visit-date>${dates.map(d=>`<option value="${d.week}" ${d===initial?'selected':''} ${d.guests.length>=cap?'disabled':''}>Week ${d.week} vs ${raEsc(d.opponent)}${d.rival?' · rivalry':''} · ${d.guests.length}/${cap} other guests</option>`).join('')}</select></label>
+    <button type="button" data-ra-action="plan-weekend" data-ra-recruit="${raEsc(r.id)}" ${check?.ok?'':'disabled'}>${label}</button>
+    ${plan&&!receipt?`<button type="button" data-ra-action="cancel-weekend" data-ra-recruit="${raEsc(r.id)}">Cancel priority visit</button>`:''}
+   </div><small data-ra-weekend-guests>${initial?weekendGuestsHTML(initial):'Priority groups are full.'}</small>
+   <small data-ra-weekend-status>${check?.ok||!check?'':raEsc(check.reason)}</small>
+   ${receipt?`<p class="ra-visit-report">Week ${receipt.week} · ${raEsc(visitReceiptText(receipt))}</p>`:''}
+  </details>`;
+ }
  function chipsHTML(r,t){
   const s=recruitingActions.status(r,t),out=[];
   if(s.blocked)out.push(`<span class="ra-chip ra-warn" title="Your ${raEsc(s.blocked.topic)} is ${s.blocked.strength}; he needs ${s.blocked.floor}.">Dealbreaker: ${raEsc(s.blocked.topic)}</span>`);
@@ -893,7 +1053,7 @@ if(typeof module==='object'&&module.exports){
   const rec=recruitingActions.record(r,t,false);
   const withdraw=rec.offered&&!r.committed?`<button type="button" class="ra-quiet" data-ra-action="withdraw" data-ra-recruit="${raEsc(r.id)}" title="Takes the offer back. He cools toward you.">Withdraw offer</button>`:'';
   const hist=recruitingActions.status(r,t).history.map(h=>`<span>W${h.week}: ${raEsc(h.kind==='withdraw'?'Offer withdrawn':recruitingActions.LABELS[h.kind]+(h.topic?' · '+h.topic:''))}${h.dI?` · ${h.dI>0?'+':''}${h.dI} interest`:''}</span>`).join('');
-  return`<section class="recruiting-desk" data-recruiting-desk="${raEsc(r.id)}"><div class="ra-head"><div><span class="eyebrow">RECRUITING DESK</span><strong>${left} / ${w.budget} hours left this week</strong></div><div class="ra-chips">${chipsHTML(r,t)}</div></div>${motivesHTML(r,t)}${funnelHTML(r,t)}${rivalHTML(r)}<div class="ra-actions">${btn('call','Call')}<span class="ra-pitch">${select}${btn('pitch','Pitch')}</span>${btn('offer','Offer')}${btn('visit','Visit')}${btn('inhome','In-Home')}${withdraw}</div>${hist?`<div class="ra-history">${hist}</div>`:''}<small class="muted">Sell what he cares about, and only what you can back up: a weak topic costs you interest. He needs an offer before he can commit to you.</small><div class="ra-desk-staff">${staffControlsHTML(recruitingActions.workload(universe.recruits,t))}</div></section>`;
+  return`<section class="recruiting-desk" data-recruiting-desk="${raEsc(r.id)}"><div class="ra-head"><div><span class="eyebrow">RECRUITING DESK</span><strong>${left} / ${w.budget} hours left this week</strong></div><div class="ra-chips">${chipsHTML(r,t)}</div></div>${motivesHTML(r,t)}${funnelHTML(r,t)}${rivalHTML(r)}<div class="ra-actions">${btn('call','Call')}<span class="ra-pitch">${select}${btn('pitch','Pitch')}</span>${btn('offer','Offer')}${btn('visit','Visit')}${btn('inhome','In-Home')}${withdraw}</div>${weekendPlannerHTML(r,t)}${hist?`<div class="ra-history">${hist}</div>`:''}<small class="muted">Sell what he cares about, and only what you can back up: a weak topic costs you interest. He needs an offer before he can commit to you.</small><div class="ra-desk-staff">${staffControlsHTML(recruitingActions.workload(universe.recruits,t))}</div></section>`;
  }
  function announce(res,r){
   const t=selected();
@@ -912,11 +1072,26 @@ if(typeof module==='object'&&module.exports){
     const dialog=b.closest?.('#recruitDialog');
     let res;
     if(kind==='withdraw'){if(!confirm(`Withdraw the scholarship offer to ${r.name}? He will cool toward your program.`))return;res=recruitingActions.withdrawOffer(r,t)}
+    else if(kind==='plan-weekend'){
+     const week=Number(b.closest('.ra-weekend')?.querySelector('[data-ra-visit-date]')?.value);
+     res=recruitingActions.perform(r,t,'visit',{visitWeek:week});
+    }
+    else if(kind==='cancel-weekend')res=recruitingActions.cancelWeekend(r,t);
     else{const topic=kind==='pitch'?(b.dataset.raTopicChoice||b.parentElement?.querySelector('select')?.value):undefined;res=recruitingActions.perform(r,t,kind,{topic})}
     if(res.ok)autosaveAfter('management');
     announce(res,r);
     renderRecruiting();
     if(dialog&&res.ok){const d=$('#recruitDialog');if(d?.open)d.close();showRecruitProfile(r.id)}
+   };
+  });
+  root.querySelectorAll?.('[data-ra-visit-date]').forEach(select=>{
+   select.onchange=()=>{
+    const host=select.closest('.ra-weekend'),button=host.querySelector('[data-ra-action="plan-weekend"]');
+    const r=raRecruit(button.dataset.raRecruit),t=selected(),week=Number(select.value);
+    const check=recruitingActions.availability(r,t,'visit',{visitWeek:week});
+    button.disabled=!check.ok;
+    host.querySelector('[data-ra-weekend-guests]').innerHTML=weekendGuestsHTML(check.visitDate);
+    host.querySelector('[data-ra-weekend-status]').textContent=check.ok?'':check.reason;
    };
   });
  }
@@ -940,7 +1115,7 @@ if(typeof module==='object'&&module.exports){
   if(!universe?.teams)return'';
   const t=selected();if(!t||!recruitingActions.isActive())return'';
   const work=recruitingActions.workload(universe.recruits,t),auto=recruitingActions.isAuto(universe);
-  return`<div class="ra-nav"><span class="eyebrow">RECRUITING HOURS</span><strong>${work.left} / ${work.budget} left</strong><small>${work.targets} on the board · ${work.worked} worked · ${auto?'staff cover the rest':`${work.cooling} cooling`} · ${work.ready} ready for an offer · ${work.offersOut}/${work.offerLimit} offers out</small>${decisionListHTML()}${rivalListHTML()}${staffControlsHTML(work)}${auto?'<small>Each week the staff spend what you leave: calls for everyone, ripe offers, a few pitches. They never book visits or in-homes.</small>':''}</div>`;
+  return`<div class="ra-nav"><span class="eyebrow">RECRUITING HOURS</span><strong>${work.left} / ${work.budget} left</strong><small>${work.targets} on the board · ${work.worked} worked · ${auto?'staff cover the rest':`${work.cooling} cooling`} · ${work.ready} ready for an offer · ${work.offersOut}/${work.offerLimit} offers out</small>${weekendRecapHTML(t)}${decisionListHTML()}${rivalListHTML()}${staffControlsHTML(work)}${auto?'<small>Each week the staff spend what you leave: calls for everyone, ripe offers, a few pitches. They never book visits or in-homes.</small>':''}</div>`;
  }
  // A short line for a prospect card when a rival has made a move he has not been answered on.
  function badgeHTML(id){
@@ -967,7 +1142,7 @@ if(typeof module==='object'&&module.exports){
  function stripHTML(t){
   const w=recruitingActions.weekInfo(t),work=recruitingActions.workload(universe.recruits,t),last=t.recruitingLastWeek;
   const lastWeek=last&&last.year===universe.year?`<small>Last week: ${last.spent} of ${last.budget} hours spent${last.cooledCount?` · ${last.cooledCount} target${last.cooledCount===1?'':'s'} cooled (${last.cooled.map(id=>raEsc(raRecruit(id)?.name||'')).filter(Boolean).slice(0,4).join(', ')}${last.cooledCount>4?'…':''})`:' · nobody cooled'}.${funnelLine(last)}</small>`:'';
-  return`<div class="recruiting-hours-strip"><strong>Recruiting Hours</strong><span>${work.left} / ${w.budget} left this week</span><small>${work.targets} active target${work.targets===1?'':'s'} · ${work.worked} worked this week · ${work.cooling} cooling · ${work.ready} ready for an offer · ${work.offersOut}/${work.offerLimit} offers out</small><small>Call ${recruitingActions.COSTS.call} · Pitch ${recruitingActions.COSTS.pitch} · Offer ${recruitingActions.COSTS.offer} · Visit ${recruitingActions.COSTS.visit} · In-Home ${recruitingActions.COSTS.inhome} hours. Unused hours do not carry over. A target nobody works for two weeks starts to cool.</small>${lastWeek}${staffControlsHTML(work)}</div>`;
+  return`<div class="recruiting-hours-strip"><strong>Recruiting Hours</strong><span>${work.left} / ${w.budget} left this week</span><small>${work.targets} active target${work.targets===1?'':'s'} · ${work.worked} worked this week · ${work.cooling} cooling · ${work.ready} ready for an offer · ${work.offersOut}/${work.offerLimit} offers out</small><small>Call ${recruitingActions.COSTS.call} · Pitch ${recruitingActions.COSTS.pitch} · Offer ${recruitingActions.COSTS.offer} · Visit ${recruitingActions.COSTS.visit} · In-Home ${recruitingActions.COSTS.inhome} hours. Unused hours do not carry over. A target nobody works for two weeks starts to cool.</small>${lastWeek}${weekendRecapHTML(t)}${staffControlsHTML(work)}</div>`;
  }
  function staffWorkBoard(){
   const out=recruitingActions.staffPlan(universe.recruits,selected());
