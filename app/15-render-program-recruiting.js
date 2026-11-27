@@ -77,7 +77,15 @@ function renderDevelopmentBoard(){const u=selected(),ds=ensureDevelopmentState()
 function renderPositionChangeOptions(){let u=selected(),p=u.roster.find(x=>x.id===$('#positionChangePlayer').value),target=$('#positionChangeTarget');if(!p||!target)return;let opts=positionOptions(p);target.innerHTML=opts.map(x=>`<option value="${x}">${x}</option>`).join('');let to=target.value;if(!to){$('#positionChangePreview').textContent='No realistic transition available.';$('#applyPositionChange').disabled=true;return}const will=positionChangeWillingness(p,u,to);
  $('#applyPositionChange').disabled=universe.phase!=='complete'||will.state==='REFUSES';
  $('#positionChangePreview').innerHTML=`Projected transition fit: <strong>${positionTransitionFit(p,to)}/100</strong>. Current ${p.pos} familiarity: ${familiarity(p,p.pos)}%. Moving to ${to} starts with a learning penalty that camp can reduce.<br><span class="pill${will.state==='REFUSES'?' bad':''}">${positionWillingnessLabel(will.state)}</span> <span class="small muted">${gameEscape(will.reasons.slice(0,2).join('; ')||'no strong feelings either way')}${will.state==='RELUCTANT'?' — forcing it will cost morale and staff trust.':will.state==='REFUSES'?' — he will not agree to this move.':''}</span>`}
-function renderOffseason(){const u=selected(),risks=u.roster.map(p=>({p,risk:transferRisk(p)})).sort((a,b)=>b.risk-a.risk).slice(0,8);$('#transferWatch').innerHTML=risks.map(x=>`<div class="lineitem"><span>${x.p.pos} ${x.p.name}</span><span class="${x.risk>45?'bad':x.risk>25?'warn':''}">${Math.round(x.risk)} risk</span></div>`).join('');const dev=u.roster.slice().sort((a,b)=>(b.dev+b.work)-(a.dev+a.work)).slice(0,8);$('#developmentWatch').innerHTML=dev.map(p=>`<div class="lineitem"><span>${p.pos} ${p.name}</span><span>${p.year} · ${p.style}</span></div>`).join('');let ds=ensureDevelopmentState();$('#offseasonReport').textContent=universe.phase==='complete'?(ds.fallRun?`Fall camp is complete. Finalize the offseason to advance to ${universe.year+1}.`:`Complete spring development and fall camp before advancing.`):'Complete the season first.';$('#movementLog').innerHTML=universe.movementLog.length?universe.movementLog.map(x=>`<div class="lineitem"><span>${x}</span></div>`).join(''):'<span class="muted">No offseason movement yet.</span>';for(const x of universe.transferPortal||[])if(x.fromSchoolId===u.id)$('#movementLog').innerHTML+=`<div class="lineitem"><button class="player-button" data-player="${x.p.id}">${x.p.name}</button><span>In portal — awaiting a roster opening</span></div>`;renderPortal();attachPlayerLinks()}
+function renderOffseason(){const u=selected(),risks=u.roster.map(p=>({p,risk:transferRisk(p)})).sort((a,b)=>b.risk-a.risk).slice(0,8);$('#transferWatch').innerHTML=risks.map(x=>`<div class="lineitem"><span>${x.p.pos} ${x.p.name}</span><span class="${x.risk>45?'bad':x.risk>25?'warn':''}">${Math.round(x.risk)} risk</span></div>`).join('');const dev=u.roster.slice().sort((a,b)=>(b.dev+b.work)-(a.dev+a.work)).slice(0,8);$('#developmentWatch').innerHTML=dev.map(p=>`<div class="lineitem"><span>${p.pos} ${p.name}</span><span>${p.year} · ${p.style}</span></div>`).join('');let ds=ensureDevelopmentState();$('#offseasonReport').textContent=universe.phase==='complete'?(ds.fallRun?`Fall camp is complete. Finalize the offseason to advance to ${universe.year+1}.`:`Complete spring development and fall camp before advancing.`):'Complete the season first.';
+ const report=$('#offseasonReport');
+ if(normalizeOffseasonState().phase==='departures'&&coordinatorRetentionOffers(u).length){
+  const note=document.createElement('p'),button=document.createElement('button');
+  note.textContent='Coordinators with open offers will leave when you process departures.';
+  button.type='button';button.textContent='Review coordinator offers';button.onclick=showCoordinatorOffers;
+  report.replaceChildren(note,button);
+ }
+$('#movementLog').innerHTML=universe.movementLog.length?universe.movementLog.map(x=>`<div class="lineitem"><span>${x}</span></div>`).join(''):'<span class="muted">No offseason movement yet.</span>';for(const x of universe.transferPortal||[])if(x.fromSchoolId===u.id)$('#movementLog').innerHTML+=`<div class="lineitem"><button class="player-button" data-player="${x.p.id}">${x.p.name}</button><span>In portal — awaiting a roster opening</span></div>`;renderPortal();attachPlayerLinks()}
 
 // --- v0.9.47 commit 4: the Portal subview -------------------------------------
 // Rows link to the existing player profile via data-player; there is deliberately no
@@ -240,14 +248,69 @@ function nationalTimeline({limit=25}={}){
 }
 // App scope is not global by design; the history module reaches these through this bridge.
 if(typeof globalThis!=='undefined')globalThis.DynastyHistoryIndex=Object.freeze({coaches:coachIndexRows,champions:championTimeline,timeline:nationalTimeline,gamesDeferred:gamesAreDeferred,loadGames:ensureGamesLoaded,openCoach:showCoachProfile});
-// Recruiting-needs bridge: only POS_COUNTS, roster positions/years and committed counts leave app scope.
-if(typeof globalThis!=='undefined')globalThis.DynastyRecruitingNeeds=Object.freeze({posCounts:POS_COUNTS,snapshot:()=>{
+// The depth chart is the record of who owns each role. A temporary absence on
+// game day isn't an opening in next year's lineup.
+function successionStarters(t){
+ const roster=new Map((t.roster||[]).map(p=>[p.id,p]));
+ return ROLE_DEFS.filter(role=>role.base).flatMap(role=>{
+  const p=roster.get(t.roleDepth?.[role.id]?.[0]);
+  return p&&role.eligible.includes(p.pos)?[{roleId:role.id,id:p.id,name:p.name,pos:p.pos,rating:Math.round(p.perceived||0)}]:[];
+ });
+}
+function recruitmentFallback(t,pos){
+ const choices=(universe.recruits||[]).filter(r=>{
+  if(r.pos!==pos||r.committed||recruitBlocked(t,r)||(r.interest||0)<45)return false;
+  const funnel=r.funnel?.season===universe.year?r.funnel:null,schools=funnel?.top3||funnel?.top5;
+  return !funnel?.cut&&(!schools||schools.includes(t.name));
+ });
+ const score=r=>{
+  const evaluation=r.manualScouting?.[t.id];
+  const film=evaluation?.season===universe.year?(evaluation.full?8:evaluation.quick?4:0):0;
+  return (r.interest||0)+(r.scout||0)*.35+(r.targeted?4:0)+film;
+ };
+ const prospect=choices.sort((a,b)=>score(b)-score(a)||(a.nationalRank||9999)-(b.nationalRank||9999))[0];
+ if(!prospect)return null;
+ const verdict=typeof recruitStaffVerdict==='function'?recruitStaffVerdict(prospect,t):null;
+ return{id:prospect.id,name:prospect.name,interest:Math.round(prospect.interest),onBoard:!!prospect.targeted,
+  read:verdict?verdict.label:null,confidence:verdict?verdict.confidence:null};
+}
+function rosterSuccession(t,done){
+ const projected=p=>eligibilityBase(p)>=3&&!(p.redshirtActive&&canRedshirt(p));
+ const departed=done.includes('departures'),roster=new Map((t.roster||[]).map(p=>[p.id,p])),starters=successionStarters(t);
+ const saved=universe.offseason?.reports?.roster?.[t.id]?.succession;
+ const leaving=departed
+  ? (Array.isArray(saved)?saved:[])
+  : starters.filter(row=>projected(roster.get(row.id))).map(row=>({...row,reason:'Eligibility ends'}));
+ const returning=new Map([...roster].filter(([,p])=>departed||!projected(p)));
+ const spring=universe.developmentState?.year===universe.year?universe.developmentState.springReport||[]:[];
+ const observations=new Map(spring.map(row=>[row.id,row.perceivedDelta]));
+ const recruitingOpen=universe.phase==='regular'||(universe.phase==='preseason'&&universe.week===0);
+ const rows=leaving.flatMap(outgoing=>{
+  const role=ROLE_BY_ID[outgoing.roleId];
+  if(!role||!role.eligible.includes(outgoing.pos))return [];
+  const occupied=new Set(starters.filter(row=>row.roleId!==role.id).map(row=>row.id));
+  const depth=t.roleDepth?.[role.id]||[];
+  const reserve=depth.map(id=>returning.get(id)).find(p=>p&&!occupied.has(p.id)&&role.eligible.includes(p.pos));
+  const understudy=reserve?{id:reserve.id,name:reserve.name,year:eligibilityLabel(reserve),rating:Math.round(reserve.perceived||0),
+   training:reserve.trainingFocus||'Balanced',springDelta:observations.get(reserve.id)??null}:null;
+  return[{roleId:role.id,label:role.label,outgoing,understudy}];
+ });
+ return rows.sort((a,b)=>Number(!b.understudy)-Number(!a.understudy)
+   || (b.outgoing.rating-(b.understudy?.rating||0))-(a.outgoing.rating-(a.understudy?.rating||0))
+   || b.outgoing.rating-a.outgoing.rating).slice(0,3).map(row=>({...row,
+    fallback:recruitingOpen?recruitmentFallback(t,row.outgoing.pos):null,recruitingOpen
+   }));
+}
+// Staff-facing depth, known scouting reads and observed camp results only.
+if(typeof globalThis!=='undefined')globalThis.DynastyRecruitingNeeds=Object.freeze({posCounts:POS_COUNTS,
+ openRecruit:id=>showRecruitProfile(id),openDevelopment:()=>goToTab('development'),snapshot:({includeSuccession=false}={})=>{
  if(!universe)return null;const t=selected();if(!t)return null;
  const committed={},targeted={},watched={};
  for(const r of universe.recruits||[]){if(r.committed===t.name)committed[r.pos]=(committed[r.pos]||0)+1;else if(r.targeted&&!r.committed)targeted[r.pos]=(targeted[r.pos]||0)+1}
  for(const r of universe.risingClass||[])if(r.watch)watched[r.pos]=(watched[r.pos]||0)+1;
  const done=universe.phase==='complete'&&universe.offseason?.year===universe.year?universe.offseason.completed||[]:[];
- return{year:universe.year,team:t.name,players:(t.roster||[]).map(p=>({pos:p.pos,year:p.year})),committed,targeted,watched,departuresDone:done.includes('departures'),enrolled:done.includes('signing')};
+ return{year:universe.year,team:t.name,players:(t.roster||[]).map(p=>({pos:p.pos,year:p.year})),committed,targeted,watched,
+  departuresDone:done.includes('departures'),enrolled:done.includes('signing'),...(includeSuccession?{succession:rosterSuccession(t,done)}:{})};
 }});
 
 // v0.12.14 — Hall of Fame. Induction uses only recorded, player-visible facts:

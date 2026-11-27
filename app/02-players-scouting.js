@@ -278,7 +278,22 @@ function coachFalloutHubItems(t){if(!t)return[];return (universe.events||[]).fil
 function startGeneratedCoach(t,slot,startSeason=universe.year+1,reason='Staff replacement'){const c=generateCoach(COACH_SLOT_ROLES[slot],t,0);openCoachStint(c,t,slot,startSeason,reason);t.staff[slot]=c;applyCoachScheme(c,slot,t,reason);return c}
 function replaceStaffCoach(t,slot,reason='Staff change',status='DEPARTED',startSeason=universe.year+1){const old=t.staff[slot];applyCoachRelationshipChange(old,t,null,reason);archiveCoach(old,t,reason,status,universe.year);const fresh=startGeneratedCoach(t,slot,startSeason,reason);t.staff[slot]=fresh;const type=status==='RETIRED'?'COACH_RETIRED':status==='FIRED'?'COACH_FIRED':'COACH_DEPARTED';addCoachEvent(type,old,t,null,{role:old.role,replacementCoachId:fresh.id,reason},`${old.name} ${status==='FIRED'?'was fired by':status==='RETIRED'?'retired from':'left'} ${t.name}; ${fresh.name} takes over as ${fresh.role}.`);return{old,fresh}}
 function promoteCoachWithinTeam(t,fromSlot,toSlot='HC',reason='Internal promotion',displacedStatus='DEPARTED'){const promoted=t.staff[fromSlot],displaced=t.staff[toSlot],next=universe.year+1;applyCoachRelationshipChange(displaced,t,null,reason);archiveCoach(displaced,t,reason,displacedStatus,universe.year);addCoachEvent(displacedStatus==='RETIRED'?'COACH_RETIRED':displacedStatus==='FIRED'?'COACH_FIRED':'COACH_DEPARTED',displaced,t,null,{role:displaced.role,reason});closeCoachStint(promoted,t,universe.year,'Promoted internally');t.staff[toSlot]=promoted;openCoachStint(promoted,t,toSlot,next,reason);t.staff[fromSlot]=startGeneratedCoach(t,fromSlot,next,'Vacancy after internal promotion');addCoachEvent('COACH_PROMOTED',promoted,t,t,{fromRole:COACH_SLOT_ROLES[fromSlot],toRole:COACH_SLOT_ROLES[toSlot],reason},`${promoted.name} promoted from ${COACH_SLOT_ROLES[fromSlot]} to ${COACH_SLOT_ROLES[toSlot]} at ${t.name}.`);return promoted}
-function moveCoach(c,from,to,toSlot,reason='Accepted new job'){const fromSlot=coachSlot(from,c);if(!fromSlot||!to?.staff?.[toSlot])return null;const displaced=to.staff[toSlot],next=universe.year+1;applyCoachRelationshipChange(displaced,to,null,`Replaced by ${c.name}`);applyCoachRelationshipChange(c,from,to,reason);archiveCoach(displaced,to,`Replaced by ${c.name}`,'DEPARTED',universe.year);addCoachEvent('COACH_DEPARTED',displaced,to,null,{role:displaced.role,reason:'Replaced'});closeCoachStint(c,from,universe.year,reason);from.staff[fromSlot]=startGeneratedCoach(from,fromSlot,next,'Vacancy after coach departure');to.staff[toSlot]=c;openCoachStint(c,to,toSlot,next,reason);applyCoachScheme(c,toSlot,to,reason);addCoachEvent('COACH_MOVED',c,from,to,{fromRole:COACH_SLOT_ROLES[fromSlot],toRole:COACH_SLOT_ROLES[toSlot],reason},`${c.name}: ${from.name} ${COACH_SLOT_ROLES[fromSlot]} → ${to.name} ${COACH_SLOT_ROLES[toSlot]}.`);return c}
+function moveCoach(c,from,to,toSlot,reason='Accepted new job',{sourceOpening=false}={}){
+ const fromSlot=coachSlot(from,c);if(!fromSlot||!to?.staff?.[toSlot])return null;
+ const displaced=to.staff[toSlot],next=universe.year+1;
+ applyCoachRelationshipChange(displaced,to,null,`Replaced by ${c.name}`);
+ applyCoachRelationshipChange(c,from,to,reason);
+ archiveCoach(displaced,to,`Replaced by ${c.name}`,'DEPARTED',universe.year);
+ addCoachEvent('COACH_DEPARTED',displaced,to,null,{role:displaced.role,reason:'Replaced'});
+ closeCoachStint(c,from,universe.year,reason);
+ from.staff[fromSlot]=sourceOpening?null:startGeneratedCoach(from,fromSlot,next,'Vacancy after coach departure');
+ to.staff[toSlot]=c;
+ openCoachStint(c,to,toSlot,next,reason);
+ applyCoachScheme(c,toSlot,to,reason);
+ if(sourceOpening)createOpening(from,fromSlot,`${c.name} left for ${to.name}`);
+ addCoachEvent('COACH_MOVED',c,from,to,{fromRole:COACH_SLOT_ROLES[fromSlot],toRole:COACH_SLOT_ROLES[toSlot],reason},`${c.name}: ${from.name} ${COACH_SLOT_ROLES[fromSlot]} → ${to.name} ${COACH_SLOT_ROLES[toSlot]}.`);
+ return c;
+}
 function retireCoach(t,slot,reason='Retired from coaching'){const c=t.staff[slot];replaceStaffCoach(t,slot,reason,'RETIRED',universe.year+1);return c}
 function coachRetirementChance(c){const a=c?.age||0;return a>=72?.18:a>=68?.07:a>=65?.025:0}
 function coachCareerTotals(c){const seasons=c.seasons||[];return{wins:seasons.reduce((n,s)=>n+(s.wins||0),0),losses:seasons.reduce((n,s)=>n+(s.losses||0),0),conferenceTitles:seasons.filter(s=>s.conferenceTitle).length,nationalTitles:seasons.filter(s=>s.nationalTitle).length,coachAwards:seasons.filter(s=>s.coachOfYear).length,seasons:seasons.length}}

@@ -86,16 +86,31 @@ function staffBuildBoard(t=selected()){
  return picks.length;
 }
 function autoTarget(){const u=selected();universe.recruits.forEach(r=>r.targeted=false);let needs={};POS.forEach(p=>needs[p]=(POS_COUNTS[p]||4)-u.roster.filter(x=>x.pos===p&&x.year!=='SR').length*.55);universe.recruits.filter(r=>!r.committed).sort((a,b)=>(b.scoutUp+(needs[b.pos]||0)*5)-(a.scoutUp+(needs[a.pos]||0)*5)).slice(0,20).forEach(r=>{r.targeted=true;firstRecruitEvaluation(r,u)});autosaveAfter('management');renderRecruiting()}
-function chooseCoachMoveDestination(c,from,slot,changed,moved){
- const user=selected()?.name,candidates=universe.teams.filter(t=>t.id!==from.id&&t.name!==user&&!changed.get(t.id)?.has(slot)&&!moved.has(t.staff?.[slot]?.id)&&t.prestige>=from.prestige-5);
+function chooseCoachMoveDestination(c,from,slot,changed,moved,{outsideOffer=false}={}){
+ const user=selected()?.name,candidates=universe.teams.filter(t=>t.id!==from.id&&t.name!==user&&!changed.get(t.id)?.has(slot)&&!moved.has(t.staff?.[slot]?.id)&&t.prestige>=from.prestige-5&&(!outsideOffer||outsideCoordinatorTerms(c,t,slot)));
  if(!candidates.length)return null;const scored=candidates.map(t=>({t,score:(t.prestige-from.prestige)*1.1+t.resources*.14+(slot==='RC'?t.nil*.10:t.development*.09)+(c.ambition||60)*.05+gauss()*3})).sort((a,b)=>b.score-a.score),short=scored.slice(0,6),best=short[0]?.score??0;let total=0;for(const x of short){x.weight=Math.exp((x.score-best)/6);total+=x.weight}let roll=gameplayRandom()*total;for(const x of short){roll-=x.weight;if(roll<=0)return x.t}return short.at(-1)?.t||null
+}
+function handleControlledCoordinatorChange(t,slot,retired,changed,moved,log){
+ const c=t.staff[slot];
+ if(retired){
+  createOpening(t,slot,'Retired after the season','RETIRED');
+  changed.get(t.id).add(slot);
+  log.push(`${t.name}: ${c.name} retired as ${COACH_SLOT_ROLES[slot]}. The job is open on the Staff tab.`);
+  return;
+ }
+ if(c.interim)return;
+ const to=chooseCoachMoveDestination(c,t,slot,changed,moved,{outsideOffer:true});
+ if(!to||!openCoordinatorRetention(t,slot,to))return;
+ // Reserve the destination job until the outside offer is settled at departures.
+ changed.get(to.id).add(slot);
+ changed.get(t.id).add(slot);
 }
 function carousel(){
  let log=[],trackedMoves=0,next=universe.year+1,moved=new Set(),changed=new Map(universe.teams.map(t=>[t.id,new Set()])),mark=(t,slot)=>changed.get(t.id).add(slot),did=(t,slot)=>changed.get(t.id).has(slot),controlled=$('#userTeam').value;
  for(const t of universe.teams){recordCoachSeason(t);for(const c of Object.values(t.staff)){c.age=(c.age||40)+1;c.years=(c.years||0)+1;c.contractYears=Math.max(0,(c.contractYears??2)-1)}}
  for(const t of universe.teams){const hc=t.staff.HC,expected=clamp(Math.round((t.prestige-30)/8),4,10),bad=t.w<expected-2,fire=bad&&gameplayRandom()>(t.admin_patience/100),hcRetire=gameplayRandom()<coachRetirementChance(hc);if(!(fire||hcRetire))continue;const status=hcRetire?'RETIRED':'FIRED',reason=hcRetire?'Retired after the season':`Fired after ${t.w}-${t.l}`;if(t.name===controlled){createOpening(t,'HC',reason,status);mark(t,'HC');log.push(`${t.name}: ${hc.name} ${status==='FIRED'?'was fired':'retired'}. The Head Coach job is open — interview and hire from the Staff tab.`);continue}const candidates=['OC','DC'].filter(slot=>!did(t,slot)).map(slot=>({slot,c:t.staff[slot],score:(t.staff[slot].ambition||60)+(t.staff[slot].playCall||60)*.35+(t.staff[slot].development||60)*.2})).sort((a,b)=>b.score-a.score),promote=gameplayRandom()<.32&&candidates[0]?.c;if(promote){const who=candidates[0],oldName=hc.name;promoteCoachWithinTeam(t,who.slot,'HC',reason,status);mark(t,'HC');mark(t,who.slot);moved.add(who.c.id);log.push(`${t.name}: ${oldName} ${status==='FIRED'?'was fired':'retired'}; ${who.c.name} promoted from ${COACH_SLOT_ROLES[who.slot]} to Head Coach.`)}else{const x=replaceStaffCoach(t,'HC',reason,status,next);mark(t,'HC');log.push(`${t.name}: ${x.old.name} ${status==='FIRED'?'was fired':'retired'}; ${x.fresh.name} hired as Head Coach.`)}}
- for(const t of universe.teams)for(const slot of ['OC','DC']){if(did(t,slot))continue;const c=t.staff[slot];if(moved.has(c.id))continue;const retire=gameplayRandom()<coachRetirementChance(c),turn=!retire&&gameplayRandom()<(slot==='OC'?.07+c.ambition/900:.06+c.ambition/1000);if(!retire&&!turn)continue;if(t.name===controlled){createOpening(t,slot,retire?'Retired after the season':'Left for another opportunity',retire?'RETIRED':'DEPARTED');mark(t,slot);log.push(`${t.name}: ${c.name} ${retire?'retired':'left for another opportunity'} as ${COACH_SLOT_ROLES[slot]}. The job is open — interview and hire from the Staff tab.`);continue}if(retire){const x=replaceStaffCoach(t,slot,'Retired after the season','RETIRED',next);mark(t,slot);log.push(`${t.name}: ${x.old.name} retired; ${x.fresh.name} takes over as ${COACH_SLOT_ROLES[slot]}.`);continue}const dest=trackedMoves<6?chooseCoachMoveDestination(c,t,slot,changed,moved):null;if(dest){const destOld=dest.staff[slot].name;moveCoach(c,t,dest,slot,'Accepted a new coordinator job');mark(t,slot);mark(dest,slot);moved.add(c.id);trackedMoves++;log.push(`${c.name}: ${t.name} ${COACH_SLOT_ROLES[slot]} → ${dest.name} ${COACH_SLOT_ROLES[slot]}; ${destOld} departs.`)}else{const x=replaceStaffCoach(t,slot,'Left for another opportunity','DEPARTED',next);mark(t,slot);log.push(`${t.name}: ${x.old.name} left as ${COACH_SLOT_ROLES[slot]}; ${x.fresh.name} takes over.`)}}
- for(const t of universe.teams){if(!did(t,'RC')){const c=t.staff.RC,retire=gameplayRandom()<coachRetirementChance(c),turn=!retire&&gameplayRandom()<.018+(c.ambition||60)/2200;if(t.name===controlled){if(retire||turn){createOpening(t,'RC',retire?'Retired after the season':'Left for another opportunity',retire?'RETIRED':'DEPARTED');mark(t,'RC');log.push(`${t.name}: ${c.name} ${retire?'retired':'left for another opportunity'} as Recruiting Coordinator. The job is open — interview and hire from the Staff tab.`)}}else if(retire){const x=replaceStaffCoach(t,'RC','Retired after the season','RETIRED',next);mark(t,'RC');log.push(`${t.name}: ${x.old.name} retired; ${x.fresh.name} takes over as Recruiting Coordinator.`)}else if(turn){const dest=trackedMoves<8?chooseCoachMoveDestination(c,t,'RC',changed,moved):null;if(dest){const destOld=dest.staff.RC.name;moveCoach(c,t,dest,'RC','Accepted a new recruiting coordinator job');mark(t,'RC');mark(dest,'RC');moved.add(c.id);trackedMoves++;log.push(`${c.name}: ${t.name} Recruiting Coordinator → ${dest.name}; ${destOld} departs.`)}else{const x=replaceStaffCoach(t,'RC','Left for another opportunity','DEPARTED',next);mark(t,'RC');log.push(`${t.name}: ${x.old.name} left as Recruiting Coordinator; ${x.fresh.name} takes over.`)}}}if(!did(t,'SC')){const c=t.staff.SC;if(gameplayRandom()<coachRetirementChance(c)){if(t.name===controlled){createOpening(t,'SC','Retired after the season','RETIRED');mark(t,'SC');log.push(`${t.name}: ${c.name} retired as Strength & Performance. The job is open — interview and hire from the Staff tab.`)}else{const x=replaceStaffCoach(t,'SC','Retired after the season','RETIRED',next);mark(t,'SC');log.push(`${t.name}: ${x.old.name} retired; ${x.fresh.name} takes over as Strength & Performance.`)}}}}
+ for(const t of universe.teams)for(const slot of ['OC','DC']){if(did(t,slot))continue;const c=t.staff[slot];if(moved.has(c.id))continue;const retire=gameplayRandom()<coachRetirementChance(c),turn=!retire&&gameplayRandom()<(slot==='OC'?.07+c.ambition/900:.06+c.ambition/1000);if(!retire&&!turn)continue;if(t.name===controlled){handleControlledCoordinatorChange(t,slot,retire,changed,moved,log);continue}if(retire){const x=replaceStaffCoach(t,slot,'Retired after the season','RETIRED',next);mark(t,slot);log.push(`${t.name}: ${x.old.name} retired; ${x.fresh.name} takes over as ${COACH_SLOT_ROLES[slot]}.`);continue}const dest=trackedMoves<6?chooseCoachMoveDestination(c,t,slot,changed,moved):null;if(dest){const destOld=dest.staff[slot].name;moveCoach(c,t,dest,slot,'Accepted a new coordinator job');mark(t,slot);mark(dest,slot);moved.add(c.id);trackedMoves++;log.push(`${c.name}: ${t.name} ${COACH_SLOT_ROLES[slot]} → ${dest.name} ${COACH_SLOT_ROLES[slot]}; ${destOld} departs.`)}else{const x=replaceStaffCoach(t,slot,'Left for another opportunity','DEPARTED',next);mark(t,slot);log.push(`${t.name}: ${x.old.name} left as ${COACH_SLOT_ROLES[slot]}; ${x.fresh.name} takes over.`)}}
+ for(const t of universe.teams){if(!did(t,'RC')){const c=t.staff.RC,retire=gameplayRandom()<coachRetirementChance(c),turn=!retire&&gameplayRandom()<.018+(c.ambition||60)/2200;if(t.name===controlled){if(retire||turn)handleControlledCoordinatorChange(t,'RC',retire,changed,moved,log)}else if(retire){const x=replaceStaffCoach(t,'RC','Retired after the season','RETIRED',next);mark(t,'RC');log.push(`${t.name}: ${x.old.name} retired; ${x.fresh.name} takes over as Recruiting Coordinator.`)}else if(turn){const dest=trackedMoves<8?chooseCoachMoveDestination(c,t,'RC',changed,moved):null;if(dest){const destOld=dest.staff.RC.name;moveCoach(c,t,dest,'RC','Accepted a new recruiting coordinator job');mark(t,'RC');mark(dest,'RC');moved.add(c.id);trackedMoves++;log.push(`${c.name}: ${t.name} Recruiting Coordinator → ${dest.name}; ${destOld} departs.`)}else{const x=replaceStaffCoach(t,'RC','Left for another opportunity','DEPARTED',next);mark(t,'RC');log.push(`${t.name}: ${x.old.name} left as Recruiting Coordinator; ${x.fresh.name} takes over.`)}}}if(!did(t,'SC')){const c=t.staff.SC;if(gameplayRandom()<coachRetirementChance(c)){if(t.name===controlled){createOpening(t,'SC','Retired after the season','RETIRED');mark(t,'SC');log.push(`${t.name}: ${c.name} retired as Strength & Performance. The job is open — interview and hire from the Staff tab.`)}else{const x=replaceStaffCoach(t,'SC','Retired after the season','RETIRED',next);mark(t,'SC');log.push(`${t.name}: ${x.old.name} retired; ${x.fresh.name} takes over as Strength & Performance.`)}}}}
  return log
 }
 function offseasonPhaseDone(phase){
@@ -160,10 +175,11 @@ function offseasonReview(){
 function offseasonDepartures(){
  const os=normalizeOffseasonState();
  if(offseasonPhaseDone('departures')){if(os.phase==='departures')os.phase='signing';return true}
+ for(const offer of coordinatorRetentionOffers())settleCoordinatorRetention(offer);
  const controlled=$('#userTeam').value,portal=[...(universe.transferPortal||[])],draftPool=[],teams={};
  universe.transferPortal=[];
  for(const t of universe.teams){
-  const exits=[];
+  const exits=[],succession=t.name===controlled?successionStarters(t):null;
   for(const p of t.roster){
    if(t.name===controlled&&eligibilityBase(p)===0)snapshotScouting(p,t,'FRESHMAN_YEAR_END','SEASON');
    const preserved=p.redshirtActive&&canRedshirt(p)&&(p.stats?.games||0)<=4;
@@ -180,6 +196,14 @@ function offseasonDepartures(){
    else keep.push(p);
   }
   t.roster=keep;
+  const receipt=os.reports.roster?.[t.id];
+  if(succession&&receipt){
+   const returning=new Set(keep.map(p=>p.id)),draft=new Map(exits.map(p=>[p.id,p]));
+   receipt.succession=succession.filter(row=>!returning.has(row.id)).map(row=>{
+    const d=draft.get(row.id),reason=d?(eligibilityBase(d)>=4?'Eligibility exhausted':'Early draft'):'Transfer';
+    return{...row,reason};
+   });
+  }
   t.roster.forEach(p=>{ensurePlayerDevelopment(p,t);const old=p.perceived;p.morale=clamp(p.morale+gi(-5,9),15,99);p.promiseBaseline??=old;p.year=CLASS_NAMES[Math.min(3,eligibilityBase(p))]||'SR';p.positionFamiliarity[p.pos]=clamp(familiarity(p,p.pos)+gi(2,6),0,100);p.stats=newStats();p.campGrade=null});
   teams[t.id]={exits:exits.length,portal:portal.filter(x=>x.fromSchoolId===t.id).length};
  }

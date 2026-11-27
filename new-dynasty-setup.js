@@ -3,6 +3,11 @@
 const NEW_DYNASTY_SETUP_DRAFT_KEY='dynastyLabNewDynastySetupV1';
 const NEW_DYNASTY_SETUP_VERSION=1;
 const NEW_DYNASTY_SETUP_STEPS=['Take the Job','Your Coach','Choose a Program','Program Identity','Configure the World','What You Inherited','Accept the Contract'];
+const NEW_DYNASTY_SCENARIOS=[
+ {id:'standard',title:'Standard Season',copy:'Take over a healthy roster in the 2027 preseason.'},
+ {id:'next-man-up',title:'Next Man Up',copy:'Your starting quarterback is rehabbing a shoulder sprain. Prepare a backup for the opening weeks.'},
+ {id:'conference-crown',title:'Conference Crown',copy:'The board expects a conference championship. The result will factor into your season review.'}
+];
 let newDynastySetupDraft=null;
 let newDynastySetupCandidate=null;
 let newDynastySetupPreviousUniverse=null;
@@ -15,12 +20,13 @@ function newDynastySetupSeed(){
  const values=new Uint32Array(1);crypto.getRandomValues(values);return values[0]||0x6d2b79f5;
 }
 function defaultNewDynastySetupDraft(){
- return {version:NEW_DYNASTY_SETUP_VERSION,active:true,step:0,coachName:'',program:'Chicago Metropolitan',offScheme:'Multiple',defScheme:'Split-Safety Control',trainingFocus:'Balanced',mode:'dynasty',seed:newDynastySetupSeed(),quickStart:false,startedAt:new Date().toISOString()};
+ return {version:NEW_DYNASTY_SETUP_VERSION,active:true,step:0,coachName:'',program:'Chicago Metropolitan',offScheme:'Multiple',defScheme:'Split-Safety Control',trainingFocus:'Balanced',mode:'dynasty',scenario:'standard',seed:newDynastySetupSeed(),quickStart:false,startedAt:new Date().toISOString()};
 }
+function newDynastyScenario(id){return NEW_DYNASTY_SCENARIOS.find(s=>s.id===id)||NEW_DYNASTY_SCENARIOS[0]}
 function sanitizeNewDynastySetupDraft(value){
  const base=defaultNewDynastySetupDraft(),d=value&&typeof value==='object'?value:{};
  const program=schools.some(s=>s.name===d.program)?d.program:base.program;
- return {...base,active:d.active===true,step:clamp(Number.isInteger(d.step)?d.step:0,0,6),coachName:typeof d.coachName==='string'?d.coachName.slice(0,40):'',program,offScheme:OFF_SCHEMES[d.offScheme]?d.offScheme:base.offScheme,defScheme:DEF_SCHEMES[d.defScheme]?d.defScheme:base.defScheme,trainingFocus:TEAM_TRAINING[d.trainingFocus]?d.trainingFocus:base.trainingFocus,mode:d.mode==='commissioner'?'commissioner':'dynasty',seed:Number.isInteger(d.seed)&&d.seed>=0&&d.seed<=0xffffffff?d.seed:base.seed,quickStart:d.quickStart===true,startedAt:typeof d.startedAt==='string'?d.startedAt:base.startedAt};
+ return {...base,active:d.active===true,step:clamp(Number.isInteger(d.step)?d.step:0,0,6),coachName:typeof d.coachName==='string'?d.coachName.slice(0,40):'',program,offScheme:OFF_SCHEMES[d.offScheme]?d.offScheme:base.offScheme,defScheme:DEF_SCHEMES[d.defScheme]?d.defScheme:base.defScheme,trainingFocus:TEAM_TRAINING[d.trainingFocus]?d.trainingFocus:base.trainingFocus,mode:d.mode==='commissioner'?'commissioner':'dynasty',scenario:newDynastyScenario(d.scenario).id,seed:Number.isInteger(d.seed)&&d.seed>=0&&d.seed<=0xffffffff?d.seed:base.seed,quickStart:d.quickStart===true,startedAt:typeof d.startedAt==='string'?d.startedAt:base.startedAt};
 }
 function readNewDynastySetupDraft(){
  try{const raw=localStorage.getItem(NEW_DYNASTY_SETUP_DRAFT_KEY);return raw?sanitizeNewDynastySetupDraft(JSON.parse(raw)):null}catch{return null}
@@ -66,7 +72,7 @@ function newDynastySetupWelcome(){
  const saves=titleSaveSlots.filter(s=>!s.empty).length;
  return `${newDynastySetupHeader('THE NEXT ERA STARTS HERE','Take the Job','Build a coach, choose the right program, set your football identity, and see exactly what you inherited before the first preseason meeting.')}
  <div class="setup-welcome-grid">
-  <section class="setup-feature"><span>FULL SETUP</span><h2>Make the program yours</h2><p>Choose your coach, school, and style of football.</p><button type="button" data-setup-full>Full Setup</button></section>
+  <section class="setup-feature"><span>FULL SETUP</span><h2>Make the program yours</h2><p>Choose your coach, school, and starting scenario.</p><button type="button" data-setup-full>Full Setup</button></section>
   <section class="setup-feature"><span>QUICK START</span><h2>Get to the briefing</h2><p>Use recommended settings, then meet your roster and staff before accepting the job.</p><button type="button" data-setup-quick>Quick Start</button></section>
  </div>
  <div class="setup-ledger">${newDynastySetupMetric('Starting season','2027 Preseason','Review your team before opening Week 1')}${newDynastySetupMetric('League','120 programs','Choose a contender or build a program from the ground up')}${newDynastySetupMetric('Existing saves',String(saves),'Continue and Load remain on the title screen')}</div>`;
@@ -92,10 +98,25 @@ function newDynastySetupIdentity(){
  <div class="setup-identity"><section><div class="setup-section-title"><span>OFFENSE</span><h2>How you move the ball</h2></div><div class="setup-choice-grid">${off}</div></section><section><div class="setup-section-title"><span>DEFENSE</span><h2>How you get off the field</h2></div><div class="setup-choice-grid">${def}</div></section><section><div class="setup-section-title"><span>PROGRAM DEVELOPMENT</span><h2>Where the offseason work goes</h2></div><div class="setup-choice-grid setup-choice-grid--training">${training}</div></section></div>`;
 }
 function newDynastySetupWorld(){
- return `${newDynastySetupHeader('STEP 5 · WORLD CONTROL','Configure the world','Choose how much institutional control you want. League rules remain fixed because Dynasty Lab does not pretend unfinished settings are real.')}
+ const scenarios=NEW_DYNASTY_SCENARIOS.map(s=>newDynastySetupChoice('scenario',s.id,s.title,s.copy,newDynastySetupDraft.scenario===s.id)).join('');
+ return `${newDynastySetupHeader('STEP 5 · WORLD CONTROL','Configure the world','Set your starting scenario and decide how much control you have over the league.')}
  <div class="setup-mode-grid">${newDynastySetupChoice('mode','dynasty','Dynasty Mode','Control one program. Change jobs only through earned career opportunities.',newDynastySetupDraft.mode==='dynasty')}${newDynastySetupChoice('mode','commissioner','Commissioner Mode','Switch programs and edit institutional details across the fictional universe.',newDynastySetupDraft.mode==='commissioner')}</div>
+ <section class="setup-scenarios" aria-labelledby="setupScenarioHeading"><div class="setup-section-title"><h2 id="setupScenarioHeading">Starting scenario</h2></div><div class="setup-choice-grid" role="radiogroup" aria-labelledby="setupScenarioHeading">${scenarios}</div></section>
  <div class="setup-world-facts"><div><span>UNIVERSE</span><strong>120 fictional programs</strong><small>Ten conferences with a national postseason.</small></div><div><span>CALENDAR</span><strong>12-game regular season</strong><small>Your dynasty opens in the 2027 preseason.</small></div><div><span>SIMULATION</span><strong>One shared football model</strong><small>Mode changes control access, not opponent difficulty.</small></div><div><span>SAVE MODEL</span><strong>Three local slots + JSON export</strong><small>The opening contract creates one durable save.</small></div></div>
  <div class="setup-deferred"><strong>Not exposed yet</strong><span>Custom playoff formats, transfer rules, conference realignment, and difficulty sliders require real simulation support before they belong here.</span></div>`;
+}
+function applyNewDynastyScenario(t,id){
+ if(id==='next-man-up'){
+  const qb=roleStarter(t,'QB1');if(!qb)throw new Error('A starting quarterback is needed for Next Man Up.');
+  qb.injury='Shoulder sprain';qb.injuryWeeks=3;qb.health=Math.min(qb.health??100,70);
+  (qb.injuryHistory??=[]).push({year:universe.year,week:universe.week,type:qb.injury,weeks:qb.injuryWeeks});
+  universe.setup.scenarioPlayerId=qb.id;
+ }
+ if(id==='conference-crown'){
+  const goals=ensureSeasonGoals(t),existing=goals.find(g=>g.type==='conferenceTitle');
+  if(existing){existing.weight='Important';existing.tier='Secondary'}
+  else goals.push({id:'scenario-conference-title',type:'conferenceTitle',label:'Win the conference championship',weight:'Important',tier:'Secondary',target:null,year:universe.year});
+ }
 }
 function buildNewDynastySetupCandidate(){
  if(newDynastySetupCandidate)return newDynastySetupCandidate;
@@ -108,7 +129,8 @@ function buildNewDynastySetupCandidate(){
   t.staff.HC.name=d.coachName.trim();t.staff.HC.userControlled=true;
   universe.coachProfile={name:d.coachName.trim(),programId:t.id,programName:t.name,startedYear:universe.year};
   universe.tenure={startYear:universe.year,school:t.name,seasons:[],ended:null,closed:false};
-  universe.setup={version:NEW_DYNASTY_SETUP_VERSION,completed:false,source:'take-the-job',coachName:d.coachName.trim(),programId:t.id,programName:t.name,offScheme:d.offScheme,defScheme:d.defScheme,trainingFocus:d.trainingFocus,mode:d.mode,seed:d.seed,quickStart:d.quickStart,startedAt:d.startedAt,completedAt:null,saveSlot:null};
+  universe.setup={version:NEW_DYNASTY_SETUP_VERSION,completed:false,source:'take-the-job',coachName:d.coachName.trim(),programId:t.id,programName:t.name,offScheme:d.offScheme,defScheme:d.defScheme,trainingFocus:d.trainingFocus,mode:d.mode,scenario:d.scenario,seed:d.seed,quickStart:d.quickStart,startedAt:d.startedAt,completedAt:null,saveSlot:null};
+  applyNewDynastyScenario(t,d.scenario);
   universe.setupCompleted=false;buildPreseasonHub();syncGameplayRng();newDynastySetupCandidate=candidate;return candidate;
  }catch(e){universe=previous;ensureGameplayRng();rebuildIndexes();throw e}
 }
@@ -122,18 +144,23 @@ function newDynastySetupBriefing(){
  const t=T(newDynastySetupDraft.program),p=profiles(t),sch=scholarshipSummary(t),units=[['Quarterback room',p.qb],['Skill talent',p.skill],['Offensive line',p.ol],['Front seven',p.front],['Coverage unit',p.coverage]].sort((a,b)=>b[1]-a[1]),pipelines=Object.entries(t.pipelines||{}).sort((a,b)=>b[1]-a[1]),strengths=units.slice(0,2),weaknesses=units.slice(-2).reverse();
  const transition=['off','def'].filter(side=>schemeTransition(t,side)).map(side=>`${side==='off'?'offense':'defense'} at ${schemeFamiliarity(t,side)}% familiarity`);
  const priorities=[`Build the weekly plan around ${strengths[0][0].toLowerCase()} (${grade(strengths[0][1])}).`,sch.room?`Use the ${sch.room} available scholarship spot${sch.room===1?'':'s'} without exceeding the ${sch.capacity}-player class capacity.`:'Protect roster flexibility; the projected class is already at capacity.',transition.length?`Manage installation: ${transition.join(' and ')}.`:`Preserve the roster's fit in ${t.offScheme} and ${t.defScheme}.`];
+ const scenario=newDynastyScenario(universe.setup.scenario),qb=t.roster.find(p=>p.id===universe.setup.scenarioPlayerId);
+ const scenarioBrief=qb?`${qb.name} is rehabbing a shoulder sprain. ${roleStarter(t,'QB1')?.name||'Your backup'} takes the opening reps while the starter recovers.`:scenario.copy;
+ if(qb)priorities[0]='Set a depth chart and an opening game plan for the backup quarterback.';
+ if(scenario.id==='conference-crown')priorities[0]='Review your conference slate and the title objective in Season Goals.';
  return `${newDynastySetupHeader('STEP 6 · PROGRAM BRIEFING','What You Inherited','Meet your roster, staff, and the expectations for your first season.')}
  <div class="setup-briefing-hero"><div>${teamLogoHTML(t.id,84,'setup-program-logo')}<span>2027 PROGRAM DOSSIER</span><h2>${esc(t.name)}</h2><p>${esc(t.conference)} · ${esc(t.city)}, ${esc(t.state)}</p></div><div>${newDynastySetupMetric('Overall profile',grade(p.overall),`${Math.round(p.overall)}/100`)}${newDynastySetupMetric('Board target',`${seasonExpectation(t)} wins`,adminConfidenceLabel(t.adminConfidence))}${newDynastySetupMetric('Scholarships',`${sch.room} open`,`${sch.returning} projected returners`)}</div></div>
+ ${scenario.id==='standard'?'':`<div class="setup-note"><strong>${esc(scenario.title)}</strong><p>${esc(scenarioBrief)}</p></div>`}
  <div class="setup-briefing-grid"><section><div class="setup-section-title"><span>ROSTER READ</span><h2>Strengths and pressure points</h2></div><div class="setup-report-block"><strong>Foundation</strong>${strengths.map(x=>`<div><span>${esc(x[0])}</span><b>${grade(x[1])} · ${Math.round(x[1])}</b></div>`).join('')}</div><div class="setup-report-block warning"><strong>Needs attention</strong>${weaknesses.map(x=>`<div><span>${esc(x[0])}</span><b>${grade(x[1])} · ${Math.round(x[1])}</b></div>`).join('')}</div><div class="setup-report-block"><strong>Roster & scholarships</strong><p>${t.roster.length} players · ${sch.departing} projected departures · ${sch.capacity} recruiting capacity · ${sch.room} spots currently open.</p></div></section>
  <section><div class="setup-section-title"><span>FOOTBALL OPERATIONS</span><h2>Staff and recruiting position</h2></div><div class="setup-staff-list">${Object.values(t.staff).map(c=>`<div><span>${esc(c.role)}</span><strong>${esc(c.name)}</strong><small>Recruit ${grade(c.recruiting)} · Develop ${grade(c.development)} · Call ${grade(c.playCall)}</small></div>`).join('')}</div><div class="setup-report-block"><strong>Best pipelines</strong><p>${pipelines.slice(0,3).map(([name,value])=>`${esc(name)} ${value}`).join(' · ')}</p></div></section>
  <section class="setup-priorities"><div class="setup-section-title"><span>FIRST 30 DAYS</span><h2>Recommended priorities</h2></div><ol>${priorities.map(x=>`<li>${esc(x)}</li>`).join('')}</ol></section></div>`;
 }
 function newDynastySetupReview(){
- const d=newDynastySetupDraft,s=newDynastySetupSchool(),slot=titleSaveSlots.find(x=>x.empty)||activeSlotMeta(),occupied=slot&&!slot.empty;
+ const d=newDynastySetupDraft,s=newDynastySetupSchool(),slot=titleSaveSlots.find(x=>x.empty)||activeSlotMeta(),occupied=slot&&!slot.empty,scenario=newDynastyScenario(d.scenario);
  return `${newDynastySetupHeader('STEP 7 · CONTRACT REVIEW','Accept the contract','Accept the job to save your dynasty and begin preseason.')}
  <div class="setup-contract"><div class="setup-contract-top">${teamLogoHTML(s.id,76,'setup-program-logo')}<div><span>HEAD FOOTBALL COACH</span><h2>${esc(d.coachName)}</h2><p>${esc(s.name)} · ${esc(s.conference)}</p></div></div>
  <div class="setup-contract-grid">${newDynastySetupMetric('Offense',d.offScheme,'Your players will learn this scheme through practice')}${newDynastySetupMetric('Defense',d.defScheme,'Your players will learn this scheme through practice')}${newDynastySetupMetric('Development',d.trainingFocus,'Your team’s offseason training emphasis')}${newDynastySetupMetric('Control',d.mode==='commissioner'?'Commissioner':'Dynasty',d.mode==='commissioner'?'Program switching and institutional editing enabled':'Career movement only')}${newDynastySetupMetric('Opening checkpoint','2027 Preseason','Choose Begin Season when your team is ready')}${newDynastySetupMetric('Save destination',slot?.label||'Dynasty 1',occupied?'Confirmation required: this slot is occupied':'First available empty slot')}</div>
- <div class="setup-contract-note"><strong>Your inherited roster is fixed.</strong><span>Go back to review your choices, or accept the job to begin.</span></div></div>`;
+ <div class="setup-contract-note"><strong>${esc(scenario.title)}</strong><span>${esc(scenario.copy)}</span></div></div>`;
 }
 function newDynastySetupHTML(){return [newDynastySetupWelcome,newDynastySetupCoach,newDynastySetupProgram,newDynastySetupIdentity,newDynastySetupWorld,newDynastySetupBriefing,newDynastySetupReview][newDynastySetupDraft.step]()}
 function updateNewDynastySetupControls(){
@@ -163,8 +190,10 @@ function restoreNewDynastySetupDraft(){
  const d=readNewDynastySetupDraft();if(!d?.active)return;newDynastySetupDraft=d;newDynastySetupPreviousUniverse=universe;openNewDynastySetup();
 }
 function setNewDynastySetupField(field,value){
- if(!['offScheme','defScheme','trainingFocus','mode'].includes(field))return;
+ if(!['offScheme','defScheme','trainingFocus','mode','scenario'].includes(field))return;
+ if(field==='scenario')value=newDynastyScenario(value).id;
  if(newDynastySetupDraft[field]===value)return;newDynastySetupDraft[field]=value;newDynastySetupDraft.quickStart=false;invalidateNewDynastySetupCandidate();writeNewDynastySetupDraft();renderNewDynastySetup();
+ if(field==='scenario')$('#setupContent [name="scenario"]:checked')?.focus({preventScroll:true});
 }
 async function acceptNewDynastySetup(){
  if(newDynastySetupSubmitting)return false;if(!validNewDynastyCoachName(newDynastySetupDraft.coachName))return false;

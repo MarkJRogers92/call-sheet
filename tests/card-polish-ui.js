@@ -135,9 +135,9 @@ test('quick sheet compares offered calls and keeps the selected call, estimate a
  const req={role:'off',situation:{down:1},options:{command:2,plays:[{id:'screen',cost:1,card:{name:'Screen'}},{id:'draw',cost:0,card:{name:'Draw'}}]}};
  const forecast={yards:[1.5,5.2],first:[12,24],goal:'first',confidence:'Limited film'};
  const view={clue:'<Light box>',choices:[{id:'screen',label:'Screen',detail:'Look for Alex <West>.',aim:'Dependable gain',forecast}]};
- const html=run('quickSheetHTML',{req,b:{},B:{comboRead:()=>null},callForecastHTML:(compact,estimate)=>{
+ const html=run('quickSheetHTML',{req,b:{},B:{comboRead:()=>null,sidelineOptions:()=>null},callForecastHTML:(compact,estimate)=>{
    assert.equal(compact,true);assert.equal(estimate,forecast);return '<div id="callForecast">Forecast</div>';
- },sel:{play:'screen',tac:[]},selCost:()=>1,selectedTactics:()=>[],blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',quickTacticsHTML:()=>'<p>Pair with a tactic</p>',forecastReadHTML:()=>'',redrawButton:()=>'',redrawText:()=>'',esc,err:''},[view],['rangeText','forecastNumbers','forecastObjective','quickEstimateHTML','comboReceiptHTML']);
+ },sel:{play:'screen',tac:[]},selCost:()=>1,selectedTactics:()=>[],blockedSelection:()=>null,assignmentHTML:()=>'',pinnedCallHTML:()=>'<p>Your last call</p>',matchupHTML:()=>'<b>Featured duel</b>',guidedDriveHTML:()=>'<button>Finish guided drive</button>',quickTacticsHTML:()=>'<p>Pair with a tactic</p>',forecastReadHTML:()=>'',redrawButton:()=>'',redrawText:()=>'',esc,err:''},[view],['rangeText','forecastNumbers','forecastObjective','quickEstimateHTML','comboReceiptHTML','equippedComboHTML','quickFeatureHTML']);
  assert.match(html,/&lt;Light box&gt;/);assert.match(html,/Alex &lt;West&gt;/);assert.match(html,/aria-pressed="true"/);
  assert.match(html,/Dependable gain.*<b>1–6 yd<\/b>.*<b>10–25%<\/b>.*Limited film/);
  assert.match(html,/class="quick-footer">\s*<div class="quick-receipt"><strong>Screen<\/strong>[\s\S]*id="callForecast"[\s\S]*Snap · 1 CMD/);

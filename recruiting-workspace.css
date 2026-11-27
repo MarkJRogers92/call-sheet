@@ -57,6 +57,12 @@
 .roster-outlook-position dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0}
 .roster-outlook-position dt{font-size:10px;color:var(--muted)}.roster-outlook-position dd{margin:3px 0 0;font-size:16px;font-weight:750}
 .roster-outlook-actions{display:flex;gap:6px;flex-wrap:wrap}.roster-outlook-actions button{font-size:11px;flex:1}
+.roster-succession{margin:16px 0}
+.roster-succession h4{margin:0 0 8px}
+.roster-succession-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:10px}
+.roster-succession-card h5{margin:0;font-size:14px}
+.roster-succession-card p{margin:7px 0;font-size:12px;line-height:1.35}
+.roster-succession-card .roster-outlook-actions button{min-height:44px}
 
 #recruitingNeeds .roster-outlook-note{font-size:12px;font-weight:400;line-height:1.5;letter-spacing:normal;text-transform:none;color:var(--muted)}
 

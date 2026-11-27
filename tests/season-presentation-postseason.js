@@ -6,16 +6,16 @@ const vm=require('node:vm');
 
 // Postseason games are archived but never added to the team schedule. The Season card used to read
 // only the schedule, so after a title run it showed the Week 12 result and that game's streak.
-function bridge({phase,champion=null,archive=[]}){
+function bridge({phase,champion=null,archive=[],conferenceChampions=[]}){
  const user={id:1,name:'Home',conference:'Lakes',city:'Chicago',state:'IL',w:15,l:1,cw:8,cl:0,rank:1,schedule:[
   {week:11,home:'Home',away:'Rival',played:true,score:[10,24],winner:'Home'},
   {week:12,home:'Road',away:'Home',played:true,score:[17,20],winner:'Road'},
  ]};
  const teams=[user,{id:2,name:'Rival',w:1,l:1},{id:3,name:'Road',w:1,l:1},{id:4,name:'Bowl Foe',w:1,l:1}];
  const universe={year:2027,week:12,phase,champion,teams,gameArchive:archive};
- const ctx={universe,selected:()=>user,T:name=>teams.find(t=>t.name===name),confStand:()=>[user],seasonStageLabel:()=>'Season complete'};
+ const ctx={universe,selected:()=>user,T:name=>teams.find(t=>t.name===name),confStand:()=>[user],seasonStageLabel:()=>'Season complete',conferenceChampionIdsFor:()=>conferenceChampions};
  vm.runInNewContext(fs.readFileSync(path.join(__dirname,'..','season-presentation-adapter.js'),'utf8'),ctx);
- return{snap:ctx.DynastyLabSeasonPresentation.snapshot(),universe};
+ return{snap:ctx.DynastyLabSeasonPresentation.snapshot(),race:ctx.DynastyLabSeasonPresentation.race(),universe};
 }
 const post=(id,week,label,home,away,hs,as,season=2027)=>({id,season,week,label,home:{id:0,name:home},away:{id:0,name:away},score:{home:hs,away:as}});
 
@@ -37,4 +37,13 @@ test('phase outlooks replace the generic no-game message without inventing resul
  assert.equal(bowl.latest.result,'L');assert.match(bowl.afterRegular.detail,/Lost the Rose Bowl/);
  const done=bridge({phase:'complete',champion:'Somebody'}).snap;
  assert.equal(done.afterRegular.title,'Season complete');assert.equal(done.latest.week,12);assert.equal(done.streak,'L1');
+});
+
+test('the completed conference race links the recorded title game in scoreboard order',()=>{
+ const archive=[post('cc',13,'Lakes Championship','Home','Rival',31,10),post('prior',13,'Lakes Championship','Home','Rival',38,35,2026)];
+ const {race}=bridge({phase:'bowlReady',archive,conferenceChampions:[1]});
+ assert.equal(race.conference,null);
+ assert.equal(race.championship.yours,true);
+ assert.equal(race.championship.game.id,'cc');
+ assert.deepEqual(Array.from(race.championship.game.score),[10,31]);
 });

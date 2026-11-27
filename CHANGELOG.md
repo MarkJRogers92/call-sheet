@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.37.0 — Dynasty decisions
+
+- Recruiting Outlook identifies departing starters, returning understudies, recruiting options, and spring progress.
+- The Season tab shows conference title paths, games to follow, and how the playoff field is shaping up.
+- Standout seasons can earn head coaching invitations, and schools can counter outside offers for their coordinators.
+- New Dynasty adds the Next Man Up and Conference Crown scenarios.
+- The Coach’s Desk follows up on last week’s choices and surfaces the next required decision.
+
 ## v0.36.0 — Players of the Week and retired numbers
 
 - **National Players of the Week.** After every regular-season week the best offensive and defensive performances in the country are named from the box scores. This Week shows last week's winners, and when one is yours The Wire says so (and counts how many he has this season).

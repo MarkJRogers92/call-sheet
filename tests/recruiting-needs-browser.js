@@ -18,6 +18,14 @@ const FILE = 'file://' + path.join(__dirname, '..', 'index.html');
 
       await page.goto(FILE);
       await startNewDynasty(page);
+      const succession = await page.evaluate(() => {
+        const team = window.__DL_TEST__.selected();
+        const [starter, backup] = team.roleDepth.QB1.map(id => team.roster.find(player => player.id === id));
+        for (const player of team.roster) player.eligibilityUsed = 0;
+        backup.eligibilityUsed = 2;
+        Object.assign(starter, { eligibilityUsed: 3, redshirtActive: false });
+        return { outgoing: starter.name, backup: backup.name, backupId: backup.id };
+      });
       await page.evaluate(() => document.querySelector('.tabs button[data-tab="recruiting"]').click());
       await page.click('[data-recruit-class="outlook"]');
       await page.waitForSelector('#recruitingNeeds [data-need-pos]', { timeout: 10000 });
@@ -29,7 +37,14 @@ const FILE = 'file://' + path.join(__dirname, '..', 'index.html');
       assert.match(first, /\d+ of \d+/, `[${label}] the row carries counts`);
       assert.match(first, /committed/i, `[${label}] the row explains commitments`);
 
+      const opening = page.locator('[data-succession-role="QB1"]');
+      const openingText = await opening.innerText();
+      assert.ok(openingText.includes(succession.outgoing), `[${label}] the outgoing starter is named`);
+      assert.ok(openingText.includes(succession.backup), `[${label}] the understudy is named`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `[${label}] no horizontal overflow`);
+      await opening.getByRole('button', { name: `Training for ${succession.backup}` }).click();
+      assert.equal(await page.locator('#development').isVisible(), true, `[${label}] training opens Development`);
+      assert.equal(await page.evaluate(() => document.activeElement.dataset.training), succession.backupId, `[${label}] the named player's training control receives focus`);
       assert.deepEqual(errors, [], `[${label}] no console errors`);
       await page.close();
     }

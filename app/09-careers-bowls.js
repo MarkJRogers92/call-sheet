@@ -1,12 +1,21 @@
 // app/09-careers-bowls.js: Coaching career posts, bowls, fan support and home field. Part of app.js; see tools/app-source.js.
 // Taking a post is the only thing that clears the offer list, so the run cannot silently continue
 // at a school that already let you go.
+function activeCareerInvitations(t=selected()){
+ const board=universe.careerInvitations;
+ if(!board||universe.tenure?.closed||(universe.jobOffers||[]).length||universe.phase!=='complete')return [];
+ if(!t||board.year!==universe.year||board.schoolId!==t.id||universe.tenure?.school!==t.name)return [];
+ return universe.offseason?.phase==='departures'?board.offers:[];
+}
 function acceptPost(schoolId){
  const t=universe.teams.find(x=>x.id===schoolId);
  if(!t)return {ok:false,reason:'That job is not on the board.'};
- if(!(universe.jobOffers||[]).some(o=>o.schoolId===schoolId))return {ok:false,reason:'That job was not offered.'};
+ const mandatory=(universe.jobOffers||[]).some(o=>o.schoolId===schoolId);
+ if(!mandatory&&!activeCareerInvitations().some(o=>o.schoolId===schoolId))return {ok:false,reason:'That job is no longer available.'};
+ if(!mandatory)closeTenure('Accepted a new post',false);
  universe.jobOffers=[];
- universe.tenure={startYear:universe.year,school:t.name,seasons:[],ended:null,closed:false};
+ universe.careerInvitations=null;
+ universe.tenure={startYear:universe.year+(mandatory?0:1),school:t.name,seasons:[],ended:null,closed:false};
  ensureAdminState(t);ensureNilState(t);
  t.adminConfidence=clamp(Math.round((t.admin_patience??60)*.6+30),15,95);
  t.mandate=null;
@@ -28,31 +37,63 @@ function careerHistoryHTML(){
  return (tn+rows)||'<div class="muted">No completed seasons yet.</div>';
 }
 function careerPostHTML(){
- const offers=universe.jobOffers||[];
+ const mandatory=(universe.jobOffers||[]).length>0;
+ const offers=mandatory?universe.jobOffers:activeCareerInvitations();
  if(!offers.length)return '';
  const last=(universe.careerHistory||[])[universe.careerHistory.length-1];
+ const review=universe.tenure?.seasons.at(-1);
+ const title=mandatory?`Your tenure at ${last?.school||'your program'} is over`:'Head coaching invitations';
+ const detail=mandatory?`Career: ${careerSummaryText()}. These programs will have you.`:
+  `After a ${review?.w??0}–${review?.l??0} season, ${offers.length===1?'one program is':'two programs are'} interested. Decide before processing departures.`;
  return `<div class="decision-card"><div class="decision-kicker">CAREER</div>
-  <div class="decision-title">Your tenure at ${last?.school||'your program'} is over</div>
-  <div class="decision-summary">${last?`${last.w}-${last.l} across ${last.seasons} season${last.seasons===1?'':'s'}. `:''}Career: ${careerSummaryText()}. These programs will have you.</div>
+  <div class="decision-title">${gameEscape(title)}</div>
+  <div class="decision-summary">${gameEscape(detail)}</div>
   <div class="decision-options">${offers.map(o=>
-   `<button class="decision-option" data-post="${o.schoolId}"><strong>${o.name}</strong><small>${o.why}</small></button>`).join('')}</div></div>`;
+   `<button type="button" class="decision-option" data-post="${o.schoolId}"><strong>${gameEscape(o.name)}</strong><small>${gameEscape(o.why)}</small></button>`).join('')}
+   ${mandatory?'':`<button type="button" class="decision-option" data-stay-post><strong>Stay at ${gameEscape(selected().name)}</strong><small>Decline these invitations</small></button>`}</div></div>`;
 }
 function renderCareerPost(){
  const el=$('#careerPost');if(!el)return;
  el.innerHTML=careerPostHTML();
- $$('[data-post]').forEach(b=>b.onclick=()=>{
+ el.querySelectorAll('[data-post]').forEach(b=>b.onclick=()=>{
   const r=acceptPost(+b.dataset.post);
   if(!r.ok){setStatus(r.reason);return}
   $('#userTeam').value=r.team.name;
+  universe.weeklyHub=[];
   setStatus(`Took the ${r.team.name} job. ${careerSummaryText()}.`);
+  autosaveAfter('management');
   render();
  });
+ const stay=el.querySelector('[data-stay-post]');
+ if(stay)stay.onclick=()=>{
+  universe.careerInvitations=null;
+  setStatus(`Staying at ${selected().name}.`);
+  autosaveAfter('management');
+  render();
+ };
 }
 function careerHubItems(t){
- if(!(universe.jobOffers||[]).length)return[];
- return [{type:'action',tab:'program',importance:95,kicker:'CAREER',
-  main:'Your tenure is over — choose your next post',
-  sub:`${(universe.jobOffers||[]).length} programs will have you · ${careerSummaryText()}`}];
+ const mandatory=universe.jobOffers||[];
+ if(mandatory.length)return [{type:'action',tab:'program',importance:95,kicker:'CAREER',
+  main:'Your tenure is over. Choose your next post.',
+  sub:`${mandatory.length} programs will have you · ${careerSummaryText()}`}];
+ const offers=activeCareerInvitations(t);
+ if(!offers.length)return [];
+ return [{type:'action',tab:'program',importance:93,kicker:'CAREER',
+  main:offers.length===1?`${offers[0].name} invites you to coach`:'Two programs invite you to coach',
+  sub:'Review the invitations before processing departures.'}];
+}
+function renderCareerNotices(t=selected()){
+ const invitation=activeCareerInvitations(t).length?careerHubItems(t)[0]:null;
+ for(const id of ['#weeklyCareerNotice','#offseasonCareerNotice']){
+  const host=$(id);
+  if(!host)continue;
+  host.hidden=!invitation;
+  host.innerHTML=invitation?`<div class="weekly-setup-row"><span class="weekly-setup-label">CAREER</span>
+   <div><strong>${gameEscape(invitation.main)}</strong><small>${gameEscape(invitation.sub)}</small></div>
+   <button type="button">Review jobs</button></div>`:'';
+  if(invitation)host.querySelector('button').onclick=()=>openHubItem(invitation);
+ }
 }
 // Bowl season. Before this, the phase machine ran regular -> confReady -> playoffReady -> complete,
 // so roughly 112 of 120 programs simply stopped playing. Six wins now earns a game, which gives a

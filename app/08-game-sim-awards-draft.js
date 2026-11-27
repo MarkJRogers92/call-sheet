@@ -299,6 +299,7 @@ function reviewControlledProgram(t){
    seasons:universe.tenure.seasons.length};
   closeTenure('let go');
  }
+ openCareerInvitations(t,review);
  if(typeof updateCareerMilestones==='function')updateCareerMilestones();
  // Confidence is not only a scoreboard: it buys or costs the program real ground.
  if(review.after>=80){
@@ -407,8 +408,9 @@ function tenureDigest(seasons){
 }
 function careerTotals(){
  const past=(universe.careerHistory||[]).reduce((a,x)=>({w:a.w+x.w,l:a.l+x.l,seasons:a.seasons+x.seasons}),{w:0,l:0,seasons:0}),
-  now=tenureRecord();
- return {w:past.w+now.w,l:past.l+now.l,seasons:past.seasons+((universe.tenure?.seasons)||[]).length,posts:(universe.careerHistory||[]).length+(universe.tenure?1:0)};
+  tenure=universe.tenure?.closed?null:universe.tenure,
+  now=tenure?tenureRecord():{w:0,l:0};
+ return {w:past.w+now.w,l:past.l+now.l,seasons:past.seasons+(tenure?.seasons?.length||0),posts:(universe.careerHistory||[]).length+(tenure?1:0)};
 }
 function careerWinPct(){const c=careerTotals(),g=c.w+c.l;return g?c.w/g:0}
 // What a program will take a chance on: a résumé that got you fired does not get you a better job,
@@ -418,22 +420,30 @@ function hiringCeiling(){
   best=Math.max(0,...(universe.careerHistory||[]).map(x=>x.prestige||0),(universe.tenure?T(universe.tenure.school)?.prestige:0)||0);
  return clamp(Math.round(best*.72+pct*46+Math.min(10,c.seasons)),18,96);
 }
-function hiringMarket(){
+function hiringMarket({above=0,limit=3}={}){
  const ceiling=hiringCeiling(),current=universe.tenure?.school;
  return universe.teams
-  .filter(t=>t.name!==current&&(t.prestige||0)<=ceiling)
+  .filter(t=>t.name!==current&&(t.prestige||0)>above&&(t.prestige||0)<=ceiling)
   .sort((a,b)=>(b.prestige||0)-(a.prestige||0))
-  .slice(0,3)
+  .slice(0,limit)
   .map(t=>({schoolId:t.id,name:t.name,conference:t.conference,prestige:t.prestige,
    why:`Prestige ${t.prestige} · ${t.conference} · expects ${seasonExpectation(t)} wins`}));
 }
-function closeTenure(reason){
+function openCareerInvitations(t,review){
+ universe.careerInvitations=null;
+ if(universe.phase!=='complete'||universe.tenure?.closed||review.after<55)return;
+ if(!review.champ&&!review.confChamp&&(review.w<8||review.w-review.expected<3))return;
+ const offers=hiringMarket({above:t.prestige,limit:2});
+ if(offers.length)universe.careerInvitations={year:universe.year,schoolId:t.id,offers};
+}
+function closeTenure(reason,seekPost=true){
  const tn=universe.tenure;if(!tn||tn.closed)return null;
  const rec=tenureRecord(),school=T(tn.school);
  universe.careerHistory??=[];
  universe.careerHistory.push({school:tn.school,prestige:school?.prestige??null,
   startYear:tn.startYear,endYear:universe.year,seasons:tn.seasons.length,w:rec.w,l:rec.l,reason,...tenureDigest(tn.seasons)});
  tn.closed=true;
- universe.jobOffers=hiringMarket();
+ universe.careerInvitations=null;
+ universe.jobOffers=seekPost?hiringMarket():[];
  return universe.careerHistory[universe.careerHistory.length-1];
 }

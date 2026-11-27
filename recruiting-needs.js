@@ -10,8 +10,7 @@ function rosterOutlook(snap={},posCounts={}){
 if(typeof module==='object'&&module.exports)module.exports={rosterOutlook};
 else // Roster needs — read-only Recruiting-tab card. Thin groups are derived from the
 // engine's designed roster shape (POS_COUNTS) against returning players plus
-// commitments. No save fields, simulation, or randomness: everything comes from
-// the existing DynastyRecruitingNeeds bridge.
+// commitments. Listed starters and offseason reports come from the same bridge.
 (()=>{
  'use strict';
  const api=globalThis.DynastyRecruitingNeeds,tab=document.querySelector('#recruiting');
@@ -24,15 +23,33 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
   if(host)return host;
   host=document.createElement('section');
   host.id='recruitingNeeds';host.className='card recruiting-needs';host.hidden=true;
-  host.innerHTML='<div class="section-head"><div><div class="eyebrow">ROSTER SHAPE</div><h3>Roster outlook</h3><div class="muted" id="recruitingNeedsCount" aria-live="polite"></div></div></div><p class="small muted roster-outlook-note"></p><div class="roster-need-strip" id="recruitingNeedsRows"></div>';
+  host.innerHTML='<div class="section-head"><div><div class="eyebrow">ROSTER SHAPE</div><h3>Roster outlook</h3><div class="muted" id="recruitingNeedsCount" aria-live="polite"></div></div></div><p class="small muted roster-outlook-note"></p><div id="recruitingSuccession"></div><div class="roster-need-strip" id="recruitingNeedsRows"></div>';
   const summary=tab.querySelector('#classSummary');
   if(summary)summary.insertAdjacentElement('afterend',host);
   else{const table=tab.querySelector(':scope > .table-wrap');if(table)table.insertAdjacentElement('beforebegin',host);else tab.append(host)}
   return host;
  }
+ function successionHTML(rows,year){
+  if(!rows?.length)return '';
+  return `<section class="roster-succession" aria-labelledby="rosterSuccessionTitle"><h4 id="rosterSuccessionTitle">${esc(year+1)} starter succession</h4>
+   <div class="roster-succession-grid">${rows.map(({roleId,label,outgoing,understudy,fallback,recruitingOpen})=>{
+    const spring=Number.isFinite(understudy?.springDelta)?` · Spring staff grade ${understudy.springDelta>0?'+':''}${understudy.springDelta}`:'';
+    const fallbackRead=fallback?.read?` · ${esc(fallback.read)}${Number.isFinite(fallback.confidence)?` · ${fallback.confidence}% scouting confidence`:''}`:'';
+    return `<article class="roster-outlook-position roster-succession-card" data-succession-role="${esc(roleId)}">
+     <div class="roster-outlook-title"><h5>${esc(label)}</h5><strong>${esc(outgoing.reason)}</strong></div>
+     <p><strong>Outgoing</strong> · ${esc(outgoing.name)}</p>
+     ${understudy?`<p><strong>Understudy</strong> · ${esc(understudy.name)} · ${esc(understudy.year)}</p><p class="small muted">${esc(understudy.training)} focus${spring}</p>`:'<p>No clear understudy on the depth chart.</p>'}
+     ${fallback?`<p><strong>Recruit fallback</strong> · ${esc(fallback.name)}</p><p class="small muted">${fallback.interest}% interest${fallbackRead}${fallback.onBoard?' · On your board':''}</p>`:''}
+     <div class="roster-outlook-actions">
+      ${understudy?`<button type="button" data-succession-training="${esc(understudy.id)}" aria-label="Training for ${esc(understudy.name)}">Open training</button>`:''}
+      ${fallback?`<button type="button" data-succession-recruit="${esc(fallback.id)}" aria-label="Recruiting file for ${esc(fallback.name)}">Open recruit</button>`:recruitingOpen?`<button type="button" data-need-current="${esc(outgoing.pos)}">Browse ${esc(outgoing.pos)} recruits</button>`:''}
+     </div></article>`;
+   }).join('')}</div></section>`;
+ }
  function render(){
   queued=false;
-  const snap=api.snapshot?.(),node=ensureHost();
+  const includeSuccession=tab.classList.contains('active')&&tab.dataset.recruitClassView==='outlook';
+  const snap=api.snapshot?.({includeSuccession}),node=ensureHost();
   if(!node)return;
   if(!snap){node.hidden=true;lastSig='';return}
   const rows=rosterOutlook(snap,api.posCounts),thin=rows.filter(x=>x.gap>0),sig=JSON.stringify(snap);
@@ -41,6 +58,7 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
   node.querySelector('#recruitingNeedsCount').textContent=thin.length
    ?`${thin.length} position group${thin.length===1?'':'s'} thin for ${snap.team}`
    :`No position group is thin for ${snap.team}`;
+  node.querySelector('#recruitingSuccession').innerHTML=successionHTML(snap.succession,snap.year);
   node.querySelector('#recruitingNeedsRows').innerHTML=rows.map(x=>`<article class="roster-outlook-position" data-outlook-pos="${esc(x.pos)}"${x.gap?` data-need-pos="${esc(x.pos)}"`:""}><div class="roster-outlook-title"><h4>${esc(x.pos)}</h4><strong>${x.gap?`${x.gap} short`:'Depth covered'}</strong></div><dl><div><dt>On roster</dt><dd>${x.current}</dd></div><div><dt>Eligibility exits</dt><dd>${x.departing}</dd></div><div><dt>Returning</dt><dd>${x.returning}</dd></div><div><dt>Committed, not enrolled</dt><dd>${x.committed}</dd></div><div><dt>Projected / target</dt><dd>${x.projected} of ${x.target}</dd></div><div><dt>Current targets</dt><dd>${x.targeted}</dd></div><div><dt>Watched · ${snap.year+1}</dt><dd data-outlook-watched>${x.watched}</dd></div></dl><div class="roster-outlook-actions"><button type="button" data-need-current="${esc(x.pos)}">Find current ${esc(x.pos)}</button><button type="button" data-need-rising="${esc(x.pos)}">Find rising ${esc(x.pos)}</button></div></article>`).join('');
   node.querySelector('.small.muted').textContent=`Projected ${snap.year+1} = returning players + commitments not yet enrolled. Targets and watched class ${snap.year+1} prospects are not roster additions. Transfers and early draft departures can change these totals.${snap.enrolled?' Signing is complete; enrolled recruits are already counted on the roster.':''}`;
   node.querySelectorAll('[data-need-current]').forEach(b=>b.onclick=()=>{
@@ -53,6 +71,13 @@ else // Roster needs — read-only Recruiting-tab card. Thin groups are derived 
    globalThis.DynastyRecruitingClasses?.show('rising');
    const only=tab.querySelector('[data-rising-only]');if(only?.checked){only.checked=false;only.dispatchEvent(new Event('change',{bubbles:true}))}
    const pos=tab.querySelector('[data-rising-pos]');if(pos){pos.value=b.dataset.needRising;pos.dispatchEvent(new Event('change',{bubbles:true}));tab.querySelector('[data-rising-pos]')?.focus({preventScroll:true})}
+  });
+  node.querySelectorAll('[data-succession-recruit]').forEach(b=>b.onclick=()=>api.openRecruit(b.dataset.successionRecruit));
+  node.querySelectorAll('[data-succession-training]').forEach(b=>b.onclick=()=>{
+   api.openDevelopment();
+   const focus=document.querySelector(`#trainingBody [data-training="${CSS.escape(b.dataset.successionTraining)}"]`);
+   if(focus?.closest('tr')?.hidden)document.querySelector('[data-fold-toggle="#trainingBody"]')?.click();
+   focus?.scrollIntoView({block:'center'});focus?.focus({preventScroll:true});
   });
  }
  function queue(){if(queued)return;queued=true;(window.requestAnimationFrame||setTimeout)(render,0)}

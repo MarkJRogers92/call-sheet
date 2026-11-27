@@ -118,3 +118,54 @@ test('openings and the candidate market survive a save/load round-trip',async()=
  assert.ok(again.candidateMarket[o.id][0].interviewed);
  assert.ok(again.teams.find(x=>x.id===t.id).staff.SC.interim);
 });
+
+test('the offseason carousel makes a funded outside offer that survives saving and can be countered once',async()=>{
+ const e=await setup(976),u=e.universe,t=e.T('Chicago Metropolitan'),coach=t.staff.OC;
+ u.phase='complete';
+ e.offseasonReview();
+ const offer=e.coordinatorRetentionOffers(t).find(x=>x.slot==='OC');
+ assert.ok(offer,'a destination is chosen by the real carousel');
+ assert.equal(t.staff.OC.id,coach.id,'the coach stays in position during negotiations');
+ assert.notEqual(offer.fromId,offer.toId);
+ const destination=e.teamById(offer.toId);
+ assert.ok(offer.outside.salary<=e.teamStaffBudget(destination)-e.teamStaffSpend(destination)+destination.staff.OC.salary+.05);
+ assert.match(e.coordinatorRetentionHTML(t),/Send Counter/);
+
+ const portable=JSON.parse(JSON.stringify(e.packUniverse(u)));
+ e.installSave({userTeam:t.name,universe:portable});
+ const restored=e.T(t.name);
+ assert.equal(e.coordinatorRetentionOffers(restored)[0].id,offer.id);
+ const terms={salary:offer.askSalary,years:offer.outside.years,authority:offer.outside.authority};
+ const valid=e.resolveCoordinatorRetention(offer.id,{...terms,salary:100});
+ assert.equal(valid.ok,false);
+ assert.equal(e.coordinatorRetentionOffers(restored).length,1,'an invalid amount leaves the option open');
+ const result=e.resolveCoordinatorRetention(offer.id,terms);
+ assert.ok(result.ok);
+ assert.match(result.reason,/stays at/);
+ assert.equal(restored.staff.OC.id,coach.id);
+ assert.equal(restored.staff.OC.salary,offer.askSalary);
+ assert.equal(restored.staff.OC.contractYears,offer.outside.years);
+ assert.equal(e.universe.events.some(x=>x.type==='COACH_RELATIONSHIP_FALLOUT'&&x.coachIds.includes(coach.id)),false);
+ assert.equal(e.resolveCoordinatorRetention(offer.id,terms).ok,false);
+});
+
+test('processing departures settles an open outside offer and applies relationship fallout',async()=>{
+ const e=await setup(968),u=e.universe,t=e.T('Chicago Metropolitan'),coach=t.staff.RC;
+ u.phase='complete';
+ u.offseason=e.makeOffseasonState(u.year,'departures',['review'],{});
+ const destination=u.teams.find(x=>x.id!==t.id&&e.teamStaffBudget(x)-e.teamStaffSpend(x)+x.staff.RC.salary>=coach.salary);
+ const offer=e.openCoordinatorRetention(t,'RC',destination);
+ assert.ok(offer);
+ const p=t.roster[0];p.primaryRecruiterCoachId=coach.id;p.coachRelationships={[coach.id]:95};
+ e.offseasonDepartures();
+ assert.equal(u.offseason.phase,'signing');
+ assert.equal(offer.status,'departed');
+ assert.equal(destination.staff.RC.id,coach.id);
+ assert.equal(destination.staff.RC.contractYears,offer.outside.years);
+ assert.equal(p.coachDeparturePressure?.toSchoolId,destination.id);
+ assert.ok(t.staff.RC.interim);
+ assert.ok(u.openings.some(x=>x.schoolId===t.id&&x.slot==='RC'&&x.status==='OPEN'));
+ assert.equal(coach.careerHistory.filter(x=>x.endSeason==null).length,1);
+ e.offseasonDepartures();
+ assert.equal(u.events.filter(x=>x.type==='COACH_MOVED'&&x.coachIds.includes(coach.id)).length,1);
+});

@@ -91,8 +91,9 @@ function delegatedWeeklyOption(d,t){
  return d.options?.find(o=>allowed.includes(o.id)&&o.recommended)||allowed.map(id=>d.options?.find(o=>o.id===id)).find(Boolean)||null;
 }
 function weeklyDecisionReceipts(t=selected()){
+ const followed=new Set(weeklyDecisionFollowUp(t).map(row=>row.id));
  return (universe.events||[]).filter(e=>e.type==='WEEKLY_DECISION_RESOLVED'&&e.metadata?.selectedBy==='staff'&&e.season===universe.year&&
-  (e.week===universe.week||e.week===universe.week-1)&&e.schoolIds?.includes(t?.id)).slice().reverse().map(e=>({kind:'staff',text:`Staff: ${e.summary}`,decisionId:e.metadata.decisionId}));
+  (e.week===universe.week||e.week===universe.week-1&&!followed.has(e.metadata.decisionId))&&e.schoolIds?.includes(t?.id)).slice().reverse().map(e=>({kind:'staff',text:`Staff: ${e.summary}`,decisionId:e.metadata.decisionId}));
 }
 // v0.30.1: staff work every open decision. One refused choice used to stop the loop, so an optional game plan
 // that could not be applied left every required decision after it open and the week could not be played. Now
@@ -133,6 +134,10 @@ function weeklyDecisionContext(id,optionId,{selectedBy='coach',coachId=null}={})
 }
 function finishWeeklyDecision(d,option,t,{selectedBy='coach',coachId=null}={}){
  d.resolved=true;d.resolvedOptionId=option.id;d.resolvedSeason=universe.year;d.resolvedWeek=universe.week;
+ if(d.type==='INJURED_STARTER'){
+  const games=t.roster.find(p=>p.id===d.playerId)?.stats?.games;
+  if(Number.isInteger(games)&&games>=0)d.appearancesAtDecision=games;
+ }
  d.selectedBy=selectedBy;d.selectedByCoachId=coachId||t.staff?.HC?.id||null;addWeeklyDecisionEvent(d,option,t);return true;
 }
 function resolveWeeklyDecision(id,optionId){
@@ -161,18 +166,106 @@ function applyWeeklyDecision(id,optionId,actor={}){
  else if(d.type==='PLAYER_ROLE_REQUEST'&&p){if(option.id==='grant'){p.role='Starter mix';promoteRotationPlayer(t,p);promoteRotationPlayer(t,p);p.morale=clamp(p.morale+4,15,99);p.staffTrust=clamp((p.staffTrust??70)+2,0,100)}else if(option.id==='rotation'){p.role='Rotation';promoteRotationPlayer(t,p);p.morale=clamp(p.morale+3,15,99);p.staffTrust=clamp((p.staffTrust??70)+2,0,100)}else{p.morale=clamp(p.morale-3,15,99);p.staffTrust=clamp((p.staffTrust??70)-2,0,100)}}
  else if(d.type==='PLAYER_REDSHIRT_DISCUSSION'&&p){if(option.id==='preserve'){p.redshirtActive=true;p.staffTrust=clamp((p.staffTrust??70)+2,0,100)}else if(option.id==='continue'){p.redshirtActive=false;p.morale=clamp(p.morale+2,15,99)}else p.staffTrust=clamp((p.staffTrust??70)-2,0,100)}
  else if(d.type==='PLAYER_POSITION_CHANGE_REQUEST'&&p){if(option.id==='approve'&&applyRequestedPositionChange(t,p,d.requestedPosition)){p.morale=clamp(p.morale+4,15,99);p.staffTrust=clamp((p.staffTrust??70)+3,0,100)}else if(option.id==='defer')p.requestedPositionChange={season:universe.year,week:universe.week,from:p.pos,to:d.requestedPosition,status:'DEFERRED'};else if(option.id==='decline'){p.requestedPositionChange={season:universe.year,week:universe.week,from:p.pos,to:d.requestedPosition,status:'DECLINED'};p.morale=clamp(p.morale-4,15,99);p.staffTrust=clamp((p.staffTrust??70)-3,0,100)}}
- else if(d.type==='RECRUITING_PRIORITY'&&option.id.startsWith('prioritize_')){const rid=option.id.slice(11),r=universe.recruits.find(x=>String(x.id)===rid);if(!r||r.committed||!r.targeted||r.visitWeek)return false;scheduleVisit(r);growRecruiterRelationship(r,t,3)}
+ else if(d.type==='RECRUITING_PRIORITY'&&option.id.startsWith('prioritize_')){const rid=option.id.slice(11),r=universe.recruits.find(x=>String(x.id)===rid);if(!r||r.committed||!r.targeted||r.visitWeek)return false;scheduleVisit(r);if(Number.isInteger(r.visitWeek))d.scheduledVisitWeek=r.visitWeek;growRecruiterRelationship(r,t,3)}
  return finishWeeklyDecision(d,option,t,actor);}
+
+// Keep the follow-up tied to saved choices and observations. A visit booking
+// does not prove attendance, and redshirt eligibility is settled at season end.
+function weeklyDecisionOutcome(d,t){
+ if(d.type==='RECRUITING_PRIORITY'){
+  const rid=String(d.resolvedOptionId).startsWith('prioritize_')?d.resolvedOptionId.slice(11):null;
+  if(!rid)return null;
+  const recruit=(universe.recruits||[]).find(r=>String(r.id)===rid);
+  if(recruit?.committed)return `Now committed to ${recruit.committed}.`;
+  const week=d.scheduledVisitWeek??recruit?.visitWeek;
+  return Number.isInteger(week)&&week>0?`Visit booked for Week ${week}.`:null;
+ }
+ const p=d.playerId&&t.roster.find(player=>player.id===d.playerId);
+ if(!p)return null;
+ const games=Number.isInteger(p.stats?.games)?p.stats.games:null;
+ const appearances=games===null?null:`${games} ${games===1?'appearance':'appearances'} this season`;
+ if(d.resolvedOptionId==='promise'||d.resolvedOptionId==='opportunity'){
+  const promise=activePromise(p,'EARLY_ROLE');
+  if(promise)return games!==null&&promise.firstSeason===universe.year&&Number.isInteger(promise.expectedGames)
+   ?`Early Role promise active · ${games} of ${promise.expectedGames} appearances.`:'Early Role promise active.';
+ }
+ switch(d.type){
+  case 'REDSHIRT_DECISION':
+  case 'PLAYER_REDSHIRT_DISCUSSION':{
+   const status=games>4?'Past the four-game redshirt limit':p.redshirtUsed?'Redshirt already used':
+    canRedshirt(p)?p.redshirtActive?'Redshirt protection active':games===4?'At the four-game redshirt limit':'Eligible to redshirt':'Eligibility exhausted';
+   return appearances?`${status} · ${appearances}.`:`${status}.`;
+  }
+  case 'INJURED_STARTER':{
+   if(games!==null&&Number.isInteger(d.appearancesAtDecision)&&games>=d.appearancesAtDecision){
+    const count=games-d.appearancesAtDecision;
+    return count?`${count} ${count===1?'appearance':'appearances'} added since the decision.`:`Season appearances held at ${games}.`;
+   }
+   return Number.isFinite(p.health)?`Current health ${p.health}%.`:null;
+  }
+  case 'ACADEMIC_WATCH':
+   if(p.academicHold>0)return `Academic hold · ${p.academicHold} ${p.academicHold===1?'week':'weeks'} left.`;
+   return Number.isFinite(p.academicStanding)?`Current academic standing ${p.academicStanding}.`:null;
+  case 'PLAYER_POSITION_CHANGE_REQUEST':
+   return p.pos?`Current position ${p.pos}.`:null;
+  case 'PLAYER_TRANSFER_CONCERN':{
+   const risk=transferRisk(p);
+   return Number.isFinite(risk)?`Current transfer risk ${Math.round(risk)}/100.`:null;
+  }
+  case 'STARTER_CHALLENGE':
+  case 'PLAYING_TIME_CONCERN':
+  case 'PLAYER_PLAYING_TIME_COMPLAINT':
+  case 'PLAYER_ROLE_REQUEST':{
+   const rank=t.depthChart?.[p.pos]?.indexOf(p.id)??-1;
+   const facts=[p.role,rank>=0?`No. ${rank+1} at ${p.pos}`:null,appearances].filter(Boolean);
+   return facts.length?facts.join(' · ')+'.':null;
+  }
+  default:return null;
+ }
+}
+function weeklyDecisionFollowUp(t=selected()){
+ if(!t||!['regular','confReady'].includes(universe.phase)||universe.week<1||universe.week>12)return [];
+ const decisions=(universe.weeklyDecisions||[]).filter(d=>d.teamId===t.id&&d.resolved&&
+  (d.resolvedSeason??d.season)===universe.year&&(d.resolvedWeek??d.week)===universe.week-1)
+  .sort((a,b)=>(b.priority||0)-(a.priority||0));
+ const rows=[];
+ for(const d of decisions){
+  const option=d.options?.find(o=>o.id===d.resolvedOptionId);
+  if(!option)continue;
+  const outcome=weeklyDecisionOutcome(d,t);
+  if(!outcome)continue;
+  rows.push({id:d.id,title:d.title,choice:option.label,by:d.selectedBy==='staff'?'Staff':'You',outcome,medical:d.type==='INJURED_STARTER'});
+  if(rows.length===2)break;
+ }
+ return rows;
+}
+function weeklyDecisionFollowUpHTML(rows,next){
+ if(!rows.length)return '';
+ const medical=rows.some(row=>row.medical)||next?.type==='INJURED_STARTER';
+ return `<section class="weekly-follow-up" aria-labelledby="weeklyFollowUpTitle">
+  <div class="weekly-follow-up-head"><h3 id="weeklyFollowUpTitle">Last week’s decisions</h3>${medical?'<button type="button" class="ghost" data-weekly-medical-policy>Staff medical instructions</button>':''}</div>
+  <ul>${rows.map(row=>`<li><strong>${gameEscape(row.title)}</strong><span>${gameEscape(row.by)} chose ${gameEscape(row.choice)}. ${gameEscape(row.outcome)}</span></li>`).join('')}</ul>
+ </section>`;
+}
 // A face for every named player: portrait, jersey and position, linking to the canonical profile.
 function playerFaceChip(id,role=''){const f=id!=null&&findPlayer(id);if(!f?.p)return'';const p=ensurePortrait(f.p);return `<button type="button" class="face-chip" data-player="${gameEscape(p.id)}">${portraitTag(p,36,'list')}<span><b>${gameEscape(p.name)}</b><small>#${gameEscape(p.jerseyNumber??'')} · ${gameEscape(p.pos)}${role?` · ${gameEscape(role)}`:''}</small></span></button>`}
 function decisionFacesHTML(d){const faces=d.starterId&&d.playerId?[playerFaceChip(d.starterId,'Starter'),playerFaceChip(d.playerId,'Challenger')]:[playerFaceChip(d.playerId)];const html=faces.filter(Boolean).join(faces.length>1?'<span class="face-vs">vs</span>':'');return html?`<div class="decision-faces">${html}</div>`:''}
 function renderWeeklyDecisions(){
  const host=$('#weeklyDecisions'),t=selected();if(!host||!t)return;
  ensureWeeklyDecisions(t);
- const open=guidanceStoredDecisions(t),blocked=open.some(d=>d.type!=='WEEKLY_GAMEPLAN');
- const card=d=>`<div class="decision-card${d.source==='PLAYER'?' player-request':''}"><div class="decision-kicker">${d.type==='WEEKLY_GAMEPLAN'?'OPTIONAL PREPARATION':d.source==='PLAYER'?'PLAYER REQUEST':'DECISION REQUIRED'}</div><div class="decision-title">${gameEscape(d.title)}</div>${decisionFacesHTML(d)}<div class="decision-summary">${gameEscape(d.summary)}</div>${d.type!=='WEEKLY_GAMEPLAN'?`<button type="button" class="decision-room-link" data-decision-room="${gameEscape(d.id)}">Compare and decide</button>`:''}<div class="decision-options">${d.options.map(o=>`<button class="decision-option" data-decision="${gameEscape(d.id)}" data-choice="${gameEscape(o.id)}">${gameEscape(o.label)}${o.recommended?' · Staff pick':''}<small>${gameEscape(o.description)}</small></button>`).join('')}</div></div>`;
- host.innerHTML=open.filter(d=>d.type!=='WEEKLY_GAMEPLAN').map(card).join('');
+ const open=guidanceStoredDecisions(t),required=open.filter(d=>d.type!=='WEEKLY_GAMEPLAN').sort((a,b)=>(b.priority||0)-(a.priority||0));
+ const blocked=required.length>0,followUp=weeklyDecisionFollowUp(t),next=followUp.length?required[0]:null;
+ const card=d=>`<div class="decision-card${d.source==='PLAYER'?' player-request':''}"><div class="decision-kicker">${d===next?'NEXT DECISION · REQUIRED':d.type==='WEEKLY_GAMEPLAN'?'OPTIONAL PREPARATION':d.source==='PLAYER'?'PLAYER REQUEST':'DECISION REQUIRED'}</div><div class="decision-title">${gameEscape(d.title)}</div>${decisionFacesHTML(d)}<div class="decision-summary">${gameEscape(d.summary)}</div>${d.type!=='WEEKLY_GAMEPLAN'?`<button type="button" class="decision-room-link" data-decision-room="${gameEscape(d.id)}">Compare and decide</button>`:''}<div class="decision-options">${d.options.map(o=>`<button class="decision-option" data-decision="${gameEscape(d.id)}" data-choice="${gameEscape(o.id)}">${gameEscape(o.label)}${o.recommended?' · Staff pick':''}<small>${gameEscape(o.description)}</small></button>`).join('')}</div></div>`;
+ host.innerHTML=weeklyDecisionFollowUpHTML(followUp,next)+required.map(card).join('');
  const optional=$('#optionalWeeklyDecisions');if(optional)optional.innerHTML=open.filter(d=>d.type==='WEEKLY_GAMEPLAN').map(card).join('');
+ const medical=host.querySelector('[data-weekly-medical-policy]');
+ if(medical)medical.onclick=()=>{
+  goToTab('staff');
+  requestAnimationFrame(()=>{
+   const control=$('#staffAssignments [data-sa-medical]');
+   control?.scrollIntoView?.({block:'center'});control?.focus?.({preventScroll:true});
+  });
+ };
  for(const id of ['#simWeek','#seasonWeek'])$(id).disabled=openingPreseason()||blocked;
  $('#hubAdvance').disabled=openingPreseason()?false:blocked;
  $$('[data-decision]').forEach(b=>b.onclick=()=>resolveWeeklyDecision(b.dataset.decision,b.dataset.choice));$$('[data-decision-room]').forEach(b=>b.onclick=()=>globalThis.DynastyDecisionRoom?.open(b.dataset.decisionRoom));
@@ -245,8 +338,15 @@ function renderWeeklyPlan(){
   el.onclick=go;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}};
  });
 }
-function renderWeeklyHub(){if(!(universe.weeklyHub||[]).length)buildPreseasonHub();const world=globalThis.DynastyWorldNews?.wireItems(universe,selected())||[];const hub=[...world,...familiarFaceItems(selected()),...(universe.weeklyHub||[]).filter(x=>x.kicker!=='FAMILIAR FACE'&&!x.worldEventId)].slice(0,9);$('#hubTitle').textContent=openingPreseason()?'Preseason Briefing':({confReady:'Championship Week Briefing',bowlReady:'Bowl Season Briefing',playoffReady:'Playoff Briefing',complete:'Season Complete'})[universe.phase]||`Week ${Math.min(universe.week+1,12)} Briefing`;$('#weeklyHub').innerHTML=hub.map((x,i)=>`<div class="hub-item ${x.type||''}${x.tab?' hub-link':''}"${x.tab?` data-hub="${i}" data-tab="${x.tab}"${x.gameId?` data-game-id="${gameEscape(x.gameId)}"`:''} role="button" tabindex="0"`:''}><div class="hub-kicker">${globalThis.DynastyArt?.img(globalThis.DynastyArt.kickerKey(x.kicker),'dl-art dl-art-kicker')||''}${x.kicker}</div><div class="hub-main">${x.main}</div><div class="hub-sub">${x.sub||''}</div></div>`).join('');$$('[data-hub]').forEach(el=>{const go=()=>openHubItem(hub[+el.dataset.hub]);el.onclick=go;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}}})}
-function openHubItem(x){if(!x?.tab)return;goToTab(x.tab);if(x.gameId){showGameCenter(x.gameId);return}if(x.player&&findPlayer(x.player))showPlayerProfile(x.player);else if(x.recruit&&universe.recruits.find(r=>r.id===x.recruit))showRecruitProfile(x.recruit)}
+function renderWeeklyHub(){renderCareerNotices();if(!(universe.weeklyHub||[]).length)buildPreseasonHub();const world=globalThis.DynastyWorldNews?.wireItems(universe,selected())||[];const hub=[...(hasPendingCareerChoice()?careerHubItems(selected()):[]),...world,...familiarFaceItems(selected()),...(universe.weeklyHub||[]).filter(x=>!['FAMILIAR FACE','CAREER'].includes(x.kicker)&&!x.worldEventId)].slice(0,9);$('#hubTitle').textContent=openingPreseason()?'Preseason Briefing':({confReady:'Championship Week Briefing',bowlReady:'Bowl Season Briefing',playoffReady:'Playoff Briefing',complete:'Season Complete'})[universe.phase]||`Week ${Math.min(universe.week+1,12)} Briefing`;$('#weeklyHub').innerHTML=hub.map((x,i)=>`<div class="hub-item ${x.type||''}${x.tab?' hub-link':''}"${x.tab?` data-hub="${i}" data-tab="${x.tab}"${x.gameId?` data-game-id="${gameEscape(x.gameId)}"`:''} role="button" tabindex="0"`:''}><div class="hub-kicker">${globalThis.DynastyArt?.img(globalThis.DynastyArt.kickerKey(x.kicker),'dl-art dl-art-kicker')||''}${x.kicker}</div><div class="hub-main">${x.main}</div><div class="hub-sub">${x.sub||''}</div></div>`).join('');$$('[data-hub]').forEach(el=>{const go=()=>openHubItem(hub[+el.dataset.hub]);el.onclick=go;el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();go()}}})}
+function openHubItem(x){
+ if(!x?.tab)return;
+ goToTab(x.tab);
+ if(x.kicker==='CAREER'){
+  $('#careerPost .decision-option')?.focus();
+  return;
+ }
+ if(x.gameId){showGameCenter(x.gameId);return}if(x.player&&findPlayer(x.player))showPlayerProfile(x.player);else if(x.recruit&&universe.recruits.find(r=>r.id===x.recruit))showRecruitProfile(x.recruit)}
 // Each leader row carries its share of the category leader (--lead) so the row draws a proportional bar.
 function leaderShare(v,top){return top>0?Math.max(4,Math.round(100*v/top)):0}
 function statLeaderRows(list,key,fmt=v=>v,n=8){const rows=list.filter(x=>(x.p.stats?.[key]||0)>0).sort((a,b)=>(b.p.stats?.[key]||0)-(a.p.stats?.[key]||0)).slice(0,n),top=rows[0]?.p.stats?.[key]||0;return rows.map((x,i)=>`<div class="leader-row" style="--lead:${leaderShare(x.p.stats?.[key]||0,top)}%"><span>${globalThis.DynastyArt?.img(globalThis.DynastyArt.medalKey(i),'dl-art dl-art-medal')||''}${i+1}</span><span class="leader-who">${portraitTag(x.p,34,'list')}<span><button class="player-button" data-player="${x.p.id}">${x.p.name}</button><div class="small muted">${x.p.pos} · ${x.t.name}</div></span></span><span class="leader-val">${fmt(x.p.stats?.[key]||0,x.p.stats)}</span></div>`).join('')||'<span class="muted">No qualifying statistics yet.</span>'}
@@ -260,7 +360,7 @@ function showRecruitProfile(id){let r=universe.recruits.find(x=>x.id===id);if(!r
 function renderRosterBoard(){const u=selected(),f=$('#positionFilter').value||'ALL';let rows=u.roster.filter(p=>f==='ALL'||p.pos===f).sort((a,b)=>POS.indexOf(a.pos)-POS.indexOf(b.pos)||b.perceived-a.perceived);$('#rosterBody').innerHTML=rows.map(p=>`<tr><td data-label="Player"><div class="player-cell">${portraitTag(p,64,'list')}<div class="player-cell-text"><button class="player-button" data-player="${p.id}">${p.name}</button><div class="small muted">#${p.jerseyNumber??0} · ${p.origin}</div></div></div></td><td data-label="Pos">${p.pos}</td><td data-label="Elig">${eligibilityLabel(p)}</td><td data-label="Redshirt">${p.redshirtUsed?'<span class="pill rs-used">Used</span>':`<button class="rs-button ${p.redshirtActive?'rs-active':''}" data-redshirt="${p.id}" ${canRedshirt(p)?'':'disabled'}>${p.redshirtActive?'Protecting':'Available'}</button>`}</td><td data-label="Ht/Wt">${heightStr(p.height)} / ${p.weight}</td><td data-label="Style">${archetypeChipHTML(p.style)}</td><td data-label="Current">${scoutRangeText(p,u,false)}</td><td data-label="Upside">${scoutRangeText(p,u,true)}</td><td data-label="Scheme Fit">${grade(playerSchemeFit(p,u))}</td><td data-label="Health" class="${p.injuryWeeks?'health-out':p.health<78?'health-warn':'health-ok'}">${healthText(p)}</td><td data-label="Morale">${p.morale}</td><td data-label="NIL">${nilCellHTML(p,u)}</td><td data-label="Academics" class="${academicallyIneligible(p)?'health-out':academicRisk(p)?'health-warn':'health-ok'}">${academicStatusText(p)}</td></tr>`).join('');$$('[data-redshirt]').forEach(b=>b.onclick=()=>toggleRedshirt(b.dataset.redshirt));$$('[data-nil-player]').forEach(b=>b.onclick=()=>toggleNilPlayer(b.dataset.nilPlayer));attachPlayerLinks()}
 function renderDepth(){const u=selected();ensureRoleDepth(u);const off=OFF_SCHEMES[u.offScheme],def=DEF_SCHEMES[u.defScheme];$('#offPackages').innerHTML=`<div class="scheme-badge">${u.offScheme}</div><div class="lineitem"><span>Base pass rate</span><strong>${Math.round(off.pass*100)}%</strong></div><div class="lineitem"><span>Primary skill package</span><strong>${off.pass>.60?'X / Z / Slot':off.pass<.42?'Lead back / TE / Power':'Multiple personnel'}</strong></div><div class="lineitem"><span>Protected redshirts</span><strong>${u.roster.filter(p=>p.redshirtActive).length}</strong></div>`;$('#defPackages').innerHTML=`<div class="scheme-badge">${u.defScheme}</div><div class="lineitem"><span>Pressure</span><strong>${def.pressure}</strong></div><div class="lineitem"><span>Coverage</span><strong>${def.coverage}</strong></div><div class="lineitem"><span>Sub package</span><strong>Nickel / Slot / Rush roles</strong></div>`;$('#depthGrid').innerHTML=ROLE_DEFS.map(role=>{let a=rolePlayers(u,role.id),top=a.slice(0,4),active=roleStarter(u,role.id);return `<div class="depth-card role-card"><div class="role-side">${role.side}</div><div class="strong">${role.label}</div><select data-role="${role.id}" aria-label="${gameEscape(role.label)}">${a.map(p=>`<option value="${p.id}" ${a[0]?.id===p.id?'selected':''}>${p.name} · ${grade(p.perceived)} · ${grade(roleFit(p,u,role,true))}${p.injuryWeeks?' · OUT':p.redshirtActive?' · RS':''}</option>`).join('')}</select><div class="role-note">Role fit uses traits + scheme, not universal OVR.</div><div class="depth-list">${top.map((p,i)=>`<div>${i+1}. <button class="player-button" data-player="${p.id}">${p.name}</button> · ${grade(roleFit(p,u,role,true))} fit ${p===active?'<span class="good">• active</span>':''}${p.injuryWeeks?` · <span class="health-out">${p.injuryWeeks} wk</span>`:p.redshirtActive?' · <span class="warn">RS protected</span>':''}</div>`).join('')}</div></div>`}).join('');$$('[data-role]').forEach(s=>s.onchange=()=>{let id=s.dataset.role,pid=s.value,arr=u.roleDepth[id]||[];u.roleDepth[id]=[pid,...arr.filter(x=>x!==pid)];render()});attachPlayerLinks()}
 function renderStaffBoard(){const u=selected();$('#staffList').innerHTML=Object.values(u.staff).map(c=>{ensureCoachCareer(c,u,coachSlot(u,c));return `<div class="coach-card"><div class="strong"><button class="player-button" data-coach="${coachEscape(c.id)}">${coachEscape(c.name)}</button> <span class="pill">${coachEscape(c.role)}</span>${c.interim?' <span class="pill bad">INTERIM</span>':''}</div><div class="compact muted">Age ${c.age} · Year ${c.years+1} · ${c.contractYears??2} yr contract · $${c.salary??1.2}M${c.playCallAuthority?` · ${c.playCallAuthority==='full'?'Full play-calling':'Shared authority'}`:''}</div><div class="compact">Recruit ${grade(c.recruiting)} · Develop ${grade(c.development)} · Evaluate ${grade(c.evaluation)} · Call ${grade(c.playCall)} · Adapt ${grade(c.adaptability)}</div><div class="small muted">${coachEscape((c.specialties||coachSpecialties(c)).join(' · '))} · ${coachEscape(coachTraitText(c))}${c.preferredScheme?` · runs ${coachEscape(c.preferredScheme)}`:''}</div></div>`}).join('');const o=OFF_SCHEMES[u.offScheme],d=DEF_SCHEMES[u.defScheme];const bar=side=>{const tr=schemeTransition(u,side);return tr?`<div class="compact warn">${gameEscape(schemeInstallNote(u,side))}</div><div class="bar"><span style="width:${tr.familiarity}%"></span></div>`:'<div class="small muted">Fully installed.</div>'};
- $('#schemeCard').innerHTML=`<div class="scheme-badge">OFF: ${u.offScheme}</div><div class="compact muted">Pass tendency ${Math.round(o.pass*100)}% · Pace ${o.pace}/100 · Core traits: ${o.traits.join(', ')}</div>${bar('off')}<br><div class="scheme-badge">DEF: ${u.defScheme}</div><div class="compact muted">Pressure ${d.pressure} · Coverage ${d.coverage} · Run control ${d.run} · Core traits: ${d.traits.join(', ')}</div>${bar('def')}`;$('#coachingTree')&&($('#coachingTree').innerHTML=coachingTreeHTML(selected()));$('#schemeFitLeaders').innerHTML=u.roster.slice().sort((a,b)=>playerSchemeFit(b,u)-playerSchemeFit(a,u)).slice(0,10).map(p=>`<div class="lineitem"><span>${p.pos} ${p.name} · ${p.style}</span><strong>${grade(playerSchemeFit(p,u))} (${playerSchemeFit(p,u)})</strong></div>`).join('');renderCoachHistory(u);attachCoachLinks();$('#coachMarket').innerHTML=coachMarketHTML(u);attachCoachMarketLinks()}
+ $('#schemeCard').innerHTML=`<div class="scheme-badge">OFF: ${u.offScheme}</div><div class="compact muted">Pass tendency ${Math.round(o.pass*100)}% · Pace ${o.pace}/100 · Core traits: ${o.traits.join(', ')}</div>${bar('off')}<br><div class="scheme-badge">DEF: ${u.defScheme}</div><div class="compact muted">Pressure ${d.pressure} · Coverage ${d.coverage} · Run control ${d.run} · Core traits: ${d.traits.join(', ')}</div>${bar('def')}`;$('#coachingTree')&&($('#coachingTree').innerHTML=coachingTreeHTML(selected()));$('#schemeFitLeaders').innerHTML=u.roster.slice().sort((a,b)=>playerSchemeFit(b,u)-playerSchemeFit(a,u)).slice(0,10).map(p=>`<div class="lineitem"><span>${p.pos} ${p.name} · ${p.style}</span><strong>${grade(playerSchemeFit(p,u))} (${playerSchemeFit(p,u)})</strong></div>`).join('');renderCoachHistory(u);attachCoachLinks();$('#coachMarket').innerHTML=coordinatorRetentionHTML(u)+coachMarketHTML(u);attachCoordinatorRetentionLinks();attachCoachMarketLinks()}
 function candidateSourceLabel(c){return c.source==='internal'?'Internal promotion':c.source==='external'?`From ${coachEscape(c.fromSchoolName)}`:'Free agent'}
 function candidateCardHTML(o,c){const declined=c.status==='DECLINED',draft=candidateOfferDraft&&candidateOfferDraft.candidateId===c.candidateId&&candidateOfferDraft.openingId===o.id?candidateOfferDraft:null;
  return `<div class="coach-card candidate-card${declined?' declined':''}"><div class="strong">${coachEscape(c.name)} <span class="pill">${candidateSourceLabel(c)}</span>${declined?' <span class="pill bad">DECLINED</span>':c.interviewed?' <span class="pill">INTERVIEWED</span>':''}</div>`+

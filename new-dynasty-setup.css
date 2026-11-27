@@ -27,3 +27,6 @@
 @media(max-width:430px){.setup-screen-head h1{font-size:34px}.setup-world-facts,.setup-contract-grid{grid-template-columns:1fr}.setup-contract-grid .setup-metric{border-left:0!important}.setup-contract-top{align-items:flex-start;padding:18px}.setup-contract-note{display:grid}.setup-briefing-hero{padding:16px}.setup-briefing-hero>div:first-child{grid-template-columns:54px 1fr}.setup-briefing-hero>div:first-child .setup-program-logo{width:54px;height:54px}.setup-dossier-grid{grid-template-columns:1fr}.setup-dossier-grid .setup-metric{padding:10px 0!important;border-left:0!important;border-top:1px solid #2a3a4d}.setup-program-row>span:last-child{padding-left:0}}
 @media(prefers-reduced-motion:reduce){.setup-loading span{animation:none}.dynasty-setup *{scroll-behavior:auto!important}}
 .motion-reduced .setup-loading span{animation:none}
+.setup-scenarios{max-width:900px;margin-top:24px}
+.setup-scenarios .setup-choice strong{padding-right:48px}
+.setup-scenarios .setup-choice small{font-size:11px}

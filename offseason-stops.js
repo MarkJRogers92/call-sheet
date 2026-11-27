@@ -107,12 +107,16 @@ function offseasonStopFacts(phase,t){
  if(!t)return null;
  if(phase==='departures'){
   const rows=stopRiskRows(t),risks=rows.filter(x=>x.risk>=40),open=universe.offseasonStops?.open==='departures';
+  const offers=coordinatorRetentionOffers(t);
+  const deadline='Any coordinator with an open offer will leave when you process departures.';
+  if(offers.length&&!risks.length)return{title:offers.length===1?'A coordinator has an outside offer':`${offers.length} coordinators have outside offers`,
+   text:`You can counter in Staff. ${deadline}`,act:{label:'Review coordinator offers',tab:'staff'},go:'Process departures'};
   if(!risks.length&&!open)return null;
   if(!risks.length)return{title:'Nobody is close to leaving now',text:`Every player who was at risk has an NIL deal. Deals last this season; you can still release one and get the money back before departures are processed.`,
    act:{label:'See the full list',tab:'offseason'},go:'Process departures',decide:'departures'};
   return{title:`${risks.length} player${risks.length===1?' is':'s are'} close to leaving`,
-   text:`Once departures are processed, anyone who enters the portal is gone from your roster. An NIL deal now lowers a player's risk; the money comes from the same budget as recruiting.`,
-   act:{label:'See the full list',tab:'offseason'},go:'Process departures',decide:'departures'};
+   text:`Once departures are processed, anyone who enters the portal is gone from your roster. An NIL deal now lowers a player's risk; the money comes from the same budget as recruiting.${offers.length?' '+deadline:''}`,
+   act:{label:'See the full list',tab:'offseason'},go:'Process departures',decide:'departures',coordinatorOffers:offers.length};
  }
  if(phase==='signing'){
   const sch=scholarshipSummary(t),commits=(universe.recruits||[]).filter(r=>r.committed===t.name).length,mine=mySigningDayLeft(t);
@@ -181,8 +185,9 @@ function renderOffseasonStop(){
  if(!facts){if(state&&state.open&&state.open!==phase)state.open=null;card?.remove();return}
  if(!card){card=document.createElement('section');card.id='offseasonStop';card.className='offseason-stop';card.setAttribute('role','region');card.setAttribute('aria-label','Offseason decision');host.insertAdjacentElement('beforebegin',card)}
  const t=selected(),signing=facts.signing||(open==='signing'&&universe.signingDay?.year===universe.year&&universe.signingDay.board.slice(0,universe.signingDay.revealed).some(x=>x.from===t?.name||x.challenger===t?.name));
- card.innerHTML=`${globalThis.DynastyArt?.img(globalThis.DynastyArt.stopKey(open),'dl-art dl-art-stop')||''}<div class="eyebrow">${signing?'SIGNING DAY':facts.portal?'PORTAL DAY':'BEFORE YOU MOVE ON'}</div><h3>${gameEscape(facts.title)}</h3><p>${gameEscape(facts.text)}</p>${facts.decide==='departures'?departuresDecideHTML(t):''}${facts.decide==='signing'?signingCutHTML(t):''}${facts.decide==='portal'?portalDecideHTML(t):''}${signing?signingRevealHTML(t):''}${facts.portal?portalRevealHTML():''}<div class="button-row">${facts.decide?`<button type="button" class="bi-primary" data-offseason-stop-go>${gameEscape(facts.go)}</button><button type="button" data-offseason-stop-act>${gameEscape(facts.act.label)}</button>`:`<button type="button" class="bi-primary" data-offseason-stop-act>${gameEscape(facts.act.label)}</button><button type="button" data-offseason-stop-go>${gameEscape(facts.go)}</button>`}</div>`;
- card.querySelector('[data-offseason-stop-act]').onclick=()=>goToTab(facts.act.tab);
+ card.innerHTML=`${globalThis.DynastyArt?.img(globalThis.DynastyArt.stopKey(open),'dl-art dl-art-stop')||''}<div class="eyebrow">${signing?'SIGNING DAY':facts.portal?'PORTAL DAY':'BEFORE YOU MOVE ON'}</div><h3>${gameEscape(facts.title)}</h3><p>${gameEscape(facts.text)}</p>${facts.decide==='departures'?departuresDecideHTML(t):''}${facts.decide==='signing'?signingCutHTML(t):''}${facts.decide==='portal'?portalDecideHTML(t):''}${signing?signingRevealHTML(t):''}${facts.portal?portalRevealHTML():''}<div class="button-row">${facts.decide?`<button type="button" class="bi-primary" data-offseason-stop-go>${gameEscape(facts.go)}</button><button type="button" data-offseason-stop-act>${gameEscape(facts.act.label)}</button>`:`<button type="button" class="bi-primary" data-offseason-stop-act>${gameEscape(facts.act.label)}</button><button type="button" data-offseason-stop-go>${gameEscape(facts.go)}</button>`}${facts.coordinatorOffers?'<button type="button" data-stop-coordinator>Review coordinator offers</button>':''}</div>`;
+ card.querySelector('[data-stop-coordinator]')?.addEventListener('click',showCoordinatorOffers);
+ card.querySelector('[data-offseason-stop-act]').onclick=()=>facts.act.tab==='staff'?showCoordinatorOffers():goToTab(facts.act.tab);
  // Re-render, then put focus back on the row that was acted on (or the first enabled control) so keyboard users keep
  // their place.
  const refocus=(attr,id)=>{const c=$('#offseasonStop');if(!c)return;const same=[...c.querySelectorAll(`[${attr}]`)].filter(b=>b.getAttribute(attr)===id&&!b.disabled);(same[0]||c.querySelector('.stop-rows button:not([disabled])')||c.querySelector('[data-offseason-stop-go]'))?.focus()};

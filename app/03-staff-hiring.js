@@ -64,6 +64,126 @@ function extendOffer(openingId,candidateId,offer){
  hireCandidate(o,cand,{salary,years,authority});
  return{ok:true,accepted:true}
 }
+function staffSalaryRoom(t,slot){
+ return Math.round((teamStaffBudget(t)-teamStaffSpend(t)+(t.staff[slot]?.salary||0))*10)/10;
+}
+function outsideCoordinatorTerms(c,t,slot){
+ const currentSalary=c.salary??1.2,marketSalary=Math.max(currentSalary,t.staff[slot]?.salary||0);
+ const reserved=coordinatorRetentionOffers().filter(o=>o.toId===t.id&&o.slot!==slot)
+  .reduce((sum,o)=>sum+Math.max(0,o.outside.salary-(t.staff[o.slot]?.salary||0)),0);
+ const room=Math.round((staffSalaryRoom(t,slot)-reserved)*10)/10;
+ const salary=Math.min(9.9,room,Math.round(marketSalary*1.1*10)/10);
+ if(salary<currentSalary)return null;
+ const years=clamp(Math.max(3,(c.contractYears||0)+1),3,5);
+ const authority=slot!=='RC'&&(c.ambition>=70||c.playCallAuthority==='full')?'full':'shared';
+ return{salary,years,authority};
+}
+function coordinatorRetentionOffers(t=null){
+ const os=universe.offseason,offers=os?.reports?.coordinatorOffers;
+ if(universe.phase!=='complete'||os?.year!==universe.year||!Array.isArray(offers))return[];
+ return offers.filter(o=>o?.status==='pending'&&['OC','DC','RC'].includes(o.slot)&&
+  Number.isFinite(o.outside?.salary)&&Number.isInteger(o.outside.years)&&Number.isFinite(o.askSalary)&&
+  (!t||(o.fromId===t.id&&t.staff[o.slot]?.id===o.coachId)));
+}
+function openCoordinatorRetention(t,slot,destination){
+ const c=t.staff[slot];
+ if(universe.phase!=='complete'||!['OC','DC','RC'].includes(slot)||!c||c.interim||!destination?.staff[slot]||t.id===destination.id)return null;
+ const outside=outsideCoordinatorTerms(c,destination,slot);
+ if(!outside)return null;
+ const os=normalizeOffseasonState();
+ if(!Array.isArray(os.reports.coordinatorOffers))os.reports.coordinatorOffers=[];
+ const offers=os.reports.coordinatorOffers;
+ const id=`RETAIN_${universe.year}_${t.id}_${slot}`;
+ if(offers.some(o=>o.id===id))return null;
+ const loyaltyDiscount=clamp(((c.loyalty??60)-50)*.01,0,.4);
+ const askSalary=Math.max(c.salary??1.2,Math.round((outside.salary-loyaltyDiscount)*10)/10);
+ const offer={id,slot,fromId:t.id,toId:destination.id,destinationCoachId:destination.staff[slot].id,coachId:c.id,outside,askSalary,status:'pending'};
+ offers.push(offer);
+ return offer;
+}
+function settleCoordinatorRetention(o,counter=null){
+ const t=teamById(o.fromId),to=teamById(o.toId),c=t?.staff[o.slot];
+ if(o.status!=='pending')return{ok:false,reason:'This offer has already been resolved.'};
+ if(c?.id!==o.coachId||to?.staff[o.slot]?.id!==o.destinationCoachId||o.outside.salary>staffSalaryRoom(to,o.slot)){
+  o.status='withdrawn';
+  return{ok:true,reason:'The outside offer is no longer available.'};
+ }
+ if(counter){
+  const currentSalary=c.salary??1.2,salary=Math.round(Number(counter.salary)*10)/10,years=Number(counter.years);
+  const authority=o.slot==='RC'?c.playCallAuthority||'shared':counter.authority==='full'?'full':'shared';
+  if(!Number.isFinite(salary)||salary<currentSalary||salary>9.9||!Number.isInteger(years)||years<1||years>6)return{ok:false,reason:'Enter a salary at or above the current contract and a term of 1 to 6 years.'};
+  if(salary>staffSalaryRoom(t,o.slot))return{ok:false,reason:'That salary exceeds the athletic department budget.'};
+  const termSavings=Math.max(0,years-o.outside.years)*.1;
+  const authoritySavings=o.slot!=='RC'&&authority==='full'&&o.outside.authority==='shared'?.2:0;
+  const requiredSalary=Math.max(currentSalary,Math.round((o.askSalary-termSavings-authoritySavings)*10)/10);
+  if(salary>=requiredSalary&&years>=o.outside.years&&(o.outside.authority!=='full'||authority==='full')){
+   Object.assign(c,{salary,contractYears:years});
+   if(o.slot!=='RC')c.playCallAuthority=authority;
+   o.status='retained';
+   const reason=`${c.name} stays at ${t.name} on a ${years}-year deal at $${salary.toFixed(1)}M per year.`;
+   addCoachEvent('COACH_RENEWED',c,t,null,{role:c.role,salary,years,authority},reason);
+   universe.offseason.reports.review?.carouselLog?.push(reason);
+   return{ok:true,reason};
+  }
+ }
+ const reason=`${c.name} ${counter?'declined the counter and joins':'joins'} ${to.name} as ${COACH_SLOT_ROLES[o.slot]}.`;
+ o.status=counter?'declined':'departed';
+ Object.assign(c,{salary:o.outside.salary,contractYears:o.outside.years});
+ if(o.slot!=='RC')c.playCallAuthority=o.outside.authority;
+ moveCoach(c,t,to,o.slot,'Accepted an outside offer',{sourceOpening:t.id===selected()?.id});
+ universe.offseason.reports.review?.carouselLog?.push(`${t.name}: ${reason}`);
+ clearUnitCache();
+ return{ok:true,reason};
+}
+function resolveCoordinatorRetention(id,counter=null){
+ const t=selected(),o=t&&coordinatorRetentionOffers(t).find(x=>x.id===id);
+ if(universe.offseason?.phase!=='departures'||!o)return{ok:false,reason:'This offer is no longer available.'};
+ return settleCoordinatorRetention(o,counter);
+}
+function coordinatorRetentionHTML(t){
+ const offers=coordinatorRetentionOffers(t);
+ if(!offers.length)return'';
+ const rows=offers.map(o=>{
+  const c=t.staff[o.slot],to=teamById(o.toId),terms=o.outside;
+  if(c?.id!==o.coachId||!to)return'';
+  const currentSalary=c.salary??1.2,room=Math.min(9.9,staffSalaryRoom(t,o.slot)),hasAuthority=o.slot!=='RC',full=terms.authority==='full';
+  const authority=hasAuthority?` · ${full?'Full play-calling':'Shared authority'}`:'';
+  return `<article class="coach-card"><h4>${coachEscape(c.name)} · ${coachEscape(c.role)}</h4>
+   <p>${coachEscape(to.name)} offered $${terms.salary.toFixed(1)}M per year · ${terms.years} years${authority}.</p>
+   <p class="small muted">Current salary $${currentSalary.toFixed(1)}M · Maximum affordable $${room.toFixed(1)}M per year.</p>
+   <p class="small">${coachEscape(c.name)} will stay for $${o.askSalary.toFixed(1)}M per year and at least ${terms.years} years${full?' with full play-calling':''}. Each extra year offsets $0.1M per year${hasAuthority&&!full?'. Full play-calling offsets another $0.2M per year':''}. One counter allowed.</p>
+   <form class="offer-form" data-coordinator-counter="${coachEscape(o.id)}" aria-label="Counter for ${coachEscape(c.name)}">
+    <label>Salary ($M per year)<input name="salary" type="number" step="0.1" min="${currentSalary}" max="${room}" value="${o.askSalary}" required></label>
+    <label>Years<input name="years" type="number" step="1" min="1" max="6" value="${terms.years}" required></label>
+    ${hasAuthority?`<label>Authority<select name="authority"><option value="shared">Shared</option><option value="full"${full?' selected':''}>Full play-calling</option></select></label>`:''}
+    <div class="offer-actions"><button type="submit" ${room<currentSalary?'disabled':''}>Send Counter</button> <button type="button" data-coordinator-release="${coachEscape(o.id)}">Let Coach Leave</button></div>
+   </form></article>`;
+ }).join('');
+ return rows?`<section class="card" id="coordinatorRetention"><h3>Coordinator Offers</h3><p class="small muted">Any open offers become departures when you process player departures.</p>${rows}</section>`:'';
+}
+function showCoordinatorOffers(){
+ goToTab('staff');
+ $('#coordinatorRetention')?.scrollIntoView?.({block:'center'});
+ $('#coordinatorRetention input')?.focus?.({preventScroll:true});
+}
+function attachCoordinatorRetentionLinks(){
+ const root=$('#coordinatorRetention');
+ if(!root)return;
+ const resolve=(id,counter)=>{
+  const result=resolveCoordinatorRetention(id,counter);
+  setStatus(result.reason);
+  if(!result.ok)return;
+  autosaveAfter('management');
+  render();
+  ($('#coordinatorRetention button:not([disabled])')||$('#coachMarket button'))?.focus?.();
+ };
+ root.querySelectorAll('[data-coordinator-counter]').forEach(form=>form.onsubmit=event=>{
+  event.preventDefault();
+  const data=new FormData(form);
+  resolve(form.dataset.coordinatorCounter,{salary:data.get('salary'),years:data.get('years'),authority:data.get('authority')});
+ });
+ root.querySelectorAll('[data-coordinator-release]').forEach(b=>b.onclick=()=>resolve(b.dataset.coordinatorRelease,null));
+}
 function coachOpeningHubItems(t){if(!t)return[];return (universe.openings||[]).filter(o=>o.schoolId===t.id&&o.status==='OPEN').map(o=>({type:'action',tab:'staff',kicker:'COACHING SEARCH',importance:62,main:`${o.role} opening`,sub:'Interview and hire from the candidate market on the Staff tab.'}))}
 function promiseHubItems(t){return (universe.events||[]).filter(e=>e.type==='PROMISE_BROKEN'&&e.schoolIds.includes(t?.id)&&e.season>=universe.year-1).slice(-3).reverse().map(e=>({type:'bad-news',tab:'roster',player:e.playerIds[0],kicker:'PROMISE BROKEN',importance:e.importance,main:e.summary,sub:e.metadata.result}))}
 // A record nobody is near is trivia. A record somebody is two hundred yards from is a storyline,

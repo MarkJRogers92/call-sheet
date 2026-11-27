@@ -13,3 +13,63 @@
 .gameday-event-hero .event-center .event-forecast{display:block;margin-top:2px;opacity:.85}
 /* v0.20: the program's nickname under its name. */
 .event-team-nick{display:block;font-style:normal;font-size:12px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:var(--event-accent,#e9b949);opacity:.9}
+
+.season-race {
+  margin-top: 12px;
+  border-top: 2px solid #9f7c45;
+}
+.season-race h3 { margin: 0 0 12px; }
+.season-race-stakes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.season-race-stake {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--panel2);
+}
+.season-race-stake:only-child { grid-column: 1 / -1; }
+.season-race-stake > span, .season-race-game > div > span {
+  font-size: 11px;
+  color: var(--muted);
+}
+.season-race-stake > strong { font-size: 17px; }
+.season-race-stake:is([data-conference-race="clinched"], [data-playoff-race="qualified"]) > strong { color: #ebc987; }
+.season-race-stake small, .season-race-game small { color: var(--muted); }
+.season-race-field summary {
+  min-height: 42px;
+  padding: 10px 0;
+  color: #e1c490;
+  cursor: pointer;
+}
+.season-race-field ol { margin: 0; padding-left: 26px; }
+.season-race-field li { padding: 4px 0; overflow-wrap: anywhere; }
+.season-race-field li span { margin-left: 4px; color: var(--muted); font-size: 11px; }
+.season-race-guide h4 { margin: 16px 0 6px; }
+.season-race-guide ul { margin: 0; padding: 0; list-style: none; }
+.season-race-game {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+}
+.season-race-game > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.season-race-game .game-link { min-height: 42px; }
+.season-race-score { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 700px) {
+  .season-race-stakes { grid-template-columns: minmax(0, 1fr); }
+}

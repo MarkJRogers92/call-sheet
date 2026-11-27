@@ -2,7 +2,7 @@
 'use strict';
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ATLAS='assets/team-logos-atlas-32.png',COLS=12,ROWS=10;
-let gameSig='',seasonSig='',storySig='';
+let gameSig='',seasonSig='',raceSig='',storySig='',queued=false;
 function brand(el,id){const b=globalThis.DynastyProgramBranding?.brandFor?.(+id);if(!el||!b)return;el.style.setProperty('--event-primary',b.primary);el.style.setProperty('--event-secondary',b.secondary);el.style.setProperty('--event-accent',b.accent);el.style.setProperty('--event-primary-rgb',b.primaryRgb);el.style.setProperty('--event-secondary-rgb',b.secondaryRgb)}
 function logo(el,id,size=54){id=+id;if(!el||!Number.isInteger(id)||id<1||id>120)return;const index=id-1,col=index%COLS,row=Math.floor(index/COLS);el.style.width=`${size}px`;el.style.height=`${size}px`;el.style.backgroundImage=`url('${ATLAS}')`;el.style.backgroundSize=`${COLS*size}px ${ROWS*size}px`;el.style.backgroundPosition=`-${col*size}px -${row*size}px`;el.style.backgroundRepeat='no-repeat';el.dataset.teamId=String(id)}
 // Helmet art is CSS-sized: both atlases are addressed by --col/--row percentages, so the helmet scales with its box.
@@ -31,11 +31,51 @@ function renderSeason(){
  const api=globalThis.DynastyLabSeasonPresentation,s=api?.snapshot?.(),section=document.querySelector('#season');if(!section||!s)return;let host=document.querySelector('#seasonPulse');if(!host){host=document.createElement('section');host.id='seasonPulse';host.className='season-pulse';section.querySelector(':scope > .section-head')?.insertAdjacentElement('afterend',host)}if(!host)return;const sig=[s.teamId,s.record,s.conferenceRecord,s.rank,s.conferencePlace,s.week,s.completed,s.remaining,s.streak,s.latest?.week,s.latest?.result,s.latest?.label,s.next?.week,s.next?.id,s.phase,s.afterRegular?.title,s.afterRegular?.detail].join('|');if(sig===seasonSig)return;seasonSig=sig;const total=s.completed+s.remaining,pct=total?Math.round(s.completed/total*100):0;
  host.innerHTML=`<div class="season-pulse-main" data-season-team="${esc(s.teamId)}"><div class="season-pulse-logo" aria-hidden="true"></div><div class="season-pulse-identity"><span>${esc(s.year)} · ${esc(s.stage||`${s.phase} · Week ${s.week}`)}</span><strong>${esc(s.teamName)}</strong><small>${esc(s.conference)}${s.conferencePlace?` · #${esc(s.conferencePlace)} conference standing`:''}</small></div><div class="season-pulse-record"><b>${esc(s.record)}</b><span>${esc(s.rank)}</span></div></div><div class="season-pulse-metrics"><div><span>CONFERENCE</span><strong>${esc(s.conferenceRecord)}</strong></div><div><span>STREAK</span><strong>${esc(s.streak)}</strong></div><div><span>PLAYED</span><strong>${esc(s.completed)} / ${esc(total)}</strong></div><div class="season-progress"><span>REGULAR-SEASON PROGRESS</span><div><i style="width:${pct}%"></i></div><strong>${pct}%</strong></div></div><div class="season-pulse-grid">${seasonResult(s.latest)}${nextGame(s.next,s.afterRegular)}</div>`;const main=host.querySelector('[data-season-team]');brand(main,s.teamId);logo(main?.querySelector('.season-pulse-logo'),s.teamId,58);const opp=host.querySelector('[data-season-opponent]');if(opp){brand(opp,opp.dataset.seasonOpponent);logo(opp.querySelector('.season-next-logo'),opp.dataset.seasonOpponent,42)}
 }
+function conferenceRaceCard(race,championship){
+ if(championship)return `<div class="season-race-stake"><span>Conference championship</span><strong>${championship.yours?'Won the conference title':esc(championship.name)+' won the title'}</strong></div>`;
+ if(!race)return '';
+ const titles={clinched:'Title game clinched',out:'Out of the title race','win-out':'Win out to clinch','needs-help':'Needs help','in-position':'Currently in the top two',chasing:'Chasing a top-two finish'};
+ const help=race.remaining?'Even with wins in your remaining games, other results can decide your berth.':'Other results can still decide your berth.';
+ return `<div class="season-race-stake" data-conference-race="${esc(race.status)}"><span>Conference title game · #${esc(race.place)} at ${esc(race.record)}</span><strong>${esc(titles[race.status])}</strong>${race.status==='needs-help'?`<small>${help}</small>`:''}<small>The top two advance. Standings use conference wins, overall wins, then ranking score.</small></div>`;
+}
+function playoffRaceCard(playoff){
+ if(!playoff)return '';
+ const projected=playoff.state.startsWith('projected-');
+ const title=playoff.state==='unavailable'?'Field unavailable in this save':playoff.seed?`${projected?'Projected':'Qualified'} · No. ${playoff.seed} seed`:projected?'Currently projected out':'Outside the playoff field';
+ const detail=projected?'Current conference leaders stand in for title winners. Six other teams fill the field by national ranking.':playoff.seed?(playoff.route==='champion'?'Automatic bid as conference champion.':'At-large bid.'):'';
+ const field=playoff.field?.length?`<details class="season-race-field"><summary>${projected?'View projected field':'View official field'}</summary><ol>${playoff.field.map(t=>`<li><b>${esc(t.name)}</b> <span>${t.route==='champion'?(projected?'Projected conference bid':'Conference champion'):'At-large'}</span></li>`).join('')}</ol></details>`:'';
+ return `<div class="season-race-stake" data-playoff-race="${esc(playoff.state)}"><span>16-team playoff</span><strong>${esc(title)}</strong>${detail?`<small>${detail}</small>`:''}${field}</div>`;
+}
+function raceGameRow(game){
+ const label=`${esc(game.away)} at ${esc(game.home)}`;
+ const result=game.score?`${esc(game.score[0])}–${esc(game.score[1])}`:'Final';
+ const context=game.rootFor?`Root for ${esc(game.rootFor)}`:game.yours?(game.conf?'Your conference game':'Your nonconference game'):(game.conf?'Conference game':'Nonconference game');
+ const final=game.id?`<button type="button" class="game-link" data-game="${esc(game.id)}" data-game-tab="Box Score" aria-label="Box score for ${label}">${result} · Box score</button>`:`<span class="season-race-score">${result}</span>`;
+ return `<li class="season-race-game"><div><span>Week ${esc(game.week)}${game.played?' · Final':''}</span><strong>${label}</strong></div>${game.played?final:`<small>${context}</small>`}</li>`;
+}
+function renderRace(){
+ const section=document.querySelector('#season');
+ if(!section?.classList.contains('active'))return;
+ const race=globalThis.DynastyLabSeasonPresentation?.race?.(),previous=document.querySelector('#postseasonRace');
+ if(!race){previous?.remove();raceSig='';return}
+ const sig=JSON.stringify(race);if(sig===raceSig&&previous)return;
+ let host=previous;
+ if(!host){
+  host=document.createElement('section');host.id='postseasonRace';host.className='card season-race';host.setAttribute('aria-labelledby','postseasonRaceHeading');
+  section.querySelector('#seasonPulse')?.insertAdjacentElement('afterend',host);
+ }
+ raceSig=sig;
+ const games=race.conference?.games||(race.championship?.game?[race.championship.game]:[]);
+ const week=games.length?`<div class="season-race-guide"><h4>${games.some(g=>!g.played)?'Rooting guide':'Recent race results'}</h4><ul>${games.map(raceGameRow).join('')}</ul></div>`:'';
+ const fieldOpen=!!host.querySelector('.season-race-field[open]');
+ host.innerHTML=`<h3 id="postseasonRaceHeading">Postseason race</h3><div class="season-race-stakes">${conferenceRaceCard(race.conference,race.championship)}${playoffRaceCard(race.playoff)}</div>${week}`;
+ if(fieldOpen){const field=host.querySelector('.season-race-field');if(field)field.open=true}
+}
 function route(tab){const client=document.querySelector(`[data-client-tab="${CSS.escape(tab)}"]`),canonical=document.querySelector(`.tabs button[data-tab="${CSS.escape(tab)}"]`);(client||canonical)?.click()}
 function storyCard(s){return `<button type="button" class="season-story-card season-story-${esc(s.tone||'neutral')}" data-story-tab="${esc(s.tab||'dashboard')}" ${s.playerId!=null?`data-story-player="${esc(s.playerId)}"`:''} ${s.recruitId!=null?`data-story-recruit="${esc(s.recruitId)}"`:''}><span>${globalThis.DynastyArt?.img(globalThis.DynastyArt.kickerKey(s.kicker),'dl-art dl-art-kicker')||''}${esc(s.kicker)}</span><strong>${esc(s.title)}</strong><small>${esc(s.summary)}</small></button>`}
 function renderStories(){
  const d=globalThis.DynastyLabSeasonStories?.snapshot?.(),dash=document.querySelector('#dashboard');if(!dash||!d)return;let host=document.querySelector('#seasonStoryRail');if(!host){host=document.createElement('section');host.id='seasonStoryRail';host.className='season-story-rail';const anchor=document.querySelector('#v0102PlayerStories')||dash.querySelector('.command-center');anchor?.insertAdjacentElement('afterend',host)}if(!host)return;const sig=[d.year,d.week,...d.stories.map(s=>`${s.type}:${s.title}:${s.summary}`)].join('|');if(sig===storySig)return;storySig=sig;if(!d.stories.length){host.hidden=true;return}host.hidden=false;host.innerHTML=`<div class="season-story-head"><div><span class="eyebrow">SEASON STORIES</span><h3>What is changing around your program</h3></div><small>Factual signals from games, players, development and recruiting</small></div><div class="season-story-grid">${d.stories.map(storyCard).join('')}</div>`;host.querySelectorAll('.season-story-card').forEach(b=>b.onclick=()=>{route(b.dataset.storyTab||'dashboard');setTimeout(()=>{if(b.dataset.storyPlayer)document.querySelector(`[data-player="${CSS.escape(b.dataset.storyPlayer)}"]`)?.click();if(b.dataset.storyRecruit)document.querySelector(`[data-recruit="${CSS.escape(b.dataset.storyRecruit)}"]`)?.click()},60)})
 }
-function queue(){setTimeout(()=>{renderGameDay();renderSeason();renderStories()},0)}
+function queue(){if(queued)return;queued=true;setTimeout(()=>{queued=false;renderGameDay();renderSeason();renderRace();renderStories()},0)}
 document.addEventListener('click',e=>{if(e.target.closest?.('[data-tab="gamelab"],[data-tab="season"],[data-tab="dashboard"],[data-client-tab="gamelab"],[data-client-tab="season"],[data-client-tab="dashboard"]'))queue()});for(const selector of ['#nextGameCard','#seasonPhase','#teamSchedule','#v0102PlayerStories','#recruitBody','#developmentVisualLab']){const el=document.querySelector(selector);if(el&&window.MutationObserver)new MutationObserver(queue).observe(el,{childList:true,subtree:true,characterData:true})}document.querySelector('#userTeam')?.addEventListener('change',()=>{gameSig='';seasonSig='';storySig='';queue()});queue();
 })();

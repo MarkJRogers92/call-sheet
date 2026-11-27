@@ -130,6 +130,7 @@ globalThis.__ENGINE__ = {
   STYLES, STYLE_TRAITS, STYLE_USAGE, ARCHETYPE_META, archetypeMeta, archetypeLabel, archetypeDescription, archetypeChipHTML, styleForTraits,
   ensurePortrait, portraitSeedFor, jerseyFor, schoolColors, ensureSchoolColors, commissionerMode, renderControlMode, PORTRAIT_VERSION,
   TAB_RENDERERS,
+  coordinatorRetentionOffers, openCoordinatorRetention, resolveCoordinatorRetention, coordinatorRetentionHTML,
   APP_VERSION, adminReviewSummary, tenureDigest, reviewControlledProgram, closeTenure, careerTotals, gameSetting, GAME_SETTING_DEFS, adminSeasonReview, postGameCondition, recruitPitchBreakdown,
   ...(typeof gameSettings==='function'?{gameSettings,setGameSetting,careerMilestoneStats,careerMilestoneStatus,updateCareerMilestones,milestoneHubItems}:{}),
   T, teamById, findPlayer, rebuildIndexes, packUniverse, packPlayer, saveJsonParts, gzipBlob, saveFileText, orderPlayerStoryEvents, conferenceChampionIdsFor, conferenceChampionTeams, freezePlayoffField, normalizePlayoffField, rebuildRecruitClassCounts,

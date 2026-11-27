@@ -2,8 +2,8 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const {loadEngine}=require('../tools/harness');
 
-async function setup(seed){
- const e=loadEngine({seed});e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
+async function setup(seed,options={}){
+ const e=loadEngine({seed,...options});e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
  e.universe.weeklyDecisions=[];return {e,u:e.universe,t:e.T('Chicago Metropolitan')};
 }
 
@@ -44,4 +44,51 @@ test('simulating the whole season delegates cards instead of stopping the calend
  assert.ok(e.ensureWeeklyDecisions(t).length);e.simSeason();assert.equal(u.phase,'confReady');
  assert.ok(u.weeklyDecisions.some(d=>d.selectedBy==='staff'));
  assert.ok(u.weeklyDecisions.every(d=>d.options.some(o=>o.id===d.resolvedOptionId)));
+});
+
+test('the next week follows up on saved medical and redshirt choices for this program',async()=>{
+ const {e,u,t}=await setup(1422,{fullRuntime:true});
+ u.week=2;
+ const starter=e.importantStarters(t)[0],reserve=t.roster.find(p=>p.id!==starter.id);
+ Object.assign(starter,{health:70,wear:76,injuryWeeks:0,redshirtActive:false});
+ starter.stats.games=2;
+ Object.assign(reserve,{redshirtUsed:false,redshirtActive:false,eligibilityUsed:0});
+ reserve.stats.games=4;t.weeklyStaffInstructions={medical:'sit'};
+ const choices=e.ensureWeeklyDecisions(t),medical=choices.find(d=>d.type==='INJURED_STARTER');
+ const redshirt=choices.find(d=>d.type==='REDSHIRT_DECISION');
+ u.weeklyDecisions=[medical,redshirt];
+ assert.ok(e.resolveWeeklyDecision(redshirt.id,'continue'));
+ assert.ok(e.delegateWeeklyDecisions(t));
+ assert.equal(medical.resolvedOptionId,'sit');
+ assert.equal(medical.appearancesAtDecision,2);
+ assert.deepEqual(globalThis.__DL_TEST__.weeklyDecisionFollowUp(),[],'same-week choices are already on the desk');
+ u.week++;reserve.stats.games=5;
+ u.weeklyDecisions.push({...medical,id:'other-team',teamId:u.teams.find(x=>x.id!==t.id).id,priority:999});
+ e.universe=JSON.parse(JSON.stringify(e.packUniverse(u)));e.normalizeUniverse();
+ const before=JSON.stringify(e.universe),rows=globalThis.__DL_TEST__.weeklyDecisionFollowUp();
+ assert.deepEqual(rows.map(({id,by,choice})=>({id,by,choice})),[
+  {id:medical.id,by:'Staff',choice:'Sit'},{id:redshirt.id,by:'You',choice:'Continue playing'}
+ ]);
+ assert.equal(rows[0].outcome,'Season appearances held at 2.');
+ assert.match(rows[1].outcome,/Past the four-game redshirt limit.*5 appearances/);
+ assert.equal(JSON.stringify(e.universe),before,'rendering observations preserves the saved dynasty');
+ e.universe.week++;
+ assert.deepEqual(globalThis.__DL_TEST__.weeklyDecisionFollowUp(),[]);
+});
+
+test('a recruiting follow-up uses the actual chosen recruit and saved visit',async()=>{
+ const {e,u,t}=await setup(1405,{fullRuntime:true}),pair=u.recruits.slice(0,2);
+ pair.forEach(r=>Object.assign(r,{targeted:true,committed:null,visitWeek:null}));
+ const decision=e.ensureWeeklyDecisions(t).find(d=>d.type==='RECRUITING_PRIORITY');
+ const chosen=u.recruits.find(r=>r.id===decision.recruitIds[1]);
+ assert.ok(e.resolveWeeklyDecision(decision.id,`prioritize_${chosen.id}`));
+ const booked=chosen.visitWeek;
+ assert.equal(decision.scheduledVisitWeek,booked);
+ u.week++;
+ chosen.visit=false;chosen.visitWeek=null;
+ const row=()=>globalThis.__DL_TEST__.weeklyDecisionFollowUp().find(x=>x.id===decision.id);
+ assert.equal(row().choice,`Prioritize ${chosen.name}`);
+ assert.equal(row().outcome,`Visit booked for Week ${booked}.`);
+ chosen.committed='Rival Program';
+ assert.equal(row().outcome,'Now committed to Rival Program.');
 });

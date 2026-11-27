@@ -14,6 +14,7 @@ test('a closed tenure becomes a career line and opens a job market',async()=>{
  assert.equal(closed.reason,'let go');
  assert.equal(closed.seasons,1);
  assert.equal(u.careerHistory.length,1);
+ assert.equal(e.careerTotals().w,closed.w,'the closed season is counted once while waiting for another job');
  assert.ok(u.jobOffers.length>0&&u.jobOffers.length<=3,'a real, bounded set of offers');
  for(const o of u.jobOffers)assert.notEqual(o.name,'Chicago Metropolitan','the school that let you go is not on the board');
  assert.equal(e.closeTenure('again'),null,'closing twice is a no-op');
@@ -77,4 +78,46 @@ test('the wire makes an open job market impossible to miss',async()=>{
  assert.equal(tile.length,1);
  assert.equal(tile[0].importance,95);
  assert.equal(u.weeklyHub[0],tile[0],'it outranks everything else on the wire');
+});
+
+async function reviewBreakout(seed){
+ const e=await setup(seed),u=e.universe,t=e.T('Chicago Metropolitan');
+ t.prestige=42;t.w=10;t.l=2;
+ u.phase='complete';u.week=12;u.offseason=e.makeOffseasonState(u.year,'review');
+ assert.equal(e.advanceOffseasonPhase(),true);
+ return {e,u,t};
+}
+
+test('a breakout season opens optional invitations and records an accepted move once',async()=>{
+ const {e,u,t}=await reviewBreakout(2406);
+ const {offers}=u.careerInvitations;
+ assert.ok(offers.length>0&&offers.length<=2);
+ assert.ok(offers.every(o=>o.prestige>t.prestige&&o.prestige<=e.hiringCeiling()));
+ assert.equal(e.hasPendingCareerChoice(),false);
+ assert.match(e.careerHubItems(t)[0].main,/invite/);
+ assert.equal(u.tenure.closed,false);
+ assert.equal(e.careerHubItems(e.T(offers[0].name)).length,0,'the invitations belong to the coach’s current program');
+
+ const restored=JSON.parse(JSON.stringify(e.packUniverse(u)));
+ e.universe=restored;e.normalizeUniverse();
+ assert.deepEqual(e.universe.careerInvitations.offers,offers);
+ assert.equal(e.acceptPost(offers[0].schoolId).ok,true);
+ assert.equal(e.universe.tenure.school,offers[0].name);
+ assert.equal(e.universe.tenure.startYear,u.year+1);
+ assert.equal(e.universe.careerInvitations,null);
+ assert.equal(e.universe.careerHistory.length,1);
+ assert.equal(e.universe.careerHistory[0].reason,'Accepted a new post');
+ assert.equal(e.careerTotals().w,10);
+ assert.equal(e.acceptPost(offers[0].schoolId).ok,false,'a completed move cannot be repeated');
+});
+
+test('coaching invitations expire when the coach advances into departures',async()=>{
+ const {e,u,t}=await reviewBreakout(2407);
+ const id=u.careerInvitations.offers[0].schoolId;
+ assert.equal(e.advanceOffseasonPhase(),true,'staying is the default and never blocks progress');
+ assert.equal(u.offseason.phase,'signing');
+ assert.equal(e.careerHubItems(t).length,0);
+ assert.equal(e.acceptPost(id).ok,false);
+ assert.equal(u.tenure.school,t.name);
+ assert.equal((u.careerHistory||[]).length,0);
 });

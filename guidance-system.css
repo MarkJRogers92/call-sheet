@@ -7,6 +7,7 @@
 
 /* Weekly setup reminders: compact, optional, always visible on This Week. */
 .weekly-setup-nudges{display:grid;gap:6px;margin:10px 0 4px}
+.weekly-setup-nudges[hidden]{display:none}
 .weekly-setup-label{font-size:11px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted,#8e9aa6)}
 .weekly-setup-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:10px;padding:9px 12px;border:1px solid rgba(255,255,255,.08);border-left:3px solid #73a8ff;border-radius:10px;background:rgba(255,255,255,.025)}
 .weekly-setup-row[data-setup-category="development"]{border-left-color:#65d39a}
