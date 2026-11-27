@@ -64,6 +64,28 @@ const shots=process.env.CARD_SHOTS||'';
       });
       assert.ok(fit,`the selected call keeps Snap and its forecast in view at ${width}×${height}`);
     }
+    const featuredCall=await frame.evaluate(()=>{
+      const {b,req}=window.__slice,B=window.CallSheet.battle;
+      const options=B.sidelineOptions(b);
+      return B.snapDecisions(b,req,{},50).choices.find(call=>options.featurable.some(player=>player.id===call.actor?.id));
+    });
+    assert.ok(featuredCall,'the opening Quick Calls offer a player who can be featured');
+    const {actor}=featuredCall,namedCall=frame.locator(`[data-quick-call="${featuredCall.id}"]`);
+    assert.ok((await namedCall.locator('.quick-actor').innerText()).includes(actor.name),'the call names its player while the forecast is visible');
+    await namedCall.click();
+    const kept=await frame.evaluate(()=>{
+      const {b}=window.__slice,B=window.CallSheet.battle,options=B.sidelineOptions(b);
+      const keep=options.tactics[0]||null;
+      B.setSideline(b,{keep});
+      return keep;
+    });
+    assert.ok(kept,'there is a held tactic to preserve');
+    await frame.locator('[data-quick-feature]').click();
+    assert.ok((await frame.locator('[data-feature-status]').innerText()).includes(actor.name),'the chosen runner or target is now featured');
+    assert.deepEqual(await frame.evaluate(()=>{
+      const options=window.CallSheet.battle.sidelineOptions(window.__slice.b);
+      return {id:options.featured.id,left:options.featured.left,keep:options.keep};
+    }),{id:actor.id,left:2,keep:kept},'the shortcut preserves the held tactic and uses the correct player');
     if(shots)await page.screenshot({path:`${shots}/c2-quick-phone.png`});
     await page.setViewportSize({width:1400,height:900});await frame.click('#sheetToggle');
     assert.ok(await frame.locator('#coachingRead').isVisible(),'public coaching cues appear before selecting a play');

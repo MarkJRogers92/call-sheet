@@ -1046,6 +1046,23 @@ function comboReceiptHTML(combo,command,cost){
   const rebate=command-cost<D.RULES.seriesCommand?' · +1 Command':'';
   return `<small class="sequence-ready">${esc(combo.name)} · ${esc(comboEffect(combo))}${rebate}${combo.condition?' '+esc(combo.condition):''}</small>`;
 }
+function equippedComboHTML(setup){
+  if(!setup||setup.ready)return '';
+  const progress=setup.steps?` · ${setup.step} of ${setup.steps}`:'';
+  const next=setup.nextCall?` <b>Setup call</b> ${esc(setup.nextCall.name)}.`:'';
+  return `<div class="equipped-combo"><strong>${esc(setup.name)}${progress}</strong><span>${esc(setup.how)}. ${esc(setup.reward)}.${next}</span></div>`;
+}
+function quickFeatureHTML(actor){
+  const options=B.sidelineOptions(b);
+  if(!options?.offense)return '';
+  const featured=options.featured;
+  if(featured){
+    const touches=featured.left===1?'touch':'touches';
+    return `<p class="quick-feature" data-feature-status tabindex="-1"><strong>Featured · ${esc(featured.name||'Your player')}</strong> <small>${featured.left} ${touches} left</small></p>`;
+  }
+  if(!actor||!options.featurable.some(player=>player.id===actor.id))return '';
+  return `<div class="quick-feature"><button type="button" class="tbtn" data-quick-feature>Feature ${esc(actor.name)}</button><small>Once per half · +1 on his duels until two carries or catches</small></div>`;
+}
 function quickSheetHTML(view,detailsOpen){
   const opt=req.options,selected=opt.plays.find(p=>p.id===sel.play),cost=selCost();
   const cards=view.choices.map(c=>{
@@ -1053,7 +1070,8 @@ function quickSheetHTML(view,detailsOpen){
     const prefix=c.aim?c.aim+'. ':'';
     const detail=prefix&&c.detail.startsWith(prefix)?c.detail.slice(prefix.length):c.detail;
     const badge=c.badge?`<em class="quick-badge ${/COMBO|CMD IF/.test(c.badge)?'sequence-ready':''}">${esc(c.badge)}</em>`:'';
-    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span class="quick-choice-title"><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${c.aim?`<span class="quick-aim">${esc(c.aim)}</span>`:''}${quickEstimateHTML(c.forecast)}${badge}${c.forecast?'':`<span class="trade">${esc(detail)}</span>`}</button>`;
+    const actor=c.actor?`<span class="quick-actor">${c.actor.kind==='runner'?'Ball carrier':'Target'} · ${esc(c.actor.name)}</span>`:'';
+    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span class="quick-choice-title"><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${actor}${c.aim?`<span class="quick-aim">${esc(c.aim)}</span>`:''}${quickEstimateHTML(c.forecast)}${badge}${c.forecast?'':`<span class="trade">${esc(detail)}</span>`}</button>`;
   }).join('');
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   const tactics=selectedTactics().map(id=>D.TACTICS[id]?.name).filter(Boolean);
@@ -1069,9 +1087,10 @@ function quickSheetHTML(view,detailsOpen){
     ${b.challenge?`<p class="challenge-objective">${esc(challengeLabel())}${b.challengeLook?' · '+esc(activeChallenge.alternate?.name||''):''} · ${esc(activeChallenge.objective)}</p>${challengeRunNote()}`:''}
     ${view.quickBarHTML||''}${view.staffRecap||''}${pinnedCallHTML()}${view.setupCue||''}<p id="quickClue">${esc(view.clue)}</p>${req.leanMeter?`<small>${esc(leanMeterText(req))}</small>`:''}
     ${view.defensePlan?`<p id="quickDefensePlan"><strong>${view.defensePlan.adjusted?'Defense adjusted':'Opponent game plan'}</strong> · ${esc(view.defensePlan.text)}</p>`:''}
+    ${equippedComboHTML(view.comboSetup)}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${b.coachedSnap?coachedSnapReviewHTML():''}
-    <div class="quick-tools">${details}${redrawButton()}</div>
+    <div class="quick-tools">${quickFeatureHTML(selectedView?.actor)}${details}${redrawButton()}</div>
     ${redrawText()?`<p class="call-notice">${esc(redrawText())}</p>`:''}
     ${guidedDriveHTML()}</div></div>
     <div class="quick-footer">
@@ -1107,7 +1126,8 @@ function renderQuickHand(h){
   const details=h.querySelector('.quick-details'),sameSnap=quickSnap===b.snap;
   const detailsOpen=sameSnap&&details?.open&&details.dataset.play===sel.play;
   const previousScroll=sameSnap?h.querySelector('.quick-scroll')?.scrollTop||0:0;
-  h.innerHTML=quickSheetHTML({...B.snapDecisions(b,req,{...sel,read:readMode},DYN?.scouting?.confidence),
+  const view=B.snapDecisions(b,req,{...sel,read:readMode},DYN?.scouting?.confidence);
+  h.innerHTML=quickSheetHTML({...view,
     ownDrive:!!B.sidelineOptions(b)?.coachDrive,staffRecap:staffRecapHTML(),setupCue:setupCueHTML(),quickBarHTML},detailsOpen);
   quickSnap=b.snap;h.querySelector('.quick-scroll').scrollTop=previousScroll;
   {const story=$('#matchupStory');if(story&&!story.dataset.moment&&h.querySelector('#pinnedCall'))story.hidden=true} // one place for the coach's last call
@@ -1119,6 +1139,18 @@ function renderQuickHand(h){
   for(const el of h.querySelectorAll('[data-quick-info]'))el.onclick=()=>{
     const t=req.options.tactics.find(x=>x.slot===Number(el.dataset.quickInfo));
     if(t)tacticClick(t,null);
+  };
+  const feature=h.querySelector('[data-quick-feature]');
+  if(feature)feature.onclick=()=>{
+    if(busy)return;
+    const actor=view.choices.find(c=>c.id===sel.play)?.actor,options=B.sidelineOptions(b);
+    if(!actor||!options?.offense)return;
+    try{
+      B.setSideline(b,{keep:options.keep,intent:options.intent,timeoutNext:options.timeoutNext,feature:actor.id});
+      err='';writeSave();S.init();S.tick(6);refresh();
+      h.querySelector('[data-feature-status]')?.focus({preventScroll:true});
+      $('#callStatus').textContent=`${actor.name} featured · Two touches available.`;
+    }catch(e){err=e.message;renderHand();h.querySelector('[data-quick-feature]')?.focus({preventScroll:true})}
   };
   bindAssignment(h);bindGuide(h);bindTwoDown(h);bindSetupCue(h);bindPersonnel(h,'data-quick-personnel');bindRedraw(h);bindCoachedSnapReview(h);bindComboPayoff(h);
   for(const button of h.querySelectorAll('[data-tactic-slot]'))button.onclick=()=>{
@@ -1201,6 +1233,7 @@ function renderHand(){
   const cards=document.createElement('div');cards.className='sheet-cards';
   cards.style.setProperty('--plays',Math.max(1,o.plays.length)+'fr');
   cards.style.setProperty('--tactics',Math.max(1,o.tactics.length)+'fr');
+  cards.insertAdjacentHTML('afterbegin',equippedComboHTML(B.equippedComboSetup(b,req)));
   cards.append(fanP,fanT);h.append(cards,cmd);cards.scrollTop=previousScroll;
   bindAssignment(h);bindTwoDown(h);bindPersonnel(h,'data-cmd-personnel');bindRedraw(h);bindComboPayoff(h);
   if(err)cmd.insertAdjacentHTML('afterbegin',`<span class="sheet-error" role="status">${esc(err)}</span>`);
@@ -2122,17 +2155,22 @@ function challengeMenu(){
     title();
   };
 }
-function startChallengeRun(){
-  const run=B.THREE_DRIVE_CHALLENGE,m=$('#modal');
+function startChallengeRun(playbook=null){
+  const run=B.THREE_DRIVE_CHALLENGE;
+  if(playbook){
+    const route=run.routes[0][0];
+    startChallenge(route.challenge,null,{stage:0,route,playbook,loans:[],results:[]});
+    return;
+  }
+  const m=$('#modal'),awards=window.ChallengeAwards;
   m.innerHTML=`<section class="challenge-menu"><p class="statline">${esc(run.name)}</p><h1 tabindex="-1">Choose a playbook</h1>
     <p>Use this playbook for all three drives. Borrow a tactic before each of the last two drives.</p>
-    <div class="challenge-list">${run.playbooks.map(playbook=>`<button type="button" class="challenge-option" data-run-playbook="${esc(playbook.id)}"><strong>${esc(playbook.name)}</strong><span>${esc(playbook.description)}</span></button>`).join('')}</div>
+    <div class="challenge-list">${run.playbooks.map(book=>`<button type="button" class="challenge-option" data-run-playbook="${esc(book.id)}"><strong>${esc(book.name)}</strong><span>${esc(book.description)}</span>${challengeProgressHTML(awards.progress(run.id,book.id))}</button>`).join('')}</div>
     <button type="button" class="tbtn" id="challengeMenu">All challenges</button></section>`;
   m.classList.add('on');m.scrollTop=0;m.querySelector('h1').focus({preventScroll:true});
-  for(const option of m.querySelectorAll('[data-run-playbook]'))option.onclick=()=>{
-    const playbook=run.playbooks.find(p=>p.id===option.dataset.runPlaybook),route=run.routes[0][0];
-    startChallenge(route.challenge,null,{stage:0,route,playbook,loans:[],results:[]});
-  };
+  for(const option of m.querySelectorAll('[data-run-playbook]')){
+    option.onclick=()=>startChallengeRun(run.playbooks.find(book=>book.id===option.dataset.runPlaybook));
+  }
   $('#challengeMenu').onclick=challengeMenu;
 }
 function startChallenge(id,look=null,run=null){
@@ -2170,11 +2208,15 @@ function finishChallengeRun(result,nextRoute=null){
   }else{
     const won=clears===run.routes.length;
     if(!state.receipt){
-      state.receipt=awards.finish(run.id,null,{won,snaps:state.results.reduce((total,drive)=>total+drive.snaps,0)});
+      const attempt={won,snaps:state.results.reduce((total,drive)=>total+drive.snaps,0)};
+      state.receipt={overall:awards.finish(run.id,null,attempt),playbook:awards.finish(run.id,state.playbook.id,attempt)};
       if(won&&awards.earn(run.id))S.fanfare();
     }
-    const earned=awards.get(run.id);
-    actions=`<p class="challenge-record">${clears} of ${run.routes.length} drives cleared${challengeProgressHTML(state.receipt?.record)}</p>${won&&earned?`<p>${challengeSticker(earned)}</p>`:''}<button class="btn go" id="retryChallengeRun">Play all three again</button>`;
+    const earned=awards.get(run.id),record=state.receipt.playbook;
+    actions=`<p class="challenge-record"><strong>${clears} of ${run.routes.length} drives cleared</strong>Overall record${challengeProgressHTML(state.receipt.overall?.record)}</p>
+      <p class="challenge-record"><strong>${esc(state.playbook.name)}${record?.improved?' · New personal best':' record'}</strong>${challengeProgressHTML(record?.record)}</p>
+      ${won&&earned?`<p>${challengeSticker(earned)}</p>`:''}<button class="btn go" id="retryChallengeRun">Replay ${esc(state.playbook.name)}</button>
+      <button class="btn" id="changeChallengePlaybook">Change playbook</button>`;
   }
   const m=$('#modal');
   const carried=state.loans.map(id=>esc(D.TACTICS[id].name)).join(', ');
@@ -2193,7 +2235,8 @@ function finishChallengeRun(result,nextRoute=null){
   };
   for(const option of m.querySelectorAll('[data-challenge-loan]'))option.onclick=()=>advanceRun(option.dataset.challengeLoan);
   if($('#backToRunRoutes'))$('#backToRunRoutes').onclick=()=>finishChallengeRun(result);
-  if($('#retryChallengeRun'))$('#retryChallengeRun').onclick=()=>startChallengeRun();
+  if($('#retryChallengeRun'))$('#retryChallengeRun').onclick=()=>startChallengeRun(state.playbook);
+  if($('#changeChallengePlaybook'))$('#changeChallengePlaybook').onclick=()=>startChallengeRun();
   $('#challengeMenu').onclick=challengeMenu;
 }
 function challengeFinish(result){

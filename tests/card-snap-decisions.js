@@ -15,6 +15,7 @@ test('snap decisions give contrasting legal hand calls with current named player
  assert.ok(view.choices.length>=2&&view.choices.length<=3);assert.equal(new Set(view.choices.map(x=>D.PLAYS[x.id].family)).size,view.choices.length);
  assert.match(view.choices.find(x=>x.id==='inside_zone').detail,/Current Back/);
  assert.match(view.choices.find(x=>x.id==='inside_zone').detail,/lean|repeat/i);
+ assert.deepEqual(view.choices.find(x=>x.id==='inside_zone').actor,{id:b.teams.home.lineup.off.RB.id,name:'Current Back',role:'RB',kind:'runner'});
  assert.deepEqual({b,req},before);
  req.options.plays[0].blocked='Out';req.options.plays[2].cost=9;
  assert.ok(B.snapDecisions(b,req).choices.every(x=>!['inside_zone','quick_slant'].includes(x.id)));
@@ -65,6 +66,67 @@ test('compact choices surface a genuine available combo, not a promised outcome'
  const view=B.snapDecisions(b,req);assert.equal(view.choices[0].id,'pa_boot');assert.match(view.choices[0].detail,/Establish the Run ready/);
  assert.ok(view.choices.every(x=>x.detail.length<140));
  b.drive.fams=['run'];assert.doesNotMatch(JSON.stringify(B.snapDecisions(b,req)),/Establish the Run ready/);
+});
+test('an installed combo exposes its progress and a fitting setup call without reading the hidden defense',()=>{
+ const {b,req}=fixture();b.user=req.side;
+ b.game={drive:1,possession:'home',period:1};b.drive={key:'1:home',fams:['run']};
+ b.decks={home:{off:{wrinkles:['pa_boot'],comboPlan:{id:'establish',play:'pa_boot'}}}};
+ req.situation={down:2,distance:6,field:40,period:1};
+ Object.defineProperty(b.snap,'def',{get(){throw new Error('hidden defense accessed')}});
+ const before=JSON.stringify({drive:b.drive,req,decks:b.decks}),view=B.snapDecisions(b,req);
+ const progress=B.equippedComboSetup(b,req);
+ assert.equal(progress.step,1);assert.equal(progress.steps,2);assert.equal(progress.ready,false);
+ assert.deepEqual(view.comboSetup,{...progress,nextCall:{id:'inside_zone',name:D.PLAYS.inside_zone.name}});
+ assert.equal(view.choices[0].aim,'Build the setup');
+ assert.equal(JSON.stringify({drive:b.drive,req,decks:b.decks}),before);
+ req.situation.down=3;req.situation.distance=10;
+ assert.equal(B.snapDecisions(b,req).comboSetup.nextCall,undefined);
+ req.situation.down=2;req.options.plays.filter(o=>D.PLAYS[o.id].family==='run').forEach(o=>{o.cost=3});
+ assert.equal(B.snapDecisions(b,req).comboSetup.nextCall,undefined);
+ b.drive.key='2:home';assert.equal(B.equippedComboSetup(b,req).step,0);
+ b.comboLog={home:{1:['establish']}};assert.equal(B.equippedComboSetup(b,req),null);
+});
+test('an installed payoff wins overlapping recipes in the draw, preview and live result',()=>{
+ let b=B.createChallenge('need_six');const side=b.user,plan={id:'change_of_pace',play:'rpo_bubble'};
+ const deck=b.decks[side].off,hand=b.hands[side],pile=b.piles[side].off.wrinkle;
+ if(!deck.wrinkles.includes(plan.play))deck.wrinkles.push(plan.play);
+ deck.comboPlan=plan;
+ for(const cards of [hand.wrinkles,pile.draw,pile.discard]){
+   const i=cards.indexOf(plan.play);if(i>=0)cards.splice(i,1);
+ }
+ pile.draw.push(plan.play);
+ b.drive={key:`${b.game.drive}:${side}`,fams:['run'],plays:['inside_zone'],calls:[{pressure:2}],results:[{family:'run',yards:7}]};
+ assert.equal(B.equippedComboSetup(b).step,0);
+ assert.equal(B.comboFor(b,D.PLAYS[plan.play]).id,'screen_the_heat','the installed recipe has not happened yet');
+ b.drive.results[0].yards=8;
+ b=B.load(B.save(b));
+ assert.equal(B.equippedComboSetup(b).ready,true);
+ assert.equal(b.pending.comboPayoff?.id,plan.id);
+ B.submit(b,{type:'combo_payoff'});
+ assert.ok(B.preview(b,side,{play:plan.play}).snap.duels.some(d=>d.mods.some(m=>m.src==='COMBO: Change of Pace')));
+ B.submit(b,{type:'call',play:plan.play,tactics:[]});
+ assert.deepEqual(b.lastResult.events.filter(e=>e.type==='combo').map(e=>e.id),[plan.id]);
+});
+test('an equipped run-dependent defensive payoff keeps its condition visible when the family is unknown',()=>{
+ const b=B.createChallenge('goal_line_stand'),req=b.pending,deck=b.decks[req.side].def,card=D.CALLS.zone_pressure;
+ if(!deck.wrinkles.includes(card.id))deck.wrinkles.push(card.id);
+ deck.comboPlan={id:'wall_up',play:card.id};
+ b.drive={key:`${b.game.drive}:${b.game.possession}`,results:[{family:'run',yards:1},{family:'run',yards:-4}]};
+ const fromFamily=(value,confirmed)=>({...req,offLook:{...req.offLook,family:{value,confirmed}}});
+ const unconfirmed=fromFamily('deep',false);
+ assert.equal(B.equippedComboSetup(b,unconfirmed).condition,'if they run');
+ assert.equal(B.comboRead(b,unconfirmed,card).id,'wall_up');
+ assert.equal(B.comboRead(b,fromFamily('run',true),card).id,'wall_up');
+ assert.equal(B.comboRead(b,fromFamily('deep',true),card).id,'heat_check');
+ assert.equal(B.equippedComboSetup(b,fromFamily('deep',true)).ready,false);
+});
+test('Quick Calls name a retargeted primary and avoid inventing a Read Option carrier',()=>{
+ const {b,req}=fixture(),off=b.teams.home.lineup.off;
+ req.options.plays=[{id:'quick_slant',cost:0}];
+ const target=B.snapDecisions(b,req,{play:'quick_slant',target:'X'}).choices[0].actor;
+ assert.deepEqual(target,{id:off.X.id,name:off.X.name,role:'X',kind:'target'});
+ req.options.plays=[{id:'read_option',cost:0}];
+ assert.equal(B.snapDecisions(b,req).choices[0].actor,undefined);
 });
 test('two coached runs draw a visible run lean; the suggested boot gets the real counter edge but loses its fake duel',()=>{
  const P=require('../forks/call-sheet/core/packs'),pb=P.newPlaybook();pb.off.base=['inside_zone','quick_slant','pa_boot'];

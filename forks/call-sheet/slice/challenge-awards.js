@@ -34,7 +34,13 @@
 
   function recordKey(id, look) {
     if (!catalog.some(item => item.id === id)) return null;
-    if (look && globalThis.CallSheet?.battle?.DRIVE_CHALLENGES?.find(item => item.id === id)?.alternate?.id !== look) return null;
+    if (look) {
+      const battle = globalThis.CallSheet?.battle;
+      const supported = id === 'three_drive'
+        ? battle?.THREE_DRIVE_CHALLENGE?.playbooks?.some(playbook => playbook.id === look)
+        : battle?.DRIVE_CHALLENGES?.find(item => item.id === id)?.alternate?.id === look;
+      if (!supported) return null;
+    }
     return recordPrefix + id + '.' + (look || 'original');
   }
 
