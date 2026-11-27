@@ -361,6 +361,19 @@ function normalizeCallSheet(u){
     if(review.planned)return `${applied} ${info.noSnaps}`;
     return info.trouble(review)?`Film flagged ${info.area}. ${info.evidence(review)}.`:'';
   }
+  function cleanTurningPoints(list){
+    return Array.isArray(list)?list.slice(0,3).map(tp=>({
+      snap:Number(tp.snap)||1,quarter:Number(tp.quarter)||1,down:Number(tp.down)||1,distance:Number(tp.distance)||10,
+      playName:String(tp.playName||'Play'),defName:String(tp.defName||'Defense'),
+      yards:Number(tp.yards)||0,swungBy:String(tp.swungBy||'Key snap'),result:String(tp.result||''),
+      counterId:tp.counterId?String(tp.counterId):null,counterName:tp.counterName?String(tp.counterName):null
+    })):[];
+  }
+  function turningPointFilmHTML(points,interactive=false){
+    const list=cleanTurningPoints(points);if(!list.length)return '';
+    const rows=list.map(tp=>`<li><b>Q${tp.quarter} · ${tp.down}&amp;${tp.distance} · ${escH(tp.swungBy)}</b>: ${escH(tp.playName)} vs ${escH(tp.defName)} (${tp.yards>=0?'+':''}${tp.yards} yd). ${interactive&&tp.counterId?`<button type="button" class="cpn-link" data-try-turning-card="${escH(tp.counterId)}">Run practice rep (${escH(tp.counterName||tp.counterId)})</button>`:''}</li>`).join('');
+    return `<section id="turningPointFilm" class="cpn-turning-film" aria-label="Turning-point drive film"><h3>Turning-point drive film</h3><ul>${rows}</ul>${interactive?'<p class="cpn-foot" role="status" data-turning-status></p><button type="button" class="cpn-link" data-card-deck>Open Deck Room</button>':''}</section>`;
+  }
   // Keep the latest samples available when old game archives haven't been loaded yet.
   function recordCardFilm(record,film){
     const me=selected();
@@ -378,6 +391,8 @@ function normalizeCallSheet(u){
       }
       reviews[kind+'Review']=filmReviewText(kind,meta[key]);
     }
+    const tp=cleanTurningPoints(film?.turningPoints);
+    if(tp.length){record.turningPoints=tp;meta.lastTurningPoints={gameId:record.id,year:record.season,week:record.week,points:tp}}
     return reviews;
   }
   function filmPrepChoice(kind){
@@ -528,7 +543,13 @@ function normalizeCallSheet(u){
   }
   // Eligibility comes from Dynasty Lab itself. The plain ID snapshot crosses the battle iframe boundary.
   // Keep spring practice separate: redshirts may practice, but cannot appear in a scheduled game.
-  function availabilityFor(team){return{unavailableIds:(team.roster||[]).filter(p=>!gameAvailable(p)).map(p=>String(p.id))}}
+  function availabilityFor(team){
+    const roster=team.roster||[];
+    return{
+      unavailableIds:roster.filter(p=>!gameAvailable(p)).map(p=>String(p.id)),
+      limitedIds:roster.filter(p=>p?.injury?.status==='limited').map(p=>String(p.id))
+    };
+  }
   function gameLineup(team){return CS.adapter.lineupFromTeam(team,availabilityFor(team))}
   // Everything a battle needs for this week's game, from the dynasty, after every integration has had its say.
   function buildLaunch(){
@@ -536,7 +557,8 @@ function normalizeCallSheet(u){
     if(meta.activeBattle&&meta.activeBattle.seed!==seed)meta.activeBattle=null;
     if(g.postseason&&meta.postseasonBattle?.seed!==seed)meta.postseasonBattle={seed,year:universe.year,stage:g.stage,label:g.label,week:g.week,homeId:g.homeId,awayId:g.awayId};
     const opp=home.name===me.name?away:home,conditions=globalThis.DynastyGameConditions?.forGame({home,year:universe.year,week:g.week,...(g.neutral?{neutral:true}:{})})||null;
-    const cfg={home,away,userSide:home.name===me.name?'home':'away',week:g.week,season:universe.year,neutral:!!g.neutral,stage:g.stage||null,
+    const homeOpener=!g.postseason&&!g.neutral&&!(universe.schedule||[]).slice(0,g.week-1).some(games=>games?.some(game=>game.home===g.home&&!game.neutral));
+    const cfg={home,away,userSide:home.name===me.name?'home':'away',week:g.week,season:universe.year,neutral:!!g.neutral,stage:g.stage||null,homeOpener,
       label:g.postseason?g.label:`Week ${g.week} · ${g.conf?'Conference':'Non-conference'}`,record:{w:me.w||0,l:me.l||0},
       weather:battleWeather(conditions),conditions,rivalry:(me.protectedRivalIds||[]).includes(opp.id),
       activeBattle:meta.activeBattle?.seed===seed?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
@@ -908,17 +930,19 @@ function normalizeCallSheet(u){
   }
   const rankSnapshot=opp=>({opp:Number(opp?.rank)||99,me:Number(selected()?.rank)||99});
   // The Card Program's reward packs: pick one card for the collection.
-  const reducedMotion=()=>{try{return !!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches}catch(err){return false}};
   function openRewardPack(gameKey){
     const meta=cardMeta(),pb=userPlaybook(),game=gameKey!=null;
     const pack=game?(pb.gamePacks||[]).find(p=>p.key===gameKey):(meta.rewardPacks||[])[0];if(!pack)return;
     if(meta.activeBattle){setStatus('Finish the current card battle before claiming a pack.');return}
     const trigger=document.activeElement,choices=game?CS.packs.gamePackChoices(pb,pack,takenLegendaries()):pack.cards.map(id=>({id:CS.packs.awardedId(pb,id)}));
     const dialog=document.createElement('dialog');dialog.id='rewardPack';dialog.setAttribute('aria-label',pack.title);
-    const UI=CS.playbookUI;UI?.injectFaceCSS?.();
+    const reduced=['reduced','instant'].includes(meta.settings.motion)||document.body.classList.contains('motion-reduced')||!!globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    dialog.classList.toggle('rp-no-motion',reduced);
+    const UI=CS.playbookUI;UI.injectFaceCSS();UI.injectPackCSS();
     const target=pursuit(),fit=CS.packs.packFit(pb,choices,{game,target,reserveLimit:CALL_SHEET_RESERVE_LIMIT});
+    const team=selected(),teamColors=[team?.primary,team?.secondary];
     const card=c=>{
-      const destinations=!game?['collection']:c.kind==='upgrade'?['upgrade']:['deck','collection'];
+      const destinations=c.kind==='upgrade'?['upgrade']:['deck','collection'];
       const actions=destinations.map(want=>{
         const full=CS.packs.rewardDestination(pb,c,game,CALL_SHEET_RESERVE_LIMIT,want)==='full';
         const label=want==='upgrade'?'Upgrade '+cardName(c.replaces):want==='deck'?(full?'Deck limit reached':'Add to deck'):(full?'Collection limit reached':'Add to collection');
@@ -926,28 +950,30 @@ function normalizeCallSheet(u){
       }).join('');
       const note=c.exchangeFor?`Alternate for ${cardName(c.exchangeFor)}: ${c.why}`:c.why;
       const footer=`${fit?.id===c.id?`<small data-pack-fit="${escH(c.id)}"><b>Coach’s pick:</b> ${escH(fit.reason)}</small>`:target?.missing.includes(c.id)?`<small>For your ${escH(target.name)} album</small>`:''}${note?`<small>${escH(note)}</small>`:''}<div class="rp-actions">${actions}${game?`<button type="button" data-try-card="${escH(c.id)}" aria-label="${escH('Try '+cardName(c.id))}">Try this card</button>`:''}</div>`;
-      return UI?.faceHTML?UI.faceHTML(c.id,{footer}):`<article><b>${escH(cardName(c.id))}</b>${footer}</article>`;
+      return UI.faceHTML(c.id,{footer,teamColors});
     };
-    const wrapText={booster:'BOOSTER',signing:'SIGNING<br>DAY',album:'ALBUM',film:'FILM<br>STUDY',victory:'VICTORY',rivalry:'RIVALRY',...Object.fromEntries(Object.entries(CS.packs.STAGE_PACKS).map(([k,p])=>[k,p.wrap]))}[pack.type]||'REWARD';
     dialog.innerHTML=`<style>#rewardPack{width:min(900px,94vw);padding:22px;border:1px solid #66592e;border-radius:16px;background:#10151f;color:#f2efe5;font:15px system-ui}#rewardPack::backdrop{background:#03060bd9}#rewardPack h2{margin:0 0 4px;color:#ffd76a}
-.rp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:16px 0}.rp-cards[hidden]{display:none}.rp-cards .cs-face{animation:rpIn .45s cubic-bezier(.2,1.3,.4,1) both}.rp-cards .cs-face:nth-child(2){animation-delay:.12s}.rp-cards .cs-face:nth-child(3){animation-delay:.24s}.rp-cards .cs-face:nth-child(4){animation-delay:.36s}.rp-cards .cs-face:nth-child(5){animation-delay:.48s}
-@keyframes rpIn{from{opacity:0;transform:rotateY(80deg) translateY(16px)}to{opacity:1;transform:none}}
+.rp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:16px 0;perspective:600px}.rp-cards[hidden]{display:none}.rp-cards .cs-face{animation:rpIn .21s ease-out both}.rp-cards .cs-face:nth-of-type(2){animation-delay:.05s}.rp-cards .cs-face:nth-of-type(3){animation-delay:.1s}.rp-cards .cs-face:nth-of-type(4){animation-delay:.15s}.rp-cards .cs-face:nth-of-type(5){animation-delay:.2s}
+@keyframes rpIn{from{opacity:0;transform:rotateY(-80deg)}to{opacity:1;transform:none}}
 .rp-hint{grid-column:1/-1;margin:0}.rp-actions{display:grid;gap:2px}.rp-actions button:disabled{opacity:.6;cursor:not-allowed}.rp-cards .cs-face button,#rewardPack [data-later]{margin-top:6px;padding:9px;border-radius:8px;border:1px solid #66592e;background:#2a2412;color:#ffd76a;cursor:pointer;font-weight:700}
-.rp-wrap{display:grid;place-items:center;gap:6px;width:180px;height:250px;margin:18px auto;border-radius:16px;border:2px solid #ffd84d;cursor:pointer;color:#1a1200;font:900 28px/1 system-ui;letter-spacing:.06em;background:linear-gradient(160deg,#ffe58a,#c8901a);box-shadow:0 14px 40px rgba(0,0,0,.5),inset 0 0 0 6px rgba(255,255,255,.18);animation:rpBob 1.6s ease-in-out infinite}
-.rp-wrap small{font:700 12px system-ui;letter-spacing:.14em}.rp-wrap.rp-signing{background:linear-gradient(160deg,#9ad8ff,#2a62b8);color:#04122a;border-color:#cfeaff}.rp-wrap.rp-album{background:linear-gradient(160deg,#e3c3ff,#6a35b8);color:#170630;border-color:#f0dcff}
-.rp-wrap.ripped{animation:rpRip .35s ease-in forwards}@keyframes rpBob{50%{transform:translateY(-6px) rotate(-1deg)}}@keyframes rpRip{to{opacity:0;transform:scale(1.35) rotate(4deg)}}
-@media (prefers-reduced-motion:reduce){.rp-wrap,.rp-cards .cs-face{animation:none!important}}</style>
-      <h2>${escH(pack.title)}</h2><p>${game?`${pack.year} · ${escH(pack.source)}<br>`:''}${escH(pack.subtitle||'')}</p><button type="button" class="rp-wrap rp-${escH(pack.type||'reward')}" data-rip>${wrapText}<small>TAP TO OPEN</small></button><div class="rp-cards" hidden>${game?'<p class="rp-hint">Add to deck to use a card next game. Add to collection to keep it for later. Upgrades replace the original card.</p>':''}${choices.map(card).join('')}</div><p role="status" data-pack-status></p><button type="button" data-later>Open later</button>`;
+.rp-no-motion .rp-cards .cs-face{animation:none!important}
+@media(prefers-reduced-motion:reduce){.rp-cards .cs-face{animation:none!important}}</style>
+      <h2>${escH(pack.title)}</h2><p>${game?`${pack.year} · ${escH(pack.source)}<br>`:''}${escH(pack.subtitle||'')}</p>${UI.packWrapperHTML(pack)}<div class="rp-cards" hidden>${game?'<p class="rp-hint">Add to deck to use a card next game. Add to collection to keep it for later. Upgrades replace the original card.</p>':''}${choices.map(card).join('')}</div><p role="status" data-pack-status></p><button type="button" data-later>Open later</button>`;
     document.body.appendChild(dialog);
     const close=()=>{dialog.close();dialog.remove();paintCardProgram();(document.querySelector(game?'[data-game-pack]':'[data-reward-pack]')||document.querySelector('#cardBinder [data-card-deck]')||trigger)?.focus?.()};
     dialog.addEventListener('cancel',e=>{e.preventDefault();close()});
     dialog.querySelector('[data-later]').onclick=close;
-    const rip=dialog.querySelector('[data-rip]');rip.onclick=()=>{rip.classList.add('ripped');setTimeout(()=>{rip.remove();dialog.querySelector('.rp-cards').hidden=false},reducedMotion()?0:330)};
+    const rip=dialog.querySelector('[data-rip]');rip.onclick=async()=>{
+      await UI.peelPack(rip,{reduced});
+      if(!dialog.open)return;
+      rip.remove();dialog.querySelector('.rp-cards').hidden=false;
+      (dialog.querySelector('[data-take]:not(:disabled)')||dialog.querySelector('[data-later]')).focus({preventScroll:true});
+    };
     dialog.querySelectorAll('[data-try-card]').forEach(el=>el.onclick=()=>{
       const id=el.dataset.tryCard;
       dialog.querySelector('[data-pack-status]').textContent=pack.tryouts?.[id]||CS.battle.tryRewardCard({team:CS.adapter.battleTeam(selected(),null,availabilityFor(selected())),seed:pack.key},id);
     });
-    dialog.querySelectorAll('[data-take]').forEach(el=>el.onclick=()=>{const r=game?takeGamePack(pack.key,el.dataset.take,el.dataset.destination):takeRewardCard(pack.key,el.dataset.take);if(r.ok)close();else dialog.querySelector('[data-pack-status]').textContent=r.error});
+    dialog.querySelectorAll('[data-take]').forEach(el=>el.onclick=()=>{const r=game?takeGamePack(pack.key,el.dataset.take,el.dataset.destination):takeRewardCard(pack.key,el.dataset.take,el.dataset.destination);if(r.ok)close();else dialog.querySelector('[data-pack-status]').textContent=r.error});
     dialog.showModal();
   }
   function takeGamePack(key,id,want){
@@ -959,13 +985,19 @@ function normalizeCallSheet(u){
     try{autosaveAfter('game')}catch(err){console.error(err)}
     return r;
   }
-  function takeRewardCard(key,id){
+  function takeRewardCard(key,id,want='collection'){
     if(cardMeta().activeBattle)return{ok:false,error:'Finish the current card battle before claiming a pack.'};
     const meta=cardMeta(),i=(meta.rewardPacks||[]).findIndex(x=>x.key===key);if(i<0)return{ok:false,error:'That pack is already open.'};
     const pack=meta.rewardPacks[i],pb=userPlaybook();if(!pack.cards.some(raw=>CS.packs.awardedId(pb,raw)===id))return{ok:false,error:'That card is not in this pack.'};
-    if(CS.packs.rewardDestination(pb,{id},false,CALL_SHEET_RESERVE_LIMIT)==='full')return{ok:false,error:'Your collection is full for this card type. Choose another card or keep the pack for later.'};
-    CS.packs.grantCard(pb,id,{kind:pack.type||'reward',why:pack.title});meta.rewardPacks.splice(i,1);
-    rewardMoment(`${pack.title}: ${CS.packs.cardDef(id).name} added to the collection.`);
+    if(CS.packs.rewardDestination(pb,{id},false,CALL_SHEET_RESERVE_LIMIT,want)==='full')return{ok:false,error:want==='deck'?'Your deck is full for this card type. Add it to your collection or choose another card.':'Your collection is full for this card type. Choose another card or keep the pack for later.'};
+    let placed='collection';
+    if(want==='deck'){
+      const def=CS.packs.cardDef(id),pile=CS.data?.TACTICS?.[id]?'tactics':'wrinkles';
+      if(def&&pb[def.side]?.[pile]&&pb[def.side][pile].length<(pb.capacity?.[pile]||14)){pb[def.side][pile].push(id);CS.packs.clearStaleOpener(pb);placed='deck'}
+      else CS.packs.grantCard(pb,id,{kind:pack.type||'reward',why:pack.title});
+    }else CS.packs.grantCard(pb,id,{kind:pack.type||'reward',why:pack.title});
+    meta.rewardPacks.splice(i,1);
+    rewardMoment(`${pack.title}: ${CS.packs.cardDef(id).name} added to your ${placed}.`);
     try{checkAlbums()}catch(err){console.error(err)}
     try{autosaveAfter('game')}catch(err){console.error(err)}
     return{ok:true};
@@ -1176,9 +1208,10 @@ function normalizeCallSheet(u){
         const review=filmReviewText(kind,g?.[info.archive]);
         return review?`<p class="cs-duel-moment"><strong>${info.title}</strong> · ${escH(review)}</p>`:'';
       }).join('');
-      if(!g?.cardMoments?.length&&!film)return html;
+      const tpHTML=turningPointFilmHTML(g?.turningPoints,false);
+      if(!g?.cardMoments?.length&&!film&&!tpHTML)return html;
       return html+`<h3>Card battle${g.cardCoached?' · coached':''}</h3>`+
-        (g.cardMoments||[]).map(t=>`<p class="cs-duel-moment">${escH(t)}</p>`).join('')+film;
+        (g.cardMoments||[]).map(t=>`<p class="cs-duel-moment">${escH(t)}</p>`).join('')+film+tpHTML;
     };
   }
   // Albums: themed sets across your collection. Evolved and upgraded cards count for the card they grew from.
@@ -1252,7 +1285,8 @@ function normalizeCallSheet(u){
     const ring=(universe.callSheet?.playbook?.ringOfHonor||[]).slice().reverse();if(!ring.length)return'';
     if(!IDX.archive)rebuildIndexes();else indexArchive();
     const canOpen=r=>!!r.playerId&&(IDX.archive?.has(r.playerId)||archiveIsDeferred());
-    return`<details class="cpn-albums cpn-ring" data-card-fold="ring"><summary>Ring of Honor binder · ${ring.length}</summary><div class="cs-ring">${ring.slice(0,24).map(r=>`<article class="cs-face r-signature"><span class="cs-face-origin">${escH(String(r.exit||'graduated'))}</span><b class="cs-face-name">#${escH(r.number??'')} ${escH(r.name||'')}</b><small class="cs-face-type">${escH([r.pos,r.archetype].filter(Boolean).join(' · '))}</small><p class="cs-face-text">${escH(r.career||'Career stats not recorded.')}</p>${provenanceHTML(r)}<span class="cs-face-rar">${escH(String(r.year||''))}</span>${canOpen(r)?`<button type="button" class="cpn-link" data-card-alumnus="${escH(r.playerId)}" aria-label="View career of ${escH(r.name||'player')}">View career</button>`:''}</article>`).join('')}</div></details>`;
+    const team=selected(),teamColors=[team?.primary,team?.secondary];
+    return`<details class="cpn-albums cpn-ring" data-card-fold="ring"><summary>Ring of Honor binder · ${ring.length}</summary><div class="cs-ring">${ring.slice(0,24).map(r=>`<article class="cs-face r-signature"><span class="cs-face-origin">${escH(String(r.exit||'graduated'))}</span><b class="cs-face-name">#${escH(r.number??'')} ${escH(r.name||'')}</b>${CS.playbookUI?.signatureIllustrationHTML?.(r,r.colors||teamColors)||''}<small class="cs-face-type">${escH([r.pos,r.archetype].filter(Boolean).join(' · '))}</small><p class="cs-face-text">${escH(r.career||'Career stats not recorded.')}</p>${provenanceHTML(r)}<span class="cs-face-rar">${escH(String(r.year||''))}</span>${canOpen(r)?`<button type="button" class="cpn-link" data-card-alumnus="${escH(r.playerId)}" aria-label="View career of ${escH(r.name||'player')}">View career</button>`:''}</article>`).join('')}</div></details>`;
   }
   function albumsHTML(){
     if(!programRewardsOn()||!universe.callSheet?.playbook)return'';const list=albumProgress(),complete=list.filter(a=>a.have>=a.need).length;
@@ -1900,6 +1934,7 @@ function normalizeCallSheet(u){
       <div class="cpn-actions"><button type="button" class="cpn-btn" data-card-deck${locked?' disabled':''}>Build Deck</button>${coach}${globalThis.CallSheetBundle?'<button type="button" id="deckDriveChallenges" class="cpn-link" data-drive-challenges aria-haspopup="dialog">Drive Challenges</button>':''}</div>
       ${locked?'<p class="cpn-foot">Your deck is locked for the current battle. Finish it before editing.</p>':''}
       ${Object.keys(FILM_PREP).map(filmPrepHTML).join('')}
+      ${turningPointFilmHTML(cs.lastTurningPoints?.year===universe.year?cs.lastTurningPoints.points:[],true)}
       ${retoolHTML()}
       <h3>In your deck</h3><div class="cpn-bridge-grid">${active}</div><p class="cpn-foot"><b>Player signatures:</b> ${(pb?.signatures||[]).length}/${CS.signatures.slotsFor(limits)} across both sides</p>
       <p class="cpn-foot">Facilities increase pile capacity. A normal series draws up to three plays and four tactics. Filling extra slots spreads those draws across more cards.</p>
@@ -1913,6 +1948,7 @@ function normalizeCallSheet(u){
   }
   function collectionHTML(){
     const cs=universe.callSheet,pb=cs.playbook,ui=CS.playbookUI;
+    const team=selected(),teamColors=[team?.primary,team?.secondary];
     // Use the actual inventory piles, not album roots (which include historic card IDs).
     CS.signatures.registerAll(pb);
     const binder=['off','def'].map(side=>{
@@ -1921,7 +1957,7 @@ function normalizeCallSheet(u){
       const unselected=[...(extra?.wrinkles||[]),...(extra?.tactics||[]),...(pb.reserveSignatures||[]).filter(s=>s.side===side).map(s=>s.id)];
       for(const id of inDeck){const c=copies.get(id)||{owned:0,selected:0};c.owned++;c.selected++;copies.set(id,c)}
       for(const id of unselected){const c=copies.get(id)||{owned:0,selected:0};c.owned++;copies.set(id,c)}
-      const faces=[...copies].map(([id,c])=>ui.faceHTML(id,{printFinishes:pb.finishes||{},footer:`<small>${c.owned} owned · ${c.selected} in deck</small>${provenanceHTML(CS.packs.cardDef(id)?.signature)}`})).join('');
+      const faces=[...copies].map(([id,c])=>ui.faceHTML(id,{printFinishes:pb.finishes||{},teamColors,footer:`<small>${c.owned} owned · ${c.selected} in deck</small>${provenanceHTML(CS.packs.cardDef(id)?.signature)}`})).join('');
       return `<details class="cpn-pile" data-card-fold="cards-${side}" ${side==='off'?'open':''}><summary>${side==='off'?'Offense':'Defense'} · ${inDeck.length+unselected.length} owned</summary>${faces?`<div class="cpn-faces">${faces}</div>`:'<p class="cpn-foot">No cards yet.</p>'}</details>`;
     }).join('');
     const log=(cs.newsLog||[]).slice().reverse().slice(0,8),packs=cs.rewardPacks||[],banked=pb.gamePacks||[];
@@ -1942,6 +1978,10 @@ function normalizeCallSheet(u){
       const kind=button.dataset.filmPrep;
       if(applyFilmPrep(kind)){paintCardRoom();host.querySelector(`[data-film-prep-confirmed="${kind}"]`)?.focus()}
     };
+    for(const button of host.querySelectorAll('[data-try-turning-card]'))button.onclick=()=>{
+      const id=button.dataset.tryTurningCard,out=host.querySelector('[data-turning-status]');
+      if(out)out.textContent=CS.battle.tryRewardCard({team:CS.adapter.battleTeam(selected(),null,availabilityFor(selected())),seed:`film:${universe.year}:${universe.week}:${id}`},id);
+    };
     for(const el of host.querySelectorAll('[data-card-fold]'))if(folds.has(el.dataset.cardFold))el.open=folds.get(el.dataset.cardFold);
   }
   if(typeof TAB_RENDERERS==='object'){TAB_RENDERERS.deckroom=paintCardRoom;TAB_RENDERERS.collection=paintCardRoom}
@@ -1958,6 +1998,23 @@ function normalizeCallSheet(u){
     const dash=document.querySelector('#dashboard');if(!dash||dash.__deciderObs||typeof MutationObserver!=='function')return;
     dash.__deciderObs=new MutationObserver(()=>{try{paintDecidingSnap()}catch(err){}});dash.__deciderObs.observe(dash,{childList:true});
   }
+  function saturdayRundownHTML(){
+    const me=selected();if(!me||!['regular','postseason'].includes(universe?.phase))return '';
+    const g=currentCardGame(),opp=g?T(g.home===me.name?g.away:g.home):null;
+    const oppCell=g&&opp?`<div class="cpn-rundown-cell"><span>Opponent</span><b>${g.postseason?escH(g.label):`Week ${g.week} · ${g.home===me.name?'vs':'at'} ${escH(opp.name)}`}</b><button type="button" class="cpn-link" data-coach-cards>Coach with Cards</button></div>`
+      :`<div class="cpn-rundown-cell"><span>Opponent</span><b>Week ${universe.week+1}</b><button type="button" class="cpn-link" data-card-dynasty-tab="gamelab">Game Plan</button></div>`;
+    const visitors=(universe.recruits||[]).filter(r=>r.visit&&!r.committed&&r.visitWeek===universe.week+1&&(!globalThis.DynastyRecruitingActions?.visitWeekendOwner?.(r)||globalThis.DynastyRecruitingActions.visitWeekendOwner(r)===String(me.id)));
+    const visitCell=`<div class="cpn-rundown-cell"><span>Visits</span><b>${visitors.length?`${visitors.length} priority guest${visitors.length===1?'':'s'} this week`:'No visit booked'}</b><button type="button" class="cpn-link" data-card-dynasty-tab="recruiting">Recruiting</button></div>`;
+    const starters=typeof roleDesignations==='function'?Object.values(roleDesignations(me).off||{}).concat(Object.values(roleDesignations(me).def||{})).filter(Boolean):[];
+    const outCount=starters.filter(p=>typeof gameAvailable==='function'&&!gameAvailable(p)).length;
+    const limCount=starters.filter(p=>p?.injury?.status==='limited').length;
+    const availText=outCount?`${outCount} starter${outCount===1?'':'s'} out${limCount?`, ${limCount} limited`:''}`:limCount?`${limCount} starter${limCount===1?'':'s'} limited`:'Starters clear';
+    const availCell=`<div class="cpn-rundown-cell"><span>Availability</span><b>${availText}</b><button type="button" class="cpn-link" data-card-dynasty-tab="depth">Roles &amp; Depth</button></div>`;
+    const goals=(me.seasonGoals||[]).filter(x=>x.type!=='wager');
+    const goalLine=goals[0]&&typeof seasonGoalStatus==='function'?seasonGoalStatus(me,goals[0]).progress:`${me.w||0}–${me.l||0}${me.rank?` · #${me.rank}`:''}`;
+    const stakeCell=`<div class="cpn-rundown-cell"><span>Season stake</span><b>${escH(goalLine)}</b><button type="button" class="cpn-link" data-card-dynasty-tab="season">Season</button></div>`;
+    return `<div class="cpn-rundown" aria-label="Saturday rundown">${oppCell}${visitCell}${availCell}${stakeCell}</div>`;
+  }
   function paintCardProgram(){
     if(typeof document==='undefined'||typeof document.getElementById!=='function'||typeof document.createElement!=='function')return;
     try{if(typeof document.querySelector==='function'){watchDecidingSnap();paintDecidingSnap()}}catch(err){console.error(err)}
@@ -1971,7 +2028,8 @@ function normalizeCallSheet(u){
     const won=CS.packs.lastGameCard?.(universe.callSheet.playbook),wonWhere=!won?'':won.status==='upgrade'?`replaced ${escH(won.replaced||'a card')} ${won.inDeck?'in your deck':'in your collection'}.`:won.status==='deck'?'is in your deck for next game.':won.status==='split'?`· ${won.inDeck} in your deck, ${won.inCollection} in your collection.`:'is in your collection, not your deck. Add it in Deck Room.';
     const wonLine=won?`<p class="cpn-last-card" id="lastGameCard"><span>From ${escH(won.source)}:</span> <b>${escH(won.name)}</b> ${wonWhere}</p>`:'';
     let tipLine='';try{const tip=installTip();if(tip?.reason==='finish'&&!universe.callSheet.installFocus)tipLine=`<p class="cpn-last-card" id="installTipWeek"><span>Install:</span> ${escH(tip.text)} Pick it in Deck Room.</p>`}catch(err){console.error(err)}
-    const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b>${wonLine}${tipLine}<button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}</div>`;
+    const rundown=saturdayRundownHTML();
+    const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b>${wonLine}${tipLine}${rundown}<button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}</div>`;
     if(old)old.outerHTML=shortcut;else dash.insertAdjacentHTML('beforeend',shortcut);
     try{
       if(cardGameIsDefault()){
@@ -1999,7 +2057,7 @@ function normalizeCallSheet(u){
     const st=document.createElement('style');st.id='cardProgramStyles';st.textContent=`
 .cpn{padding:clamp(16px,3vw,32px);border-radius:14px;background:linear-gradient(135deg,#10172a,#1a1030);color:#eef2ff;border:1px solid #2f3a66}
 .cpn h2{font-size:clamp(26px,4vw,40px);margin:4px 0;color:#fff;line-height:1.1}.cpn .eyebrow{color:#aebfff;letter-spacing:.12em;font-size:12px}
-.cpn h3{margin:22px 0 8px;font-size:20px;color:#fff}.cpn-intro{margin:5px 0 12px;color:#d3dded}.cpn-actions,.cpn-shortcut{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cpn-shortcut{padding:10px 14px}.cpn-last-card{margin:0;flex:1 1 260px;color:#d3dded}.cpn-last-card span{color:#9fb0c8}.cpn-last-card b{color:#fff}.cpn-actions{margin:8px 0 16px}.cpn-actions button:disabled{opacity:.55;cursor:not-allowed}
+.cpn h3{margin:22px 0 8px;font-size:20px;color:#fff}.cpn-intro{margin:5px 0 12px;color:#d3dded}.cpn-actions,.cpn-shortcut{display:flex;align-items:center;gap:12px;flex-wrap:wrap}.cpn-shortcut{padding:10px 14px}.cpn-rundown{flex-basis:100%;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:4px 0 2px}.cpn-rundown-cell{background:rgba(255,255,255,.05);border:1px solid #394365;border-radius:9px;padding:8px 10px;display:grid;gap:2px;min-width:0}.cpn-rundown-cell span{font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#aebfff}.cpn-rundown-cell b{font-size:13px;color:#fff;overflow-wrap:anywhere}.cpn-rundown-cell .cpn-link{margin:2px 0 0;min-height:44px;text-align:left}@media(max-width:720px){.cpn-rundown{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:460px){.cpn-rundown{grid-template-columns:1fr}}.cpn-last-card{margin:0;flex:1 1 260px;color:#d3dded}.cpn-last-card span{color:#9fb0c8}.cpn-last-card b{color:#fff}.cpn-actions{margin:8px 0 16px}.cpn-actions button:disabled{opacity:.55;cursor:not-allowed}
 .cpn-faces,.cpn .cs-ring{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,166px),1fr));gap:16px;padding:12px 8px 6px 0}
 .cpn-fold,.cpn-pile,.cpn-albums{border-top:1px solid #3d4561;padding:4px 0}.cpn .cpn-fold:first-of-type{margin-top:20px}.cpn details summary{cursor:pointer;font-weight:700;padding:12px 0;min-height:44px}.cpn .cpn-league{margin-top:22px}.cpn .cs-face{min-width:0;overflow-wrap:anywhere}
 .cpn-connections{margin:16px 0}.cpn-connections h4{margin:0 0 8px;color:#fff}.cpn-bridge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}.cpn-bridge-grid article{background:rgba(255,255,255,.06);border:1px solid #394365;border-radius:10px;padding:12px}.cpn-bridge-grid p{font-size:13px;line-height:1.5;color:#c5cfee;margin:6px 0}.cpn-link{min-height:44px;margin:4px 8px 0 0;padding:6px 0;background:none;border:0;color:#ffe291;text-decoration:underline;font:inherit;font-size:13px;cursor:pointer}.cpn-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px}
@@ -2090,7 +2148,7 @@ function normalizeCallSheet(u){
     return[...labels.entries()].sort((a,b)=>b[1]-a[1]).slice(0,3).map(x=>x[0]);
   }
   // Use the same final definition as game day, without registering a prospect's card in the catalog.
-  function signatureStory({spec,projection,status='',archived=false,ownTeam=false}){
+  function signatureStory({spec,projection,status='',archived=false,ownTeam=false,teamColors}){
     if(!spec){
       if(!projection?.role||!universe.callSheet)return'';
       spec=CS.signatures.specFor(projection);
@@ -2107,7 +2165,8 @@ function normalizeCallSheet(u){
       `${kind==='call'?'Defensive call':spec.side==='off'?'Offensive tactic':'Defensive tactic'}${effect?' · '+effect:''}.`;
     const how=!status?(CS.signatures.breakoutGoal?.()||'A breakout at this role can earn it.'):archived?'':status==='In collection'?(ownTeam?'Select it under Build Deck → Signatures to put it in your deck.':'Stored, not in the game deck.'):'Only playable with him on the field at '+(ROLE_NAMES[spec.role]?.toLowerCase()||spec.role)+'.';
     const earned=status&&spec.earned?`Earned: ${spec.earned}${spec.season?' · '+spec.season:''}.`:'';
-    return `<aside class="cs-signature-story"><small>${escH(status||'Possible signature')}</small><strong>${escH(def.name)}</strong><p>${escH(line)}</p>${def.matchupText?`<p class="cs-signature-matchup">${escH(def.matchupText)}</p>`:''}${earned||how?`<p>${escH([earned,how].filter(Boolean).join(' '))}</p>`:''}${status?provenanceHTML(spec):''}</aside>`;
+    const art=status?CS.playbookUI?.signatureIllustrationHTML?.(spec,teamColors):'';
+    return `${art||''}<aside class="cs-signature-story"><small>${escH(status||'Possible signature')}</small><strong>${escH(def.name)}</strong><p>${escH(line)}</p>${def.matchupText?`<p class="cs-signature-matchup">${escH(def.matchupText)}</p>`:''}${earned||how?`<p>${escH([earned,how].filter(Boolean).join(' '))}</p>`:''}${status?provenanceHTML(spec):''}</aside>`;
   }
   function provenanceHTML(spec){
     if(!spec)return'';
@@ -2136,7 +2195,7 @@ function normalizeCallSheet(u){
     const career=cleanCardCareer(honor?.cardCareer)||cleanCardCareer(cs.players?.[p.id]);
     if(!honor&&!career)return'';
     const signed=signingLine(p),end=[p.lastTeam,p.exitReason,p.retiredYear].filter(Boolean).join(' · ');
-    return `<section id="alumniBattleCard" class="cs-alumni" aria-label="Alumni career card"><span class="eyebrow">${honor?'Ring of Honor':'Card career'}</span><h3>${escH(p.name)}</h3><p>${escH(end)}</p>${signed?`<p>${escH(signed)}</p>`:''}${honor?signatureStory({spec:honor,status:'Retired signature',archived:true}):''}${cardCareerHTML(career)||'<p>Card duel totals were not recorded.</p>'}</section>`;
+    return `<section id="alumniBattleCard" class="cs-alumni" aria-label="Alumni career card"><span class="eyebrow">${honor?'Ring of Honor':'Card career'}</span><h3>${escH(p.name)}</h3><p>${escH(end)}</p>${signed?`<p>${escH(signed)}</p>`:''}${honor?signatureStory({spec:honor,status:'Retired signature',archived:true,teamColors:honor.colors||[school?.primary,school?.secondary]}):''}${cardCareerHTML(career)||'<p>Card duel totals were not recorded.</p>'}</section>`;
   }
   function profileCard(hit){
     if(!hit||hit.portal)return'';
@@ -2166,7 +2225,7 @@ function normalizeCallSheet(u){
         <span class="eyebrow">BATTLE CARD</span>
         <h3>${escH(roleLabel(r.role,p))} · ${escH(depth)}</h3>
         ${ability?`<p class="cs-pcard-ability"><b>${escH(bp.archetype)}:</b> ${escH(ability)}</p>`:''}
-        ${signatureStory({spec:sig,projection:bp,status,ownTeam:t.id===selected()?.id})}
+        ${signatureStory({spec:sig,projection:bp,status,ownTeam:t.id===selected()?.id,teamColors:[t.primary,t.secondary]})}
         ${signed?`<p class="cs-pcard-note">${escH(signed)}</p>`:''}
         ${development?`<p class="cs-pcard-note"><b>${escH(development.phase)} ${development.year}: ${escH(development.trait)} +${development.gain}</b>${development.plays.length?` · Helps ${escH(development.plays.join(', '))}`:' · Applied through his current battle traits'}. No extra bonus is stacked.</p>`:''}
         ${stamp?`<p class="cs-pcard-note"><b>Development stamp: card OVR ${stamp.was} → ${stamp.now}</b> since the ${stamp.year} season ended.</p>`:''}
@@ -2180,9 +2239,11 @@ function normalizeCallSheet(u){
   }
   function injectPlayerCardStyles(){
     if(document.getElementById('cardPlayerStyles'))return;
+    CS.playbookUI?.injectFaceCSS?.();
     const st=document.createElement('style');st.id='cardPlayerStyles';st.textContent=`
 .cs-pcard{display:grid;grid-template-columns:180px minmax(0,1fr);gap:16px;margin:0 0 16px;padding:14px;border-radius:14px;background:linear-gradient(135deg,#10172a,#1a1030);color:#eef2ff;border:1px solid #2f3a66}
 .cs-signature-story,.cs-alumni{min-width:0;overflow-wrap:anywhere}.cs-signature-story{border-left:3px solid #e8b956;background:#222642;color:#f2f4ff;padding:9px 12px;margin:8px 0;border-radius:3px 8px 8px 3px}.cs-signature-story small,.cs-signature-story strong{display:block}.cs-signature-story small,.cs-alumni .eyebrow{color:#ffe09a;font-weight:700}.cs-signature-story p,.cs-alumni p{font-size:13px;line-height:1.4;margin:3px 0}.cs-alumni{background:#141a30;color:#eff1ff;border:1px solid #625234;border-radius:12px;padding:16px;margin-bottom:14px}.cs-alumni h3{margin:4px 0;color:#fff}
+:is(.cs-pcard-body,.cs-alumni)>.cs-signature-illustration{height:76px;margin-top:8px;border:1px solid #8b7445;border-radius:6px}
 .cs-pcard.sig{border-color:#ffd34d;box-shadow:0 0 0 1px #ffd34d,0 0 24px rgba(255,211,77,.2)}
 .cs-pcard-face{position:relative;border-radius:12px;padding:10px;background:linear-gradient(170deg,var(--tc),#0b0f1c 82%);border:2px solid var(--tc2);display:flex;flex-direction:column;align-items:center;text-align:center;gap:2px}
 .cs-pcard.sig .cs-pcard-face{border-color:#ffd34d}
@@ -2504,6 +2565,8 @@ function normalizeCallSheet(u){
     }
   };
   function openCardGameDay(){
+    const existing=document.getElementById('cardGameDay');
+    if(existing){existing.querySelector('iframe')?.focus?.();return}
     const why=cardGameBlocker();if(why){setStatus(why);return}
     if(!globalThis.CallSheetBundle){setStatus('The card battle is unavailable in this build.');return}
     host=document.createElement('div');host.id='cardGameDay';host.setAttribute('role','dialog');host.setAttribute('aria-label','Call Sheet card battle');

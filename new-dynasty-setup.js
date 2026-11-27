@@ -163,6 +163,7 @@ function buildNewDynastySetupCandidate(){
   universe.setup={version:NEW_DYNASTY_SETUP_VERSION,completed:false,source:'take-the-job',coachName:d.coachName.trim(),programId:t.id,programName:t.name,offScheme:d.offScheme,defScheme:d.defScheme,trainingFocus:d.trainingFocus,mode:d.mode,scenario:d.scenario,seed,quickStart:d.quickStart,startedAt:d.startedAt,completedAt:null,saveSlot:null};
   universe.setupCompleted=false;
   if(midseason)prepareMidseasonTakeover(t);
+  if(midseason&&typeof staffBuildBoard==='function')staffBuildBoard(t);
   universe.mode=d.mode;
   setTeamScheme(t,'off',d.offScheme,'New head coach identity');setTeamScheme(t,'def',d.defScheme,'New head coach identity');
   t.staff.OC.preferredScheme=d.offScheme;t.staff.DC.preferredScheme=d.defScheme;t.trainingFocus=d.trainingFocus;
@@ -248,7 +249,9 @@ async function acceptNewDynastySetup(){
  const empty=titleSaveSlots.find(s=>s.empty),target=empty||activeSlotMeta()||{slot:activeSaveSlot,label:'the selected slot',empty:true};
  if(!target.empty&&!confirm(`Replace ${target.label}? Its current dynasty will be overwritten.`))return false;
  newDynastySetupSubmitting=true;updateNewDynastySetupControls();$('#setupStatus').textContent='Creating the opening checkpoint…';
+ const prevSlot=activeSaveSlot,prevUniverse=universe,prevTeam=newDynastySetupPreviousTeam;
  try{
+  if(prevUniverse&&target.slot!==prevSlot&&typeof runAutosave==='function')await runAutosave();
   if(target.slot!==activeSaveSlot)setActiveSaveSlot(target.slot);
   universe=newDynastySetupCandidate;refreshTeamOptions(universe.setup.programName);
   // v0.20: a new coach starts with the staff running recruiting (an untouched board costs a class) and with the
@@ -259,6 +262,7 @@ async function acceptNewDynastySetup(){
   const {programName,mode,takeover}=universe.setup;clearNewDynastySetupDraft();newDynastySetupCandidate=null;newDynastySetupPreviousUniverse=null;newDynastySetupPreviousTeam=null;newDynastySetupSubmitting=false;enterDynasty();setStatus(`${programName} accepted. Your ${mode==='commissioner'?'commissioner universe':'dynasty'} is saved and ready for ${takeover?'Week 8':'the 2027 preseason'}.`);return true;
  }catch(e){
   if(universe?.setup){universe.setup.completed=false;universe.setupCompleted=false;universe.setup.completedAt=null;universe.setup.saveSlot=null}
+  activeSaveSlot=prevSlot;universe=prevUniverse;if(prevUniverse)refreshTeamOptions(prevTeam);
   newDynastySetupSubmitting=false;updateNewDynastySetupControls();$('#setupStatus').textContent=e.message||'The dynasty could not be saved. Nothing was replaced.';return false;
  }
 }

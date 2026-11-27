@@ -4,6 +4,7 @@
 const D=root.CallSheet.data;
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const FAM={run:'#6fd25a',quick:'#3fc1ff',deep:'#c07bff',constraint:'#ff9a3c',zone:'#3fc1ff',man:'#ff5a5a',pressure:'#ff9a3c'};
+const TACTIC_ART={audible:'megaphone',timeout_settle:'stopwatch',film_tell:'film-reel'};
 // Both calls show the same back crossing the QB before the ball goes inside or boots left.
 function chalk(role,points,extra={}){
   const d=points.map(([x,y],i)=>(i?'L':'M')+x+' '+y).join(' ');
@@ -29,7 +30,7 @@ ROUTES.inside_zone_plus=ROUTES.inside_zone;ROUTES.quick_slant_plus=ROUTES.quick_
 const DEF={two_high:[[30,6],[70,6]],cover1:[[50,4]],cover3:[[20,8],[50,6],[80,8]],run_fit:[[50,18],[36,22],[64,22]],zone_pressure:[[50,6]],cover0:[],sim_pressure:[[50,6]],two_man:[[28,6],[72,6]],robber:[[50,16],[50,4]],bear:[[50,6]],corner_blitz:[[50,6]],cover2_trap:[[28,6],[72,6]],midnight_mirage:[[28,6],[72,6]]};
 const RUSH={zone_pressure:[[36,24,44,36],[64,24,56,36]],cover0:[[30,22,42,36],[50,20,50,36],[70,22,58,36],[18,26,36,36]],sim_pressure:[[40,22,46,36]],bear:[[44,24,46,35],[56,24,54,35]],corner_blitz:[[10,30,36,36]],midnight_mirage:[[36,24,44,36],[64,24,56,36]]};
 function diagram(id,side){
-  let s=`<svg viewBox="0 0 100 48" aria-hidden="true"><rect width="100" height="48" fill="#0e2414"/>`;
+  let s=`<svg class="card-scheme" viewBox="0 0 100 48" aria-hidden="true">`;
   for(const x of [10,30,50,70,90])s+=`<line x1="${x}" y1="0" x2="${x}" y2="48" stroke="rgba(255,255,255,.06)"/>`;
   s+=`<line x1="0" y1="34" x2="100" y2="34" stroke="rgba(255,255,255,.3)" stroke-dasharray="2 3"/>`;
   for(const x of [38,44,50,56,62])s+=`<circle cx="${x}" cy="37.5" r="2.6" fill="none" stroke="#efe6d2" stroke-width="1.3"/>`;
@@ -56,6 +57,16 @@ function paintPortrait(cv,p,colors,size=96){
     DP.renderPlayerPortrait({portraitSeed:p.portraitSeed||`cs-${p.playerId||p.id}-${p.name}`,pos:p.pos,jerseyNumber:p.number,height:p.height,weight:p.weight},{primary:colors?.[0]||'#2a3550',secondary:colors?.[1]||'#e8e2d0'},cv,{size,frame:'card',pixelRatio:Math.min(2,window.devicePixelRatio||1)});
     cv.style.width=cv.style.height=`${size}px`;return true}catch(e){return false}
 }
+function signaturePortrait(spec){
+  return `<div class="sigart"><canvas class="sigface" width="58" height="58"></canvas><div class="signum">#${esc(spec.number)}<small>${esc(spec.role)}</small></div></div>`;
+}
+function tacticEquipment(id){
+  return Object.hasOwn(TACTIC_ART,id)?`<span class="tactic-equipment" data-equipment="${TACTIC_ART[id]}" aria-hidden="true"></span>`:'';
+}
+function tacticArt(c){
+  const equipment=tacticEquipment(c.id);
+  return equipment?`<div class="ticon ticon-equipment">${equipment}</div>`:`<div class="ticon">${esc(c.icon)}</div>`;
+}
 function kindOf(id){return D.PLAYS[id]?'play':D.CALLS[id]?'call':'tactic'}
 // opts: {cost, base, blocked, selected, notch, why, small, compact}
 function card(id,opts={}){
@@ -71,18 +82,29 @@ function card(id,opts={}){
   if(kind==='play')type=`${fam}${c.trick?' · trick':''}${c.maxDistance?' · short yardage':id==='te_pop_pass'?' · sneak counter':opts.base?' · base':''}`;
   else if(kind==='call')type=`${c.coverage} · ${c.box} box${c.pressure?` · ${c.pressure===2?'all-out':'blitz'}`:''}${c.trick?' · trick':''}`;
   else type=c.info?'info · plays now':'tactic';
-  const sg=c.signature;
-  const art=sg?`<div class="sigart"><canvas class="sigface" width="58" height="58"></canvas><div class="signum">#${esc(sg.number)}<small>${esc(sg.role)}</small></div></div>`:kind==='tactic'?`<div class="ticon">${esc(c.icon)}</div>`:diagram(c.evolvedFrom||c.upgradeOf||id,side);
+  const sg=c.signature,faceUI=root.CallSheet.playbookUI,illustration=sg&&faceUI?.signatureIllustrationHTML?.(sg,opts.teamColors);
+  if(illustration){faceUI.injectFaceCSS();el.classList.add('has-signature-illustration')}
+  const art=sg?illustration||signaturePortrait(sg):kind==='tactic'?tacticArt(c):diagram(c.evolvedFrom||c.upgradeOf||id,side);
   el.innerHTML=`<span class="frame"></span><span class="cost">${opts.cost??c.cost}</span>
     <span class="cname">${esc(c.name)}</span><span class="art">${art}</span><span class="ctype">${esc(type)}</span>
     <span class="ctext">${esc(String(c.text).replace(/^(EVOLVED|COACHING TREE|TRICK|TWO-MINUTE DRILL|OPTION ERA|SINGLE WING|WEST COAST|46|ZONE BLITZ|IRON MAN) · /,'').replace(/^LEGACY of #\S* [^·]*· /,''))}</span>${opts.why?`<span class="cwhy">${esc(opts.why)}</span>`:''}${opts.notch?`<span class="notch">${esc(typeof opts.notch==='string'?opts.notch:'COUNTERS THEIR READ')}</span>`:''}${opts.setupPip?`<span class="setup-pip">${esc(opts.setupPip)}</span>`:''}${opts.synergy?`<span class="tactic-syn">${esc(opts.synergy)}</span>`:''}
     ${origin?`<span class="origin">${esc(origin)}</span>`:''}${fin?`<span class="finish">${fin==='gold'?'GOLD':'FOIL'}</span>`:''}${rarity!=='common'?`<span class="rar">${rarity==='evolved'?'evolved · '+esc(c.branch||''):rarity==='signature'?'signature · '+esc(sg.archetype):rarity}</span>`:''}${opts.mastery?`<span class="mbar ${opts.mastery.reps>=opts.mastery.need?'full':''}" title="Reps toward evolution"><i style="width:${Math.min(100,opts.mastery.reps/opts.mastery.need*100)}%"></i></span>`:''}<span class="shine"></span>`;
-  el.setAttribute('aria-label',`${c.name}, costs ${opts.cost??c.cost}. ${c.text}${opts.why?' '+opts.why:''}`);
-  if(sg){const cv=el.querySelector('.sigface');paintPortrait(cv,sg,sg.colors,58)}
+  const player=sg&&sg.number!=null&&sg.number!==''?`, ${sg.pos||sg.role} #${sg.number}`:'';
+  el.setAttribute('aria-label',`${c.name}${player}, costs ${opts.cost??c.cost}. ${c.text}${opts.why?' '+opts.why:''}`);
+  if(illustration){
+    const img=el.querySelector('.cs-signature-sculpt');
+    const showPortrait=()=>{
+      el.classList.remove('has-signature-illustration');
+      el.querySelector('.art').innerHTML=signaturePortrait(sg);
+      paintPortrait(el.querySelector('.sigface'),sg,opts.teamColors||sg.colors,58);
+    };
+    if(img.complete&&!img.naturalWidth)showPortrait();
+    else img.addEventListener('error',showPortrait,{once:true});
+  }else if(sg)paintPortrait(el.querySelector('.sigface'),sg,opts.teamColors||sg.colors,58);
   // 3D tilt and moving shine.
   el.addEventListener('pointermove',e=>{if(root.SliceFX?.reduce||e.pointerType==='touch')return;const r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width,y=(e.clientY-r.top)/r.height;el.style.setProperty('--rx',`${(.5-y)*14}deg`);el.style.setProperty('--ry',`${(x-.5)*16}deg`);el.style.setProperty('--sx',`${x*100}%`);el.style.setProperty('--sy',`${y*100}%`)});
   el.addEventListener('pointerleave',()=>{el.style.setProperty('--rx','0deg');el.style.setProperty('--ry','0deg')});
   return el;
 }
-root.SliceCards={card,diagram,pairRoutes,routeFor:card=>ROUTES[card.evolvedFrom||card.upgradeOf||card.id],def,kindOf,FAM,esc,paintPortrait};
+root.SliceCards={card,diagram,pairRoutes,routeFor:card=>ROUTES[card.evolvedFrom||card.upgradeOf||card.id],def,kindOf,FAM,esc,paintPortrait,tacticEquipment};
 })(window);

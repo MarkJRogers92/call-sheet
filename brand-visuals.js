@@ -104,11 +104,15 @@ function paintMasthead(team){
  let strip=mast.querySelector(':scope > .bi-strip-host');
  const sig=JSON.stringify(team.schedule.map(g=>[g.week,g.post,g.played,g.us,g.them,g.opponent.id,g.opponent.rank]));
  if(!strip){strip=document.createElement('div');strip.className='bi-strip-host';const details=mast.querySelector('#programDetails');details?mast.insertBefore(strip,details):mast.append(strip);sigs.delete('strip')}
- if(!same('strip',team.id+sig))strip.innerHTML=stripHTML(team);
- // Centre the next game; once nothing is next (postseason, season complete) centre the latest result.
- const next=strip.querySelector('.bi-chip.is-next')||[...strip.querySelectorAll('.bi-chip.is-win,.bi-chip.is-loss')].pop();
- const list=strip.querySelector('.bi-strip');
- if(next&&list&&list.scrollWidth>list.clientWidth){const a=next.getBoundingClientRect(),b=list.getBoundingClientRect();list.scrollLeft=Math.max(0,list.scrollLeft+(a.left-b.left)-list.clientWidth/2+a.width/2)}
+ function centerStrip(strip){
+  // Centre the next game; once nothing is next (postseason, season complete) centre the latest result.
+  const next=strip.querySelector('.bi-chip.is-next')||[...strip.querySelectorAll('.bi-chip.is-win,.bi-chip.is-loss')].pop();
+  const list=strip.querySelector('.bi-strip');
+  if(next&&list&&list.scrollWidth>list.clientWidth){const a=next.getBoundingClientRect(),b=list.getBoundingClientRect();list.scrollLeft=Math.max(0,list.scrollLeft+(a.left-b.left)-list.clientWidth/2+a.width/2)}
+ }
+ if(same('strip',team.id+sig)){centerStrip(strip);return}
+ strip.innerHTML=stripHTML(team);
+ centerStrip(strip);
 }
 function paintProgram(team){
  const host=document.querySelector('#programAttributes');if(!host||!team||host.hidden)return;

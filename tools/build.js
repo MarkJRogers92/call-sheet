@@ -3,6 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.join(__dirname, '..');
+const {bundle,signatureArtManifest}=require('../forks/call-sheet/tools/bundle.js');
 require('./check-test-lists').verify(root);
 const read = f => fs.readFileSync(path.join(root, f), 'utf8');
 const version = read('VERSION.txt').trim().replace(/^Dynasty Lab\s*/, '').replace(/^v/, '');
@@ -24,6 +25,7 @@ function stampVersionLabel(markup, pattern, label) {if (!pattern.test(markup)) t
 let body = read('body.html');
 body = stampVersionLabel(body, /(<b data-title-version>)[^<]*(<\/b>)/, 'title-screen');
 body = stampVersionLabel(body, /(<span data-app-version>)[^<]*(<\/span>)/, 'app-header');
+body += signatureArtManifest({embedded:true});
 // v0.22: the game makes no network requests and loads nothing from another origin, and the policy says so. Scripts and
 // styles are inline by design (one self-contained file), so 'unsafe-inline' is required for both.
 const CSP_META=`<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self'; worker-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
@@ -33,7 +35,7 @@ const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
   `</style></head><body>\n`+body+`<script>`+read('crash-guard.js')+'\n'+read('portraits/renderer-v1.js')+'\n'+read('schools-data.js')+'\n'+read('mascots.js')+'\n'+read('storage.js')+'\n'+read('rng.js')+'\n'+read('jersey-numbers.js')+'\n'+read('game-conditions.js')+'\n'+read('game-engine-v2.js')+'\n'+read('forks/call-sheet/core/data.js')+'\n'+read('forks/call-sheet/core/resolver.js')+'\n'+read('forks/call-sheet/core/roster.js')+'\n'+read('forks/call-sheet/core/battle.js')+'\n'+read('forks/call-sheet/core/packs.js')+'\n'+read('forks/call-sheet/core/playbook-ui.js')+'\n'+read('forks/call-sheet/core/evolution.js')+'\n'+read('forks/call-sheet/core/signatures.js')+'\n'+read('forks/call-sheet/core/classes.js')+'\n'+read('forks/call-sheet/core/world.js')+'\n'+read('forks/call-sheet/core/program.js')+'\n'+read('forks/call-sheet/core/adapter.js')+'\n'+read('game-engine-v2-decisions.js')+'\n'+read('game-engine-v2-adapter.js')+'\n'+read('game-engine-v2-gameday.js')+'\n'+read('game-engine-v2-attribution.js')+'\n'+read('game-engine-v2-transaction.js')+'\n'+read('game-engine-v2-lab.js')+'\n'+read('game-engine-v2-gameplan-feedback.js')+'\n'+read('first-season-flow.js')+'\n'+read('weekly-coaching-engine.js')+'\n'+read('weekly-player-stories-engine.js')+'\n'+read('escape.js')+'\n'+read('player-evidence-model.js')+'\n'+appSource+'\n'+read('program-art.js')+'\n'+read('program-branding.js')+'\n'+read('conference-branding.js')+'\n'+read('visual-identity.js')+'\n'+read('sports-presentation.js')+'\n'+read('recruit-presentation.js')+'\n'+read('recruiting-workspace.js')+'\n'+read('recruiting-needs.js')+'\n'+read('recruiting-class-views.js')+'\n'+read('development-visualization.js')+'\n'+read('brand-visuals.js')+'\n'+read('gameday-momentum.js')+'\n'+read('rival-watch.js')+'\n'+read('storylines.js')+'\n'+read('legacy.js')+'\n'+read('season-moments.js')+'\n'+read('ceremonies.js')+'\n'+read('sound.js')+'\n'+read('roster-depth-experience.js')+'\n'+read('staff-organization.js')+'\n'+read('player-identity.js')+'\n'+read('gameday-season-presentation.js')+'\n'+read('world-history-presentation.js')+'\n'+read('history-index.js')+'\n'+read('next-action.js')+'\n'+read('team-logo-coverage.js')+'\n'+read('program-color-coverage.js')+'\n'+read('dashboard-views.js')+'\n'+read('client-shell.js')+'\n'+read('title-menus.js')+'\n'+read('interaction-polish.js')+'\n'+read('game-hud.js')+'\n'+read('app-health.js')+'\n'+read('living-world.js')+'\n'+read('pwa.js')+`</script></body></html>`;
 // Call Sheet fork: the card battle, as one self-contained document for the game-day frame. Embedded as a JSON
 // string with every "<" escaped, so nothing inside it can end this page's script.
-const cardBattleDoc=require('../forks/call-sheet/tools/bundle.js').bundle({document:true});
+const cardBattleDoc=bundle({document:true});
 const cardBattleScript=`<script>globalThis.CallSheetBundle=${JSON.stringify(cardBattleDoc).replace(/</g,'\\u003c')};</script>`;
 const buildMeta=cardBattleDoc.match(/<meta name="call-sheet-build" content="[0-9a-f]{12}">/)[0];
 const stamped=html.replace('<head>','<head>'+buildMeta);

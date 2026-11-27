@@ -336,7 +336,7 @@ function announceUserPostseason(fromIndex){const u=selected(),games=universe.gam
 function weekResultStatus(week,u,g){if(!g?.score)return `Week ${week} complete.`;const home=g.home===u.name,us=home?g.score[1]:g.score[0],them=home?g.score[0]:g.score[1];return `Week ${week} final: ${g.winner===u.name?'W':'L'} ${us}-${them} ${home?'vs':'at'} ${home?g.away:g.home}.`}
 function simSeason(){const gate=guidanceActionEligibility('simulate-season');if(!gate.allowed){if(gate.blockers[0])setStatus(gate.blockers[0].message);return}while(universe.phase==='regular'){if(!delegateWeeklyDecisions(selected())){autosaveAfter('management');render();return}const week=universe.week;simWeek(true);if(universe.week===week)break}render()}
 function seasonAdvanceVisitor(r,t){
- if(!r?.visit||!(r.stars>=5)||r.committed||(r.funnel?.season===universe.year&&r.funnel.cut))return false;
+ if(!r?.visit||!Number.isInteger(r.visitWeek)||r.committed||(r.funnel?.season===universe.year&&r.funnel.cut))return false;
  const owner=globalThis.DynastyRecruitingActions?.visitWeekendOwner?.(r);
  return (!owner||owner===String(t.id))&&!recruitBlocked(t,r);
 }
@@ -345,11 +345,28 @@ function seasonAdvanceStops(t=selected()){
  const remaining=(t.schedule||[]).filter(g=>!g.played&&g.week>universe.week);
  const rivalry=rivalryGameFor(t);
  const homeDates=new Set(remaining.filter(g=>g.home===t.name).map(g=>g.week));
- const visitor=(universe.recruits||[]).filter(r=>homeDates.has(r.visitWeek)&&seasonAdvanceVisitor(r,t))
-  .sort((a,b)=>a.visitWeek-b.visitWeek||a.nationalRank-b.nationalRank)[0];
+ const byWeek=new Map();
+ for(const r of (universe.recruits||[])){
+  if(!homeDates.has(r.visitWeek)||!seasonAdvanceVisitor(r,t))continue;
+  const list=byWeek.get(r.visitWeek)||[];
+  list.push(r);
+  byWeek.set(r.visitWeek,list);
+ }
+ const visitWeeks=[...byWeek.entries()].sort((a,b)=>a[0]-b[0]);
  const stops=[];
  if(remaining.includes(rivalry))stops.push({id:'rivalry',label:`Rivalry game · Week ${rivalry.week}`,week:rivalry.week});
- if(visitor)stops.push({id:'visit',label:`5★ ${visitor.name} visits · Week ${visitor.visitWeek}`,week:visitor.visitWeek,recruitId:visitor.id,recruitName:visitor.name});
+ visitWeeks.forEach(([week,group],idx)=>{
+  const sorted=[...group].sort((a,b)=>b.stars-a.stars||a.nationalRank-b.nationalRank);
+  const lead=sorted[0];
+  stops.push({
+   id:idx===0?'visit':`visit:${week}`,
+   kind:'visit',
+   label:`${lead.stars}★ ${lead.name}${sorted.length>1?` +${sorted.length-1}`:''} visit${sorted.length>1?'':'s'} · Week ${week}`,
+   week,
+   recruitId:lead.id,
+   recruitName:lead.name
+  });
+ });
  stops.push({id:'redshirt',label:'Next redshirt decision'});
  return stops;
 }
@@ -367,14 +384,14 @@ function advanceSeasonTo(id){
  const eventsBefore=universe.events?.length||0;
  let reason='';
  while(universe.phase==='regular'&&universe.week<12){
-  if(id==='visit'){
-   const recruit=universe.recruits.find(r=>r.id===target.recruitId);
-   if(!seasonAdvanceVisitor(recruit,team)||recruit.visitWeek!==target.week){
+  if(id==='visit'||target.kind==='visit'){
+   const activeVisitors=(universe.recruits||[]).filter(r=>r.visitWeek===target.week&&seasonAdvanceVisitor(r,team));
+   if(!activeVisitors.length){
     reason=`${target.recruitName}’s visit is no longer on the calendar.`;
     break;
    }
   }
-  if(universe.week+1===target.week){reason=id==='visit'?`${target.recruitName} visits this week.`:'Rivalry week is next.';break}
+  if(universe.week+1===target.week){reason=(id==='visit'||target.kind==='visit')?`${target.recruitName} visits this week.`:'Rivalry week is next.';break}
   if(id==='redshirt'){
    const pending=currentWeeklyDecisions(team).find(d=>['REDSHIRT_DECISION','PLAYER_REDSHIRT_DISCUSSION'].includes(d.type));
    if(pending){reason=pending.title;break}

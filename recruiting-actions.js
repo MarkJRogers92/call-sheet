@@ -91,6 +91,32 @@ function makeRecruitingActionSystem(env){
  // A priority weekend reserves one of three spaces at an upcoming home game.
  // The per-school action record carries it through saves and preserves the visit receipt.
  const WEEKEND_CAP=3,PAIR_PITCH=2,RIVALRY_PITCH=2;
+ const VISIT_FOCUSES=[
+  {id:'balanced',label:'Full campus tour',topics:[]},
+  {id:'early_role',label:'Early playing time',topics:['playing_time']},
+  {id:'scheme_fit',label:'Scheme & pro film',topics:['scheme','nfl']},
+  {id:'campus_nil',label:'Campus & NIL table',topics:['campus','nil']}
+ ];
+ function visitFocusInfo(id){return VISIT_FOCUSES.find(f=>f.id===id)||VISIT_FOCUSES[0]}
+ function visitFocusFit(t,r,focusId){
+  const focus=visitFocusInfo(focusId);
+  if(!focus.topics.length)return{...focus,bonus:0,tag:'Steady'};
+  const known=new Set(intel(r,t).known);
+  const avgStrength=focus.topics.reduce((s,topic)=>s+topicStrength(t,r,topic),0)/focus.topics.length;
+  const matchBoost=focus.topics.some(topic=>known.has(topic))?6:0;
+  const score=avgStrength+matchBoost;
+  if(score>=68)return{...focus,bonus:1.5,tag:'Strong fit'};
+  if(score>=52)return{...focus,bonus:0.6,tag:'Solid'};
+  return{...focus,bonus:-0.8,tag:'Thin pitch'};
+ }
+ function syncScheduledVisit(t,r,focusId){
+  if(!t||!r||!Number.isInteger(r.visitWeek))return null;
+  const rec=record(r,t,true);
+  const prev=rec.visitWeekend;
+  rec.visitedScheduled=true;
+  rec.visitWeekend={week:r.visitWeek,focus:focusId||prev?.focus||'balanced',receipt:prev?.week===r.visitWeek?prev.receipt??null:null};
+  return rec.visitWeekend;
+ }
  function visitWeekend(r,t){
   const rec=r?.recruitingActions?.[String(t?.id)];
   return t&&rec?.season===universe().year?rec.visitWeekend??null:null;
@@ -150,16 +176,19 @@ function makeRecruitingActionSystem(env){
   const owner=weekendOwner(r),row=rows?.get(r.id);
   if(!owner)return base;
   if(owner!==String(t.id)||!row||row.reason)return 0;
-  row.pitch=base+(row.pair?PAIR_PITCH:0)+(row.rival?RIVALRY_PITCH:0);
+  const focus=visitFocusFit(t,r,row.plan?.focus);
+  row.focus=focus;
+  row.pitch=Math.max(1,Math.round((base+(row.pair?PAIR_PITCH:0)+(row.rival?RIVALRY_PITCH:0)+focus.bonus)*10)/10);
   return row.pitch;
  }
  function finishWeekend(rows){
   const results=[];
   for(const row of rows.values()){
-   const {r,plan,reason,opponent,rival,pair,pitch,before}=row;
+   const {r,plan,reason,opponent,rival,pair,pitch,before,focus}=row;
    const attended=pitch!==null;
    const result={id:r.id,name:r.name,week:plan.week,opponent,attended,reason:reason??(attended?null:'The visit never ran'),
     pitch:pitch??0,rivalBonus:attended&&rival?RIVALRY_PITCH:0,pair:attended?pair:null,pairBonus:attended&&pair?PAIR_PITCH:0,
+    focusId:attended&&focus?focus.id:plan.focus||'balanced',focusLabel:attended&&focus?focus.label:visitFocusInfo(plan.focus).label,focusBonus:attended&&focus?focus.bonus:0,
     interest:attended?r.interest:null,interestDelta:attended?r.interest-before:null};
    plan.receipt=result;results.push(result);
   }
@@ -168,7 +197,8 @@ function makeRecruitingActionSystem(env){
  function cancelWeekend(r,t){
   const owner=weekendOwner(r),plan=visitWeekend(r,t);
   if(!plan||owner!==String(t.id)||r.visitWeek<=universe().week||!r.visit||plan.receipt)return{ok:false,reason:'There is no upcoming priority visit to cancel.'};
-  const rec=record(r,t,true);delete rec.visitWeekend;
+  const rec=record(r,t,true);delete rec.visitWeekend;delete rec.visitedScheduled;
+  if(Array.isArray(rec.history))rec.history=rec.history.filter(x=>x.kind!=='visit');
   r.visitWeek=null;r.visit=false;
   return{ok:true,label:'Visit cancelled',note:'The booking hours were already spent.'};
  }
@@ -302,7 +332,7 @@ function makeRecruitingActionSystem(env){
     if(visitDate.guests.length>=WEEKEND_CAP)return{ok:false,reason:'This priority weekend is full.'};
     if(r.visitWeek){
      if(!r.visit||r.visitWeek<=u.week)return{ok:false,reason:'The campus visit is already complete.'};
-     cost=0;
+     if(owner===String(t.id))cost=0;
     }
    }else if(r.visitWeek)return{ok:false,reason:'A campus visit is already scheduled.'};
   }
@@ -316,7 +346,7 @@ function makeRecruitingActionSystem(env){
   const u=universe();
   if(kind==='visit'&&check.visitDate&&!check.cost){
    env.scheduleVisit(r,check.visitDate.week);
-   record(r,t,true).visitWeekend={week:check.visitDate.week,receipt:null};
+   syncScheduledVisit(t,r,opts.focus);
    return{ok:true,kind,label:'Priority visit updated',cost:0,remaining:hoursLeft(t),note:`Week ${r.visitWeek} vs ${check.visitDate.opponent}.`};
   }
   if(kind!=='keep')env.ensureTargeted(r,t);
@@ -337,7 +367,7 @@ function makeRecruitingActionSystem(env){
    rec.inHome=true;dI=INHOME.interest;dR=INHOME.relationship;note='The family hosted your staff.';
   }else if(kind==='visit'){
    env.scheduleVisit(r,check.visitDate?.week);dR=2;note=`Visit set for week ${r.visitWeek}.`;
-   if(check.visitDate)rec.visitWeekend={week:check.visitDate.week,receipt:null};
+   if(check.visitDate)syncScheduledVisit(t,r,opts.focus);else rec.visitedScheduled=true;
   }else if(kind==='keep'){
    rec.keptWeek=u.week;dR=KEEP.relationship;note='He knows you are still in his corner.';
   }
@@ -768,7 +798,7 @@ function makeRecruitingActionSystem(env){
   return true;
  }
 
- return{COSTS,LABELS,INHOME,OFFER,WEEKEND_CAP,visitWeekend,visitWeekendOwner:weekendOwner,visitDates,prepareWeekend,weekendPitch,finishWeekend,cancelWeekend,
+ return{COSTS,LABELS,INHOME,OFFER,WEEKEND_CAP,VISIT_FOCUSES,visitFocusFit,syncScheduledVisit,visitWeekend,visitWeekendOwner:weekendOwner,visitDates,prepareWeekend,weekendPitch,finishWeekend,cancelWeekend,
   hoursBudgetFor,weekInfo,ensureWeek,hoursLeft,isActive,record,weekState,workedThisWeek,
   offerLimit,offersOut,hasOffer,topicStrength,motivesFor,dealbreakerUnmet,intel,knownBlock,pitchProjection,pitchOptions,narrowingAdvice,availability,perform,withdrawOffer,
   effort,previewEffort,effortFromSince,weeksSinceWorked,mayCommit,pitchBoost,status,workload,staffPlan,isAuto,setAuto,funnelOn,funnelState,funnelStatus,narrowingWithoutYou,runFunnel,holds,decisionsDue,keepBoost,noteWeek,newsItems,deskSummary,rivalHeat,rivalPressure,addRivalEvent,generateRivals,answerRivals,rivalMoves,liveMoves,unansweredMoves,grandfather};
@@ -941,7 +971,8 @@ if(typeof module==='object'&&module.exports){
  const hoursText=n=>`${n} hour${n===1?'':'s'}`;
  function visitReceiptText(r){
   if(!r.attended)return `${r.reason}.`;
-  const extras=[r.rivalBonus?`+${r.rivalBonus} rivalry`:null,r.pairBonus?`+${r.pairBonus} ${r.pair}`:null].filter(Boolean);
+  const focusBit=r.focusBonus?`${r.focusBonus>0?'+':''}${r.focusBonus} ${r.focusLabel||'visit focus'}`:null;
+  const extras=[r.rivalBonus?`+${r.rivalBonus} rivalry`:null,r.pairBonus?`+${r.pairBonus} ${r.pair}`:null,focusBit].filter(Boolean);
   const change=`${r.interestDelta>0?'+':''}${r.interestDelta}`;
   return `+${r.pitch} visit pitch${extras.length?' ('+extras.join(', ')+')':''}. Interest ${r.interest}% (${change} points over the week).`;
  }
@@ -964,11 +995,18 @@ if(typeof module==='object'&&module.exports){
   const initial=dates.find(d=>d.week===plan?.week)||dates.find(d=>d.guests.length<cap);
   const check=initial?recruitingActions.availability(r,t,'visit',{visitWeek:initial.week}):null;
   const hint=plan&&!receipt?` · booked Week ${plan.week}`:'';
+  const focusId=plan?.focus||'balanced';
+  const focusOpts=recruitingActions.VISIT_FOCUSES.map(f=>{
+   const fit=recruitingActions.visitFocusFit(t,r,f.id);
+   return `<option value="${f.id}" ${f.id===focusId?'selected':''}>${raEsc(f.label)} (${raEsc(fit.tag)})</option>`;
+  }).join('');
   const label=r.visitWeek?'Update priority visit':`Book priority visit · ${recruitingActions.COSTS.visit}h`;
   return `<details class="ra-weekend" ${plan&&!receipt?'open':''}><summary>Plan a recruiting weekend${hint}</summary>
    <p>Host up to ${cap} priority recruits per home game. QB/WR and OL/RB pairings help both guests. Rivalry dates add atmosphere, but waiting gives other schools more time.</p>
    <div class="ra-weekend-controls"><label>Home date
     <select data-ra-visit-date>${dates.map(d=>`<option value="${d.week}" ${d===initial?'selected':''} ${d.guests.length>=cap?'disabled':''}>Week ${d.week} vs ${raEsc(d.opponent)}${d.rival?' · rivalry':''} · ${d.guests.length}/${cap} other guests</option>`).join('')}</select></label>
+    <label>Visit pitch focus
+     <select data-ra-visit-focus="${raEsc(r.id)}">${focusOpts}</select></label>
     <button type="button" data-ra-action="plan-weekend" data-ra-recruit="${raEsc(r.id)}" ${check?.ok?'':'disabled'}>${label}</button>
     ${plan&&!receipt?`<button type="button" data-ra-action="cancel-weekend" data-ra-recruit="${raEsc(r.id)}">Cancel priority visit</button>`:''}
    </div><small data-ra-weekend-guests>${initial?weekendGuestsHTML(initial):'Priority groups are full.'}</small>
@@ -1073,8 +1111,10 @@ if(typeof module==='object'&&module.exports){
     let res;
     if(kind==='withdraw'){if(!confirm(`Withdraw the scholarship offer to ${r.name}? He will cool toward your program.`))return;res=recruitingActions.withdrawOffer(r,t)}
     else if(kind==='plan-weekend'){
-     const week=Number(b.closest('.ra-weekend')?.querySelector('[data-ra-visit-date]')?.value);
-     res=recruitingActions.perform(r,t,'visit',{visitWeek:week});
+     const host=b.closest('.ra-weekend');
+     const week=Number(host?.querySelector('[data-ra-visit-date]')?.value);
+     const focus=host?.querySelector('[data-ra-visit-focus]')?.value||'balanced';
+     res=recruitingActions.perform(r,t,'visit',{visitWeek:week,focus});
     }
     else if(kind==='cancel-weekend')res=recruitingActions.cancelWeekend(r,t);
     else{const topic=kind==='pitch'?(b.dataset.raTopicChoice||b.parentElement?.querySelector('select')?.value):undefined;res=recruitingActions.perform(r,t,kind,{topic})}
@@ -1092,6 +1132,14 @@ if(typeof module==='object'&&module.exports){
     button.disabled=!check.ok;
     host.querySelector('[data-ra-weekend-guests]').innerHTML=weekendGuestsHTML(check.visitDate);
     host.querySelector('[data-ra-weekend-status]').textContent=check.ok?'':check.reason;
+   };
+  });
+  root.querySelectorAll?.('[data-ra-visit-focus]').forEach(select=>{
+   select.onchange=()=>{
+    const r=raRecruit(select.dataset.raVisitFocus),t=selected();
+    if(!r||!t)return;
+    const plan=recruitingActions.visitWeekend(r,t);
+    if(plan&&!plan.receipt){plan.focus=select.value;autosaveAfter('management')}
    };
   });
  }

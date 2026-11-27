@@ -1,5 +1,9 @@
 # Latest session work
 
+## v0.39.0
+
+Merged Meshy 3D signature sculptures, foil-pack peel animations, drill/tactic equipment art, and stadium walkout video intros with V38 review fixes (title overlay pointer-events, camp/preseason depth preservation, visit pitch focuses & cancel cleanup, takeover goal completion, limited-player lineup preference) plus Upgrades 1–5 (pre-snap uncertainty ranges, smooth duel stacking & blowout rotation, Saturday rundown, compact 390px Call Sheet, and turning-point drive film).
+
 ## v0.38.0
 
 The Call Sheet release adds recruiting weekends, targeted season advancement, backup auditions, Game Day recruiting history, and Vermont State's Week 8 takeover. The release build has desktop and mobile browser coverage and an eight-season simulation check.

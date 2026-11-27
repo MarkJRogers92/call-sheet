@@ -154,10 +154,25 @@ function remember(spec,event){
   const rows=cardHistory(spec.provenance);
   if(event&&rows.at(-1)!==event)spec.provenance=cardHistory([...rows,event]);
 }
+function breakoutPlayer(b,side,p){
+  if(Object.hasOwn(D.OFF_ROLES,p.role)||Object.hasOwn(D.DEF_ROLES,p.role))return p;
+  // Package reserves have roster labels like WR4. Use their most-played alignment, with first appearance breaking ties.
+  const appearances=new Map();
+  for(const e of b.log){
+    if(e.type!=='snap'||e.category==='kick')continue;
+    const unit=e.offSide===side?'off':'def',roles=unit==='off'?D.OFF_ROLES:D.DEF_ROLES;
+    for(const [role,player] of Object.entries(B.snapLineup(b,e,unit))){
+      if(player?.id===p.id&&Object.hasOwn(roles,role))appearances.set(role,(appearances.get(role)||0)+1);
+    }
+  }
+  let role=p.role,snaps=0;
+  for(const [alignment,n] of appearances)if(n>snaps){role=alignment;snaps=n}
+  return role===p.role?p:{...p,role};
+}
 function breakoutCard(b,side,c,info={}){
   const opp=side==='home'?'away':'home',name=b.teams[opp].name||b.teams[opp].short;
   const score=b.game.score,season=info.season,performance=`${c.wins} of ${c.duels} duels won${c.fire?`, caught fire ${c.fire}×`:''}`;
-  const spec=specFor(c.p,{...info,earned:`${performance} vs ${name}`});
+  const spec=specFor(breakoutPlayer(b,side,c.p),{...info,earned:`${performance} vs ${name}`});
   remember(spec,`${season?season+' · ':''}${b.teams[side].name||b.teams[side].short} ${score[side]}–${score[opp]} ${name}. ${performance}.`);
   const recap=B.decidingMoments(b)[0];if(recap)remember(spec,'Game recap · '+recap);
   return spec;

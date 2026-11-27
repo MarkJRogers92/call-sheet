@@ -9,10 +9,40 @@ let finishes=null;
 function faceClass(id,printFinishes=finishes){const {packs:P,data:D}=root.CallSheet,c=P.cardDef(id)||{},o=originOf(id,c),f=printFinishes?.[id];return`cs-face r-${D.rarityOf(id)}${c.legacy?' r-legacy':''}${o?' o-'+o.replace(/[^a-z]+/g,'-'):''}${f?' f-'+f:''}`}
 function originHTML(id){const c=root.CallSheet.packs.cardDef(id)||{},o=originOf(id,c);return o?`<span class="cs-face-origin">${escF(o)}</span>`:''}
 function cleanText(t){return String(t||'').replace(/^(EVOLVED|COACHING TREE|TRICK|TWO-MINUTE DRILL|OPTION ERA|SINGLE WING|WEST COAST|46|ZONE BLITZ|IRON MAN) · /,'').replace(/^LEGACY of #\S* [^·]*· /,'')}
-function faceHTML(id,{footer='',printFinishes=finishes}={}){
+const SIGNATURE_POSES={
+  qb_audible:'qb',qb_keeper:'qb-keeper',rb_express:'rb',rb_wheel:'rb',
+  wr_special:'wr',te_seam:'te',ol_wall:'ol',dl_unleashed:'dl',
+  lb_hunt:'lb',cb_island:'cb',s_robber:'s'
+};
+// An alignment sets the play. The player's roster position sets the illustration.
+const POSITION_POSES={QB:'qb',RB:'rb',WR:'wr',TE:'te',OT:'ol',OG:'ol',C:'ol',EDGE:'dl',DT:'dl',LB:'lb',CB:'cb',S:'s'};
+let signatureArtSources;
+function signatureIllustrationHTML(spec,teamColors){
+  if(!spec||!root.document)return '';
+  const positional=Object.hasOwn(POSITION_POSES,spec.pos)?POSITION_POSES[spec.pos]:null;
+  const template=Object.hasOwn(SIGNATURE_POSES,spec.template)?SIGNATURE_POSES[spec.template]:null;
+  const requested=positional==='qb'&&template==='qb-keeper'?template:positional||template||(spec.role==='QB'?'qb':null);
+  if(!requested)return '';
+  signatureArtSources??=JSON.parse(root.document.getElementById?.('cs-signature-art-assets')?.textContent||'{}');
+  const base=signatureArtSources.base;
+  const pose=requested==='qb-keeper'&&!base&&!signatureArtSources[requested]?'qb':requested;
+  const art=base?{src:`${base}/${pose}-signature.webp`,mask:`${base}/${pose}-signature-mask.webp`}:signatureArtSources[pose];
+  if(!art)return '';
+  const validColor=(color,fallback)=>/^#[\da-f]{6}$/i.test(color)?color:fallback;
+  const primary=validColor(teamColors?.[0]||spec.colors?.[0],'#283e62');
+  const secondary=validColor(teamColors?.[1]||spec.colors?.[1],'#d5ad68');
+  const number=spec.number==null||spec.number===''?'':`#${escF(spec.number)}`;
+  const position=spec.pos||spec.role;
+  const tint=art.mask?`<span class="cs-signature-tint" style="--signature-mask:url(&quot;${escF(art.mask)}&quot;)"></span>`:'';
+  return `<span class="cs-signature-illustration" data-signature-pose="${pose}" style="--signature-primary:${primary};--signature-secondary:${secondary}">
+    <span class="cs-signature-art" aria-hidden="true"><img class="cs-signature-sculpt" src="${escF(art.src)}" alt="" draggable="false">${tint}</span>
+    <span class="cs-signature-label">${number}<small>${escF(position)}</small></span>
+  </span>`;
+}
+function faceHTML(id,{footer='',printFinishes=finishes,teamColors}={}){
   const {packs:P,data:D}=root.CallSheet,c=P.cardDef(id)||{},r=D.rarityOf(id);
   const type=c.family?`${c.family}${c.trick?' · once per game':''}`:c.box?`${c.coverage} · ${c.box} box`:'tactic';
-  return`<article class="${faceClass(id,printFinishes)}" data-face="${escF(id)}"><span class="cs-face-cost">${c.cost??0}</span>${originHTML(id)}<b class="cs-face-name">${escF(c.name||id)}</b><small class="cs-face-type">${escF(type)}</small><p class="cs-face-text">${escF(cleanText(c.text))}</p>${r!=='common'?`<span class="cs-face-rar">${escF(r)}</span>`:''}${footer}</article>`;
+  return`<article class="${faceClass(id,printFinishes)}" data-face="${escF(id)}"><span class="cs-face-cost">${c.cost??0}</span>${originHTML(id)}<b class="cs-face-name">${escF(c.name||id)}</b>${signatureIllustrationHTML(c.signature,teamColors)}<small class="cs-face-type">${escF(type)}</small><p class="cs-face-text">${escF(cleanText(c.text))}</p>${r!=='common'?`<span class="cs-face-rar">${escF(r)}</span>`:''}${footer}</article>`;
 }
 const FACE_CSS=`.cs-face{position:relative;display:flex;flex-direction:column;gap:4px;padding:12px 12px 22px;border:1px solid #384555;border-radius:12px;background:linear-gradient(170deg,#1c2533,#121821 70%);color:#f2efe5;text-align:left}
 .cs-face.r-rare{border-color:#ffd84d;background:linear-gradient(170deg,#3a2f12,#161a22 70%)}
@@ -27,8 +57,53 @@ const FACE_CSS=`.cs-face{position:relative;display:flex;flex-direction:column;ga
 .cs-face.o-legacy .cs-face-origin{background:#9fc3ff}.cs-face.o-coaching-tree .cs-face-origin{background:#7ad0a6}.cs-face.o-two-minute-drill .cs-face-origin{background:#ff9f5a}.cs-face.o-trick .cs-face-origin{background:linear-gradient(90deg,#ff7a7a,#ffe066)}.cs-face.o-weather .cs-face-origin{background:#8fd3ff}.cs-face.o-milestone .cs-face-origin{background:#d09bff}
 .cs-face-name{font-size:15px;padding-right:14px}.cs-face-type{color:#aab6e8;text-transform:capitalize;font-size:12px}.cs-face-text{margin:0;color:#c9cfdc;font-size:13px;flex:1}
 .cs-face-rar{position:absolute;left:12px;bottom:5px;font:800 10px system-ui;letter-spacing:.16em;text-transform:uppercase;color:#ffd84d}
-.cs-face.r-legendary .cs-face-rar{background:linear-gradient(90deg,#ff7a7a,#ffe066,#7af0a0,#7ad0ff,#d09bff);-webkit-background-clip:text;background-clip:text;color:transparent}.cs-face.r-evolved .cs-face-rar{color:#7dffd8}.cs-face.r-legacy .cs-face-rar{color:#cfe0ff}`;
+.cs-face.r-legendary .cs-face-rar{background:linear-gradient(90deg,#ff7a7a,#ffe066,#7af0a0,#7ad0ff,#d09bff);-webkit-background-clip:text;background-clip:text;color:transparent}.cs-face.r-evolved .cs-face-rar{color:#7dffd8}.cs-face.r-legacy .cs-face-rar{color:#cfe0ff}
+.cs-signature-illustration{position:relative;display:block;isolation:isolate;height:100%;overflow:hidden;box-sizing:border-box;background:radial-gradient(ellipse at 85% 0%,color-mix(in srgb,var(--signature-secondary) 50%,transparent),transparent 63%),linear-gradient(125deg,#0b111c 19%,color-mix(in srgb,var(--signature-primary) 57%,#0b111c));color:#fff0c5}
+.cs-signature-art{position:absolute;inset:2px 2% -46% 30%;isolation:isolate;pointer-events:none}
+.cs-signature-sculpt{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;object-position:right center}
+.cs-signature-tint{position:absolute;inset:0;background:var(--signature-primary);mask:var(--signature-mask) right center/contain no-repeat;mix-blend-mode:color}
+.cs-signature-label{position:absolute;left:9%;top:50%;transform:translateY(-50%);text-shadow:0 1px 4px #080c12;font:800 clamp(16px,3dvh,24px)/.96 var(--cond,system-ui);font-variant-numeric:tabular-nums}
+.cs-signature-label small{display:block;margin-top:4px;color:#e8d7aa;font:800 10px/1 system-ui;letter-spacing:.13em}
+.cs-face>.cs-signature-illustration,.de-card>.cs-signature-illustration{height:76px;border:1px solid #8b7445;border-radius:6px}
+.cs-face>.cs-signature-illustration .cs-signature-art,.de-card>.cs-signature-illustration .cs-signature-art{right:10%}`;
 function injectFaceCSS(doc=document){if(doc.getElementById('csFaceStyles'))return;const st=doc.createElement('style');st.id='csFaceStyles';st.textContent=FACE_CSS;doc.head.appendChild(st)}
+const PACK_CSS=`.cs-pack{--pack-light:#f9d68a;--pack-dark:#78552d;--pack-ink:#1d1207;position:relative;display:block;isolation:isolate;width:168px;height:238px;padding:0;margin:20px auto 26px;border:0;border-radius:5px;background:transparent;color:var(--pack-light);cursor:pointer;perspective:600px}
+.cs-pack[data-skin="rivalry"]{--pack-light:#ffc2a8;--pack-dark:#853032;--pack-ink:#260d14}
+.cs-pack[data-skin="film"],.cs-pack[data-skin="signing"]{--pack-light:#bbdfef;--pack-dark:#3b697f;--pack-ink:#102231}
+.cs-pack[data-skin="conference"],.cs-pack[data-skin="bowl"],.cs-pack[data-skin="playoff"]{--pack-light:#d4dce6;--pack-dark:#626f81;--pack-ink:#151f2f}
+.cs-pack[data-skin="album"]{--pack-light:#e1caef;--pack-dark:#76608b;--pack-ink:#20112d}
+.cs-pack:focus-visible{outline:3px solid #9ad8ff;outline-offset:6px}
+.cs-pack:disabled{cursor:default}
+.cs-pack-body,.cs-pack-seal{position:absolute;inset:0;pointer-events:none;background:var(--cs-pack-image,none) center/100% 100% no-repeat,linear-gradient(117deg,#141823 1%,var(--pack-dark) 34%,var(--pack-light) 51%,var(--pack-dark) 70%,#141823 99%);background-blend-mode:luminosity;mask:var(--cs-pack-image,linear-gradient(#000,#000)) center/100% 100% no-repeat;border-radius:5px}
+.cs-pack-seal{clip-path:polygon(0 0,100% 0,100% 9%,86% 10%,71% 8%,57% 10%,37% 9%,19% 11%,0 9%);transform-origin:50% 8%}
+.cs-pack-body{clip-path:polygon(0 9%,19% 11%,37% 9%,57% 10%,71% 8%,86% 10%,100% 9%,100% 100%,0 100%);transform-origin:50% 65%;display:flex;align-items:center;justify-content:center}
+.cs-pack-body::before,.cs-pack-seal::before{content:'';position:absolute;inset:0;background:linear-gradient(125deg,#fff3 2%,transparent 28%,var(--pack-dark) 65%,#0004);mix-blend-mode:multiply}
+.cs-pack-body::after,.cs-pack-seal::after{content:'';position:absolute;inset:0 0 auto;height:8%;border-bottom:1px solid #fff6;background:repeating-linear-gradient(90deg,#0002 0 2px,#fff3 2px 3px),linear-gradient(#fff4,transparent 72%,#0006)}
+.cs-pack-body::after{inset:auto 0 0;border-top:1px solid #fff6;border-bottom:0}
+.cs-pack-label{position:relative;width:85%;padding:11px 4px 12px;line-height:1;background:linear-gradient(115deg,#111827,var(--pack-ink));border:1px solid currentColor;box-shadow:0 0 0 3px #0c121ba6,0 5px 18px #0006;text-align:center;text-transform:uppercase}
+.cs-pack-brand,.cs-pack-label b{display:block}
+.cs-pack-brand{font:800 10px/1 system-ui,sans-serif;letter-spacing:.17em;margin-bottom:7px}
+.cs-pack-label b{font:800 22px/.98 var(--cond,'Arial Narrow',system-ui,sans-serif);letter-spacing:.025em;color:#fff8e8;overflow-wrap:anywhere}
+.cs-pack:hover:not(:disabled) .cs-pack-label,.cs-pack:focus-visible .cs-pack-label{box-shadow:0 0 0 3px #0c121ba6,0 0 20px var(--pack-dark)}
+.cs-pack-open{position:absolute;top:74%;left:0;right:0;z-index:1;font:750 10px/1 system-ui,sans-serif;letter-spacing:.12em;text-transform:uppercase;width:max-content;margin:auto;padding:6px 9px;border-radius:3px;background:#0c121b;color:#fff8e8}
+.cs-pack:disabled .cs-pack-open{visibility:hidden}
+@media(max-height:565px){.cs-pack{width:136px;height:189px;margin-block:14px 18px}.cs-pack-label b{font-size:18px}}`;
+function injectPackCSS(doc=document){if(doc.getElementById('csPackStyles'))return;const st=doc.createElement('style');st.id='csPackStyles';st.textContent=PACK_CSS;doc.head.appendChild(st)}
+function packWrapperHTML(pack,{battle=false}={}){
+  const title=String(pack.title||'Reward Pack'),label=title.replace(/\s+Pack$/i,'');
+  return `<button type="button" class="cs-pack" ${battle?'id="pk"':'data-rip'} data-skin="${escF(pack.type)}" aria-label="Open ${escF(title)}"><span class="cs-pack-body" aria-hidden="true"><span class="cs-pack-label"><span class="cs-pack-brand">Call Sheet</span><b>${escF(label)}</b></span></span><span class="cs-pack-seal" aria-hidden="true"></span><span class="cs-pack-open" aria-hidden="true">Open pack</span></button>`;
+}
+async function peelPack(button,{reduced=false,speed=1}={}){
+  button.disabled=true;
+  if(reduced||typeof button.animate!=='function')return;
+  const seal=button.querySelector('.cs-pack-seal').animate([
+    {transform:'none',opacity:1},{transform:'translate(12px,-14px) rotateX(40deg) rotate(9deg)',opacity:1,offset:.38},{transform:'translate(76px,-48px) rotateX(65deg) rotate(26deg)',opacity:0}
+  ],{duration:250*speed,easing:'ease-out',fill:'forwards'});
+  const body=button.querySelector('.cs-pack-body').animate([
+    {transform:'none',opacity:1},{transform:'scaleX(.95) rotate(-2deg)',opacity:1,offset:.28},{transform:'translateY(22px) scale(.94) rotate(-4deg)',opacity:0}
+  ],{duration:295*speed,easing:'ease-in-out',fill:'forwards'});
+  await Promise.allSettled([seal.finished,body.finished]);
+}
 // Presets store selections, never a second collection. Loading reconciles against today's inventory.
 const copyDeck=x=>JSON.parse(JSON.stringify(x));
 function validPreset(p){
@@ -452,7 +527,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
       const edition=[originOf(id,def),D.rarityOf(id)!=='common'&&D.rarityOf(id),draft.finishes?.[id]].filter(Boolean).join(' · ');
       const addDisabled=inDeck>=owned||full,removeDisabled=!inDeck;
       const control=(add,disabled)=>`<button type="button" ${sg?(add?'data-sig-equip':'data-sig-store')+'="'+esc(id)+'"':'data-move="'+(add?'add':'remove')+'"'} aria-label="${add?'Add one':'Remove one'} ${esc(def.name)} ${add?'to':'from'} deck"${disabled?' disabled':''}${add&&full&&warning?' aria-describedby="de-limit-note"':''}>${add?'Add to deck':'Remove from deck'}</button>`;
-      return `<article class="de-card" data-owned-card="${esc(id)}" data-selected="${inDeck>0}" tabindex="-1"><div class="de-card-title"><h4>${esc(def.name)}</h4><span data-copy-count title="${owned} owned in this type">${inDeck} of ${owned} in deck</span></div>
+      return `<article class="de-card" data-owned-card="${esc(id)}" data-selected="${inDeck>0}" tabindex="-1"><div class="de-card-title"><h4>${esc(def.name)}</h4><span data-copy-count title="${owned} owned in this type">${inDeck} of ${owned} in deck</span></div>${signatureIllustrationHTML(sg,team?.colors)}
         <small>${sg?esc(sg.name)+' · '+esc(sg.role)+' · ':''}${def.cost} Command · ${esc(def.family||'Tactic')}${baseAlso?' · 1 more copy is a base call':''}${edition?' · <span class="de-edition">'+esc(edition)+'</span>':''}</small>
         <p class="de-text">${esc(cleanText(def.text))}</p><small data-draw-chance>${access}</small><div class="de-card-actions">${control(true,addDisabled)}${control(false,removeDisabled)}</div></article>`;
     }
@@ -534,5 +609,5 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
   });
   render();const initialIssue=invalidDraft();status(initialIssue?.msg||'Ready to play.',!!initialIssue);dialog.showModal();return dialog;
 }
-root.CallSheet.playbookUI={thirdDownHands,firstHandChance,openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS};
+root.CallSheet.playbookUI={thirdDownHands,firstHandChance,openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS,injectPackCSS,packWrapperHTML,peelPack,signatureIllustrationHTML};
 })(typeof window==='object'?window:globalThis);

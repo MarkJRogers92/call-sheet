@@ -7,6 +7,7 @@
 <style>
 @font-face{font-family:'Barlow Condensed';font-weight:600;src:url('../../../assets/fonts/barlow-condensed-600.woff2') format('woff2')}
 @font-face{font-family:'Barlow Condensed';font-weight:800;src:url('../../../assets/fonts/barlow-condensed-800.woff2') format('woff2')}
+#modal .cs-pack{--cs-pack-image:url('../../../assets/card-art/foil-pack.webp')}
 :root{color-scheme:dark;--bg:#07090f;--ink:#f6efdc;--muted:#a59d8a;--brass:#d6ad2f;--gold:#ffd84d;--panel:rgba(16,21,32,.86);--line:rgba(255,216,77,.18);
   --win:#72f08a;--lose:#ff5a4f;--hot:#ff9a3c;--home:#1d3b8f;--away:#7a1f2b;--sequence-brass:#f1c66d;--cond:'Barlow Condensed',Impact,system-ui,sans-serif}
 *{box-sizing:border-box}
@@ -188,9 +189,18 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .card::before{content:'';position:absolute;left:0;right:0;top:0;height:5px;border-radius:10px 10px 0 0;background:var(--fam)}
 .card .cost{position:absolute;right:-8px;top:-8px;width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-family:var(--cond);font-weight:800;font-size:18px;color:#1a1200;background:radial-gradient(circle at 35% 30%,#fff4b8,#ffd84d 45%,#b8870f);box-shadow:0 0 10px rgba(255,216,77,.7),0 2px 0 #000;z-index:2}
 .card .cname{font-family:var(--cond);font-weight:800;font-size:17px;line-height:1;margin-top:4px;padding-right:14px}
+.card:is(.k-play,.k-call) .cname{line-height:1.08;letter-spacing:.015em;color:#fff4df}
 .card .art{display:block;border-radius:6px;overflow:hidden;border:1px solid rgba(255,255,255,.12);height:58px}
 .card .art svg{display:block;width:100%;height:100%}
+.card-scheme{background:radial-gradient(ellipse at 45% 22%,#8dab961a,transparent 68%),repeating-linear-gradient(104deg,#91bca209 0 1px,transparent 1px 4px),linear-gradient(160deg,#203c31,#112622 65%,#0c1919)}
+.card .art:has(.card-scheme){border-color:#849e845e}
 .card .ticon{height:58px;display:grid;place-items:center;font-size:34px;color:var(--gold);background:radial-gradient(circle,rgba(255,216,77,.2),transparent 70%);text-shadow:0 0 14px var(--gold)}
+.tactic-equipment{display:inline-block;width:24px;height:22px;margin-inline-end:4px;vertical-align:middle;background:var(--equipment-art) center / auto 120% no-repeat}
+.tactic-equipment[data-equipment="megaphone"]{--equipment-art:url('../../../assets/awards/megaphone.webp')}
+.tactic-equipment[data-equipment="stopwatch"]{--equipment-art:url('../../../assets/awards/stopwatch.webp')}
+.tactic-equipment[data-equipment="film-reel"]{--equipment-art:url('../../../assets/awards/film-reel.webp')}
+.card .ticon.ticon-equipment,#hand .fan .card .ticon.ticon-equipment{height:100%;background:radial-gradient(ellipse at 50% 70%,#493c28,#202c3d 60%,#121a27)}
+.ticon-equipment .tactic-equipment{width:100%;height:100%;margin:0;filter:drop-shadow(0 2px 3px #080b10)}
 .card .ctype{font-family:var(--cond);font-weight:800;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--fam)}
 .card .ctext{font-size:10.5px;line-height:1.25;color:#d6cfbd;overflow:hidden;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical}
 .card .cwhy{position:absolute;left:6px;right:6px;bottom:6px;font-size:10.5px;font-weight:700;color:#ffb8b1;background:rgba(0,0,0,.75);border-radius:6px;padding:3px 5px}
@@ -226,7 +236,8 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .challenge-calls{margin:12px 0;font:14px/1.4 system-ui,sans-serif}.challenge-calls ol{margin:6px 0 0;padding-left:20px}.challenge-calls li{margin:0 0 6px}.challenge-calls li span{display:block;color:#c9d3e3}
 .drive-log{margin:10px auto;max-width:520px;text-align:left;font:13px/1.4 system-ui,sans-serif}.drive-log ol{padding-left:20px}
 .mwrap{width:min(1000px,100%);margin:auto;text-align:center}
-.big{font-family:var(--cond);font-weight:800;font-size:clamp(56px,12vw,140px);line-height:.9;letter-spacing:.03em;margin:0}
+.big{font-family:var(--cond);font-weight:800;font-size:clamp(56px,12vw,140px);line-height:.9;letter-spacing:.03em;margin:0;pointer-events:none}
+#driveChallenges,.mwrap .tbtn{position:relative;z-index:2;min-height:44px;padding:10px 18px}
 .gold{background:linear-gradient(180deg,#fff6c8,#ffd84d 50%,#c98a0a);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 24px rgba(255,216,77,.5))}
 .red{background:linear-gradient(180deg,#ffc2bb,#ff5a4f 55%,#9a1a12);-webkit-background-clip:text;background-clip:text;color:transparent}
 .btn{font-family:var(--cond);font-weight:800;letter-spacing:.1em;font-size:20px;padding:12px 26px;border-radius:12px;background:rgba(255,255,255,.07);border:2px solid var(--line);text-transform:uppercase;margin:6px}
@@ -243,19 +254,14 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .statline{font-family:var(--cond);font-weight:800;font-size:18px;letter-spacing:.06em;color:var(--muted)}
 .statline b{color:var(--ink)}
 /* pack */
-.pack{width:220px;height:310px;margin:20px auto;border-radius:16px;position:relative;cursor:pointer;
-  background:linear-gradient(135deg,var(--pa,#c9a227),var(--pb,#5a3b00));border:3px solid #fff;box-shadow:0 0 0 4px #000,0 30px 60px rgba(0,0,0,.7),0 0 60px rgba(255,216,77,.4);animation:bob 1.6s ease-in-out infinite alternate;overflow:hidden}
-.pack::after{content:'';position:absolute;inset:0;background:linear-gradient(115deg,transparent 30%,rgba(255,255,255,.45) 45%,transparent 60%);background-size:250% 100%;animation:sweep 2.2s infinite}
-.pack .pt{position:absolute;left:0;right:0;top:40%;font-family:var(--cond);font-weight:800;font-size:40px;line-height:.9;color:#fff;text-shadow:0 3px 0 #000}
-.pack .ps{position:absolute;left:0;right:0;bottom:22px;font-family:var(--cond);font-weight:800;letter-spacing:.2em;font-size:13px;color:#fff}
-.pack .half{position:absolute;left:0;right:0;background:inherit}
-@keyframes bob{to{transform:translateY(-10px) rotate(1deg)}}
 .reveal{display:flex;gap:16px;justify-content:center;flex-wrap:wrap;margin:24px 0;min-height:230px}
-.slot{width:150px;height:240px;position:relative;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
+.reveal:empty{display:none}
+.slot{width:150px;height:240px;position:relative;perspective:600px;transition:transform .25s cubic-bezier(.2,.8,.2,1)}
 .slot .back,.slot .front{position:absolute;left:0;top:0;width:150px;height:216px}
 .slot .front{display:none}
 .slot.flipped .front{display:block}.slot.flipped .back{display:none}
 .slot .why{position:absolute;left:0;right:0;top:220px}
+.slot:not(.flipped) .why{visibility:hidden}
 .slot .back{border-radius:12px;background:repeating-linear-gradient(45deg,#1a2234 0 10px,#151b29 10px 20px);border:3px solid var(--brass);box-shadow:0 10px 30px rgba(0,0,0,.6);display:grid;place-items:center;font-family:var(--cond);font-weight:800;font-size:22px;color:var(--brass);letter-spacing:.1em}
 .slot .front .card{width:150px;height:216px}
 .slot .front .card .ctext{font-size:11.5px}
@@ -266,7 +272,6 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .slot.chosen{transform:scale(1.18) translateY(-10px);z-index:2}
 .slot.chosen .front .card{box-shadow:0 0 0 3px var(--gold),0 0 60px rgba(255,216,77,.9)}
 .why{font-family:var(--cond);font-weight:800;font-size:12px;letter-spacing:.06em;color:#9fe3ff;margin-top:6px;min-height:16px}
-.legend{position:fixed;left:0;right:0;top:12%;text-align:center;z-index:22;pointer-events:none}
 .pbgrid{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin:14px 0}
 .cutme{cursor:pointer}.cutme:hover .card{box-shadow:0 0 0 3px var(--lose),0 0 30px rgba(255,90,79,.7)}
 
@@ -315,6 +320,8 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .sigart{height:58px;display:flex;align-items:center;gap:6px;background:radial-gradient(circle at 30% 50%,rgba(255,216,77,.25),transparent 70%)}
 .sigface{width:58px;height:58px;border-radius:50%;border:2px solid #ffd84d;background:#111}
 .signum{font-family:var(--cond);font-weight:800;font-size:30px;line-height:1;color:var(--gold)}.signum small{display:block;font-size:12px;letter-spacing:.14em;color:var(--muted)}
+.card.has-signature-illustration .art{border-color:#8b7445}
+#boCard .card.has-signature-illustration .art{height:80px}
 .spot{position:fixed;left:50%;top:-20%;width:70vmax;height:140vh;margin-left:-35vmax;background:radial-gradient(ellipse at 50% 0%,rgba(255,240,200,.28),transparent 65%);pointer-events:none;animation:spot 3s ease-in-out infinite alternate}
 @keyframes spot{to{transform:rotate(4deg)}}
 .bo{display:flex;align-items:center;justify-content:center;gap:20px;flex-wrap:wrap;margin:10px 0}
@@ -451,6 +458,8 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 .recent-snaps li>*{display:block}.recent-snaps small,.recent-snaps li span{color:#c1c9d4}
 .coaching-dialog::backdrop{background:#060a12c9}
 .coaching-dialog h2{margin:0 0 12px;color:#ebcd8c}
+.coaching-dialog--sideline h2{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.coaching-dialog--sideline h2::after{content:"";flex:0 0 clamp(78px,27vw,136px);height:44px;background:url('../../../assets/card-art/sideline-kit.webp') center/contain no-repeat;filter:brightness(1.14) drop-shadow(0 3px 5px #000b)}
 .coaching-dialog p{margin:8px 0 16px}.coaching-dialog label{display:block;font-weight:700;margin:12px 0}
 .coaching-dialog select{display:block;width:100%;margin-top:6px;padding:8px;font:inherit;color:inherit;background:#1c2939;border:1px solid #758399;border-radius:6px}
 .coaching-dialog .btn{min-height:44px}.coaching-dialog .timeout-choice{margin:14px 0}
@@ -477,6 +486,12 @@ button:focus-visible,select:focus-visible,summary:focus-visible{outline:3px soli
 html.motion-reduced *,html.motion-reduced *::before,html.motion-reduced *::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition:none!important}
 html.motion-reduced #wx{display:none!important}
 html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0px!important}
+@media(max-width:600px){
+  #root.full-snap #stage{height:clamp(144px,21dvh,184px)}
+  .full-snap #fieldWrap{flex:1 1 auto;min-height:112px}
+  .full-snap #look{padding:3px 6px;gap:3px}
+  .full-snap #coachingRead{padding:4px 8px;font-size:11.5px}
+}
 @media(max-width:860px){
   #root:not(.quick-snap){display:flex;flex-direction:column;overflow-y:auto;overscroll-behavior:contain}
   #root:not(.quick-snap) #scorebar{position:sticky;top:0;z-index:12;background:#0d1420;flex-shrink:0;order:0;flex-wrap:wrap}
@@ -598,6 +613,9 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
   .full-snap #look{padding:5px 8px;gap:4px}
   #look .tag{font-size:12px}
   #hand .fan .card:not(.k-tactic) .art{display:block;margin:4px 0;height:38px}
+  #hand .fan .card.has-signature-illustration .art{display:block;height:56px;margin:4px 0}
+  #hand .fan .card.k-tactic .art:has(.ticon-equipment){display:block;float:right;width:46px;height:36px;margin:3px 0 2px 5px}
+  #hand .fan .card.k-tactic:has(.ticon-equipment) .ctext{overflow:visible}
   #hand .fan .card .setup-ready{display:block}
   #hand .cmd{background:#192532;border-color:#445461}
   #root.full-snap #hand .cmd{position:sticky;bottom:0;z-index:10;box-shadow:0 -4px 16px #060a12cc}
@@ -615,6 +633,12 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
 .call-forecast b{color:#f6dc91;font-variant-numeric:tabular-nums}
 .quick-footer .call-forecast{grid-column:2;grid-row:1;font:600 12px/1.2 system-ui}
 @media(max-width:600px){.quick-footer .call-forecast{grid-column:1/-1;grid-row:2}}
+@media(max-width:600px){
+  #root.full-snap #stage{height:clamp(144px,21dvh,184px)}
+  .full-snap #fieldWrap{flex:1 1 auto;min-height:112px}
+  .full-snap #look{padding:3px 6px;gap:3px}
+  .full-snap #coachingRead{padding:4px 8px;font-size:11.5px}
+}
 @media(max-width:860px){#hand .cmd .call-forecast{grid-column:1/-1}}
 @media(max-height:820px){
   .mwrap .big{font-size:clamp(34px,7vw,84px)}
@@ -706,6 +730,22 @@ html.motion-reduced #hand .fan .card.dealt{animation:none!important}
 [data-sticker="need_six"]{--sticker-mark:'6';--sticker-fill:#f4cc66}
 [data-sticker="goal_line_stand"]{--sticker-mark:'W';--sticker-fill:#98d7be}
 [data-sticker="four_minute_offense"]{--sticker-mark:'00';--sticker-fill:#a7d9eb}
+#stadiumWalkout{position:fixed;inset:0;margin:0;padding:0;border:0;width:100%;height:100%;max-width:none;max-height:none;background:#080c10;color:#f8f4e8;overflow:hidden}
+#stadiumWalkout[open]{display:grid;place-items:center}
+#stadiumWalkout::backdrop{background:#080c10}
+.walkout-stage{position:relative;display:grid;align-items:end;width:min(100%,177.77dvh,1440px);aspect-ratio:16/9;background:#0c1217}
+.walkout-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none}
+.walkout-matchup{position:relative;margin:0;padding:56px 5% 4%;background:linear-gradient(0deg,rgba(8,12,16,.98),rgba(8,12,16,.67) 54%,transparent);text-align:left}
+.walkout-matchup p{margin:0 0 7px;color:#f1d494;color:color-mix(in srgb,#f1d494 72%,var(--walkout-accent,#f1d494));font:800 15px/1.2 var(--cond);letter-spacing:.15em;text-transform:uppercase}
+.walkout-matchup h2{margin:0;color:#fff;font:800 clamp(28px,5vw,66px)/.98 var(--cond);text-wrap:balance}
+#skipWalkout{position:absolute;z-index:1;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-height:44px;padding:0 14px;border:1px solid #b2a584;border-radius:4px;color:#fff7e0;background:#11181e;font:800 16px/1 var(--cond)}
+#skipWalkout:focus-visible{outline:2px solid #ffe4a4;outline-offset:4px}
+@media(max-aspect-ratio:1/1){
+  .walkout-stage{width:100%;aspect-ratio:auto;background:transparent}
+  .walkout-stage video{position:relative;height:auto;aspect-ratio:16/9}
+  .walkout-matchup{padding:18px max(20px,env(safe-area-inset-left));background:none}
+  .walkout-matchup h2{font-size:clamp(28px,7vw,44px)}
+}
 </style>
 </head>
 <body>
@@ -743,6 +783,8 @@ html.motion-reduced #hand .fan .card.dealt{animation:none!important}
   </form>
 </dialog>
 <img id="trophySrc" src="../../../assets/turntables/rivalry-lantern.webp" alt="" hidden>
+<script type="application/json" id="cs-signature-art-assets">{"base":"../../../assets/card-art"}</script>
+<script type="application/json" id="cs-walkout-assets">{"home":"../../../assets/walkout/tunnel-home.mp4","poster":"../../../assets/walkout/tunnel-poster.webp"}</script>
 <canvas id="fx"></canvas>
 <div class="sr" id="sr" aria-live="assertive"></div>
 

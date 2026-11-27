@@ -3,7 +3,7 @@
 'use strict';
 const {data:D,resolver:R,roster:Ro,battle:B,packs:P,evolution:EV,world:W,signatures:SG,classes:CL}=window.CallSheet;
 const O=window.CallSheet.onboarding;
-const FX=window.SliceFX,S=FX.sfx,PT=FX.particles,{card,esc,paintPortrait}=window.SliceCards;
+const FX=window.SliceFX,S=FX.sfx,PT=FX.particles,{card,esc,paintPortrait,tacticEquipment}=window.SliceCards;
 const $=s=>document.querySelector(s);
 const STORE='callsheet.slice.v1';
 
@@ -18,7 +18,7 @@ const HOST=(()=>{try{return !challengeFrame&&!quickBattleFrame&&window.parent!==
 const DYN=HOST?HOST.launch():null;
 function loadSave(){
   if(DYN)return{team:null,world:null,playbook:DYN.playbook?JSON.parse(JSON.stringify(DYN.playbook)):P.newPlaybook(),settings:DYN.settings||null,activeBattle:DYN.activeBattle||null,combos:[...(DYN.combos||[])],games:DYN.games||0,seenHelp:!!DYN.seenHelp};
-  try{const t=localStorage.getItem(STORE);if(t)return JSON.parse(t)}catch(e){}return null;
+  try{const t=localStorage.getItem(STORE);if(t){const s=JSON.parse(t);if(s&&typeof s==='object'&&!Array.isArray(s)){s.playbook=(s.playbook&&typeof s.playbook==='object')?s.playbook:P.newPlaybook();s.settings=(s.settings&&typeof s.settings==='object')?s.settings:{mode:'key',control:'offense',fast:false,sound:true};s.combos=Array.isArray(s.combos)?s.combos:[];s.games=Number.isFinite(Number(s.games))?s.games:0;return s}}}catch(e){}return null;
 }
 function writeSave(){
   if(campaignSave||DYN?.classicDrive)return;
@@ -430,8 +430,8 @@ function forecastReadHTML(){
   return `<small class="look-certainty">${certain.known.length?`Known: ${esc(certain.known.join(', '))}.`:''}${certain.guess.length?` Still a guess: ${esc(certain.guess.join(', '))}.`:''}</small>`;
 }
 function rangeText([low,high]){return low===high?String(low):`${low}–${high}`}
-function forecastNumbers({yards,first,confidence}){
-  const exact=confidence==='Shown look'||confidence==='Full film';
+function forecastNumbers({yards,first}){
+  const exact=yards[0]===yards[1]&&first[0]===first[1];
   return exact?{yards:yards[0].toFixed(1),first:rangeText(first)}:{
     yards:rangeText([Math.floor(yards[0]),Math.ceil(yards[1])]),
     first:rangeText([5*Math.floor(first[0]/5),5*Math.ceil(first[1]/5)])
@@ -463,14 +463,20 @@ function callForecastHTML(compact=false,recommendation=null){
     chance=rangeText([5*Math.floor(range.first[0]/5),5*Math.ceil(range.first[1]/5)])+'%';
     label=fog.spread===2?'Low scouting confidence':'Moderate scouting confidence';
   }else{
-    const projection=B.preview(b,req.side,choice);
-    const rows=projection?.ev?[{weight:1,ev:projection.ev}]:(projection?.vs||[]);
-    const total=rows.reduce((sum,row)=>sum+row.weight,0);
-    if(!total)return '';
-    const average=key=>rows.reduce((sum,row)=>sum+row.weight*row.ev[key],0)/total;
-    yards=average('yards').toFixed(1);
-    chance=Math.round(100*average('first'))+'%';
-    label=confidence==null?'From the shown look':'High scouting confidence';
+    const read=B.lookUncertain?.(req.look)?B.quickForecast(b,req,choice,confidence):null;
+    if(read){
+      const numbers=forecastNumbers(read);
+      yards=numbers.yards;chance=numbers.first+'%';label=read.confidence;
+    }else{
+      const projection=B.preview(b,req.side,choice);
+      const rows=projection?.ev?[{weight:1,ev:projection.ev}]:(projection?.vs||[]);
+      const total=rows.reduce((sum,row)=>sum+row.weight,0);
+      if(!total)return '';
+      const average=key=>rows.reduce((sum,row)=>sum+row.weight*row.ev[key],0)/total;
+      yards=average('yards').toFixed(1);
+      chance=Math.round(100*average('first'))+'%';
+      label=confidence==null?'From the shown look':'High scouting confidence';
+    }
   }
   const goal=req.situation.field+req.situation.distance>=100;
   const objective=forecastObjective(goal?'touchdown':'first',req.role,req.situation.down);
@@ -664,7 +670,8 @@ function tacticNoteHTML(quick=false){
   if(!note)return '<p class="call-tactic-note">Hold Command for the next call.</p>';
   const hand=req.options.tactics,slot=note.selected?sel.tac[0]:hand.find(t=>t.id===note.id)?.slot;
   const rest=sel.tac.slice(1).map(i=>hand.find(t=>t.slot===i)?.card.name).filter(Boolean);
-  const action=quick&&slot!=null?`<button class="tbtn" type="button" data-tactic-slot="${slot}" ${hand.find(t=>t.slot===slot)?.card.info?'':'aria-pressed="'+note.selected+'"'}>${note.selected?'Remove':hand.find(t=>t.slot===slot)?.card.info?'Play now':'Add tactic'} · ${esc(note.name)} · ${note.cost} CMD</button>`:'';
+  const tactic=hand.find(t=>t.slot===slot);
+  const action=quick&&slot!=null?`<button class="tbtn" type="button" data-tactic-slot="${slot}" ${tactic?.card.info?'':'aria-pressed="'+note.selected+'"'}>${tacticEquipment(tactic?.id)}${note.selected?'Remove':tactic?.card.info?'Play now':'Add tactic'} · ${esc(note.name)} · ${note.cost} CMD</button>`:'';
   return `<div class="call-tactic-note">${action||`<b>${note.selected?'Selected':'Pair with'}: ${esc(note.name)} · ${note.cost} CMD</b>`} <span>${esc(note.reason)}${rest.length?' Also selected: '+rest.map(esc).join(', ')+'.':''}</span></div>`;
 }
 function quickTacticsHTML(){
@@ -680,7 +687,8 @@ function quickTacticsHTML(){
         `With this tactic · ${yardLabel}${before.yards} → ${after.yards} yd · ${objective} ${before.first}% → ${after.first}%.`;
     }
     const effect=`quickTacticEffect${t.slot}`;
-    return `<li><button class="tbtn" type="button" data-tactic-slot="${t.slot}" aria-pressed="${t.active}" aria-label="${esc(t.name)} · ${t.cost} Command" aria-describedby="${effect}">${t.active?'Remove tactic':'Add tactic'} · ${esc(t.name)} · ${t.cost} CMD</button><small id="${effect}">${esc(t.reason)}${estimate?` <span>${esc(estimate)}</span>`:''}</small></li>`;
+    const art=tacticEquipment(req.options.tactics.find(item=>item.slot===t.slot)?.id);
+    return `<li><button class="tbtn" type="button" data-tactic-slot="${t.slot}" aria-pressed="${t.active}" aria-label="${esc(t.name)} · ${t.cost} Command" aria-describedby="${effect}">${art}${t.active?'Remove tactic':'Add tactic'} · ${esc(t.name)} · ${t.cost} CMD</button><small id="${effect}">${esc(t.reason)}${estimate?` <span>${esc(estimate)}</span>`:''}</small></li>`;
   }).join('')}</ul>`;
 }
 function coachingHTML(){
@@ -1119,7 +1127,7 @@ function renderQuickHand(h){
   }
   const infoBtns=(o.tactics||[]).filter((t,i,hand)=>t.card.info&&t.cost<=o.command&&!tacticBlock(t)&&hand.findIndex(c=>c.id===t.id)===i)
     .map(t=>({t,facts:scoutFacts(t)})).filter(({facts})=>facts.length)
-    .map(({t,facts})=>`<button type="button" class="tbtn" data-quick-info="${t.slot}" title="Confirm ${esc(facts.map(id=>scoutLabels[id]||id).join(', '))}. ${esc(t.card.text)}">Scout: ${esc(t.card.name)} · ${t.cost} CMD</button>`).join('');
+    .map(({t,facts})=>`<button type="button" class="tbtn" data-quick-info="${t.slot}" title="Confirm ${esc(facts.map(id=>scoutLabels[id]||id).join(', '))}. ${esc(t.card.text)}">${tacticEquipment(t.id)}Scout: ${esc(t.card.name)} · ${t.cost} CMD</button>`).join('');
   const personnel=personnelSelect('data-quick-personnel');
   const payoff=comboPayoffButton();
   const quickBarHTML=(chips.length||infoBtns||personnel||payoff)?`<div class="quick-bar">${personnel}${chips.join('')}${infoBtns}${payoff}</div>`:'';
@@ -1193,6 +1201,7 @@ function renderHand(){
   if(!fullSheet){renderQuickHand(h);return}
   const freshDeal=b.seriesKey!==lastHandSeries;lastHandSeries=b.seriesKey;
   const o=req.options,role=req.role;
+  const teamColors=teamOf(req.side).colors;
   const play=o.plays.find(p=>p.id===sel.play);
   const previousScroll=h.querySelector('.sheet-cards')?.scrollTop||0;
   h.innerHTML='';
@@ -1201,7 +1210,7 @@ function renderHand(){
     const c=p.card,notch=!p.blocked&&B.counterBadge(req,c);
     const combo=!p.blocked&&p.cost<=o.command&&B.comboRead(b,req,c);
     const pip=!combo&&B.setupProgress?.(b,c,role)?.label;
-    const el=card(p.id,{cost:p.cost,base:p.base,blocked:!!p.blocked,selected:sel.play===p.id,why:p.blocked,notch,setupPip:pip||'',mastery:req.side===b.user?EV.progress(save.playbook,p.id):null});
+    const el=card(p.id,{cost:p.cost,base:p.base,blocked:!!p.blocked,selected:sel.play===p.id,why:p.blocked,notch,setupPip:pip||'',mastery:req.side===b.user?EV.progress(save.playbook,p.id):null,teamColors});
     if(freshDeal){el.classList.add('dealt');el.style.setProperty('--deal-i',i)}
     const n=o.plays.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*4}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);el.style.zIndex=i;
     if(combo){
@@ -1223,7 +1232,7 @@ function renderHand(){
   const fanT=document.createElement('div');fanT.className='fan';fanT.style.position='relative';fanT.innerHTML='<span class="fanlab">TACTICS</span>';
   o.tactics.forEach((t,i)=>{
     const why=tacticBlock(t,play),selected=sel.tac.includes(t.slot);
-    const el=card(t.id,{cost:t.cost,selected,blocked:!!why&&!selected,why:selected&&why?'Remove: '+why:why,synergy:play?tacticSynergy(t,play):''});
+    const el=card(t.id,{cost:t.cost,selected,blocked:!!why&&!selected,why:selected&&why?'Remove: '+why:why,synergy:play?tacticSynergy(t,play):'',teamColors});
     if(freshDeal){el.classList.add('dealt');el.style.setProperty('--deal-i',o.plays.length+i)}
     if(!t.card.info)el.setAttribute('aria-pressed',String(selected));
     const n=o.tactics.length,mid=(n-1)/2;el.style.setProperty('--rot',`${(i-mid)*5}deg`);el.style.setProperty('--arc',`${Math.abs(i-mid)**2*3}px`);
@@ -1380,6 +1389,44 @@ modal.addEventListener('keydown',ev=>{
 });
 
 // ================================================================ flow
+function stadiumWalkout(home,away,{postseason,rivalry,homeOpener,neutral}={}){
+  const label=postseason||(rivalry?'Rivalry Week':homeOpener?'Home Opener':'');
+  if(!label||FX.reduce||FX.skipping||save.settings.fast||document.hidden)return null;
+  let assets;
+  try{assets=JSON.parse($('#cs-walkout-assets')?.textContent||'{}')}catch{return null}
+  const preferred=(postseason||rivalry)?assets.night:assets.home;
+  const clip=preferred||assets.home||assets.night;
+  if(!clip)return null;
+  const dialog=document.createElement('dialog');
+  dialog.id='stadiumWalkout';dialog.setAttribute('aria-label','Stadium walkout');
+  const accent=home.colors?.[1];
+  if(/^#[\da-f]{6}$/i.test(accent||''))dialog.style.setProperty('--walkout-accent',accent);
+  dialog.innerHTML=`<div class="walkout-stage"><video muted playsinline aria-hidden="true"></video><div class="walkout-matchup"><p>${esc(label)}</p><h2>${esc(away.name)} ${neutral?'vs':'at'} ${esc(home.name)}</h2></div></div><button type="button" id="skipWalkout" autofocus>Skip walkout</button>`;
+  const video=dialog.querySelector('video'),skip=dialog.querySelector('button');
+  video.muted=true;
+  if(assets.poster)video.poster=assets.poster;
+  return new Promise(resolve=>{
+    let timeout,finished=false;
+    const listeners=new AbortController();
+    const finish=()=>{
+      if(finished)return;
+      finished=true;clearTimeout(timeout);listeners.abort();
+      video.pause();video.removeAttribute('src');video.load();
+      if(dialog.open)dialog.close();
+      dialog.remove();resolve();
+    };
+    const {signal}=listeners;
+    dialog.addEventListener('cancel',event=>{event.preventDefault();finish()},{signal});
+    skip.addEventListener('click',finish,{signal});
+    video.addEventListener('ended',finish,{signal});
+    video.addEventListener('error',finish,{signal});
+    video.addEventListener('playing',()=>{clearTimeout(timeout);timeout=setTimeout(finish,4600)},{signal,once:true});
+    document.addEventListener('visibilitychange',()=>{if(document.hidden)finish()},{signal});
+    document.body.appendChild(dialog);
+    timeout=setTimeout(finish,950);
+    try{dialog.showModal();video.src=clip;video.play().catch(finish)}catch(error){finish()}
+  });
+}
 function beginPlayback(){
   const root=$('#root');
   root.classList.add('playback');
@@ -1662,6 +1709,7 @@ $('#sidelineBtn').onclick=()=>{
        <p>Calls designed for him give his duels +1 until he records two carries or catches. The defense spots his productive touches sooner.</p>`):''}
     ${threat?`<p>Recent film · ${esc(b.personnel[threat.playerId]?.name||'The same player')} gained ${threat.yards} yards on ${threat.count} productive ${esc(D.PLAYS[threat.play].name)} call${threat.count===1?'':'s'}.</p>`:''}
     <div>${editable?'<button type="button" class="btn go" id="sidelineApply">Apply</button> ':''}<button type="button" class="btn" id="sidelineCancel">${editable?'Cancel':'Close'}</button></div>`);
+  dialog.classList.add('coaching-dialog--sideline');
   dialog.querySelector('#sidelineCancel').onclick=()=>dialog.close();
   if(!editable)return;
   dialog.querySelector('#sidelineApply').onclick=()=>{
@@ -1833,23 +1881,23 @@ function finalScreen(){
   const review=m.querySelector('[data-film-deck]');if(review)review.onclick=()=>window.CallSheet.playbookUI.open(save.playbook,{maxStored:DYN?500:Infinity,maxUnusedSignatures:DYN?100:Infinity,team:teamOf(b.user),onSave:pb=>{save.playbook=pb;writeSave()},onClose:()=>{refreshMilestone();review.focus()}});
   bindCoachedSnapReview(m);bindMilestone();bindBank();$('#openPack').onclick=()=>b._breakout&&!b._breakoutResolved?breakoutScreen(won):packScreen(won);
 }
-async function packScreen(won){
+function packScreen(won){
   S.init();
   const frozen=b._gamePack,pack=frozen?{...frozen,cards:P.gamePackChoices(save.playbook,frozen,HOST.rewardContext().worldTaken)}:drawGamePack(won);
-  const post=P.STAGE_PACKS?.[pack.type]||null;
-  const pc=pack.type==='title'?['#fff2b0','#8a5a00']:post?['#d8dee9','#2c3448']:pack.type==='rivalry'?['#e0322a','#3a0705']:won?['#ffcc33','#7a4a00']:['#3f8fe0','#0d2a55'];
+  const UI=window.CallSheet.playbookUI;
   const m=$('#modal');
+  UI.injectPackCSS();
   m.innerHTML=`<div class="mwrap"><p class="big ${won?'gold':''}" style="font-size:clamp(40px,7vw,80px)">${esc(pack.title.toUpperCase())}</p><p class="statline">${esc(pack.subtitle)}</p>
-    <button type="button" class="pack" id="pk" aria-label="Open pack" style="--pa:${pc[0]};--pb:${pc[1]}"><div class="pt">${post?post.wrap:pack.type==='rivalry'?'RIVALRY':won?'VICTORY':'FILM<br>STUDY'}</div><div class="ps">TAP TO OPEN</div></button>
-    <div class="reveal" id="rv"></div><div id="pkMsg" class="statline"></div><div id="pkBtns">${bankButton()}</div></div>`;
+    ${UI.packWrapperHTML(pack,{battle:true})}
+    <div class="reveal" id="rv"></div><div id="pkMsg" class="statline" aria-live="polite"></div><div id="pkBtns">${bankButton()}</div></div>`;
   bindBank();
   const pk=$('#pk');
+  pk.focus({preventScroll:true});
   pk.onclick=async()=>{
-    pk.onclick=null;$('#bankPack')?.remove();pk.style.animation='none';pk.querySelector('.ps').textContent='';
-    for(let i=0;i<3;i++){S.rattle(i);await FX.anim(pk,[{transform:'rotate(0)'},{transform:`rotate(${(i+1)*3}deg) scale(${1+i*.03})`},{transform:`rotate(${-(i+1)*3}deg) scale(${1+i*.03})`},{transform:'rotate(0)'}],{duration:240+i*60})}
-    S.rip();const r=pk.getBoundingClientRect();
-    FX.anim($('#flash'),[{opacity:.9},{opacity:0}],300);PT.burst(r.left+r.width/2,r.top+r.height/2,{n:90,speed:11,colors:won?['#fff','#ffe066','#ffb03c']:['#fff','#9ad8ff','#3fc1ff']});
-    await FX.anim(pk,[{transform:'scale(1)',opacity:1},{transform:'scale(1.4)',opacity:0}],260);pk.remove();
+    $('#bankPack')?.remove();S.rip();
+    await UI.peelPack(pk,{reduced:FX.reduce||FX.skipping,speed:FX.speed});
+    if(!pk.isConnected)return;
+    pk.remove();
     await revealCards(pack);
   };
 }
@@ -1858,25 +1906,20 @@ async function revealCards(pack){
   // Card backs in your program's colors.
   const tc=b?.teams?.[b.user]?.colors||[],target=DYN?HOST.rewardContext().pursuit:null;
   const fit=P.packFit(save.playbook,pack.cards,{target,reserveLimit:DYN?500:Infinity});
-  const slots=pack.cards.map(c=>{const s=document.createElement('div');s.className='slot';s.innerHTML=`<div class="back" style="${tc[0]?`--tb1:${esc(tc[0])};--tb2:${esc(tc[1]||tc[0])}`:''}">${DYN?esc(teamOf(b.user).short):'CALL<br>SHEET'}</div><div class="front"></div><div class="why"></div>`;
-    s.querySelector('.front').appendChild(card(c.id,{finish:null}));s.querySelector('.why').textContent=[c.why,target?.missing.includes(c.id)?'For your '+target.name+' album':''].filter(Boolean).join(' · ');rv.appendChild(s);return s});
-  for(const [i,s] of slots.entries()){S.whoosh();FX.anim(s,[{transform:'translateY(-300px) rotate(-20deg) scale(.4)',opacity:0},{transform:'none',opacity:1}],{duration:380,easing:'cubic-bezier(.2,1.3,.4,1)'});await FX.wait(120)}
-  await FX.wait(300);
-  for(const [i,s] of slots.entries()){
-    const c=pack.cards[i];
-    if(c.rarity==='legendary'){
-      $('#rays').classList.add('on');document.body.insertAdjacentHTML('beforeend','<div class="legend" id="lg"><p class="big gold">LEGENDARY</p></div>');
-      S.groan();await FX.wait(250);S.fanfare();S.crowd(2.2,.6);FX.shake($('#modal'),2.2);
-    }
-    await FX.anim(s,[{transform:'scaleX(1)'},{transform:'scaleX(0) scaleY(1.06)'}],{duration:c.rarity==='common'?110:180,easing:'ease-in'});
+  const slots=pack.cards.map(c=>{const s=document.createElement('div');s.className='slot';s.inert=true;s.innerHTML=`<div class="back" aria-hidden="true" style="${tc[0]?`--tb1:${esc(tc[0])};--tb2:${esc(tc[1]||tc[0])}`:''}">${DYN?esc(teamOf(b.user).short):'CALL<br>SHEET'}</div><div class="front"></div><div class="why"></div>`;
+    s.querySelector('.front').appendChild(card(c.id,{finish:null,teamColors:tc}));s.querySelector('.why').textContent=[c.why,target?.missing.includes(c.id)?'For your '+target.name+' album':''].filter(Boolean).join(' · ');rv.appendChild(s);return s});
+  if(FX.reduce||FX.skipping)slots.forEach(s=>s.classList.add('flipped'));
+  else await Promise.all(slots.map(async(s,i)=>{
+    if(i)await FX.wait(i*55);
+    await FX.anim(s.querySelector('.back'),[{transform:'rotateY(0)'},{transform:'rotateY(90deg)'}],{duration:125,easing:'ease-in'});
     s.classList.add('flipped');
-    FX.anim(s,[{transform:'scaleX(0) scaleY(1.06)'},{transform:'scaleX(1.08)'},{transform:'none'}],{duration:c.rarity==='common'?160:320,easing:'cubic-bezier(.2,1.6,.4,1)'});
-    const r=s.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
-    if(c.rarity==='common'){S.tick(8)}
-    if(c.rarity==='rare'){S.chime();FX.anim($('#flash'),[{opacity:.35},{opacity:0}],250);PT.burst(cx,cy,{n:50,colors:['#ffe066','#fff6d5','#ffb03c'],speed:7})}
-    if(c.rarity==='legendary'){PT.burst(cx,cy,{n:160,speed:13,colors:['#ff5a5a','#ffd84d','#72f08a','#3fc1ff','#c07bff','#fff']});PT.confetti(120);await FX.wait(1200);document.getElementById('lg')?.remove();$('#rays').classList.remove('on')}
-    await FX.wait(c.rarity==='common'?260:600);
-  }
+    await FX.anim(s.querySelector('.front'),[{transform:'rotateY(-90deg)'},{transform:'none'}],{duration:165,easing:'ease-out'});
+  }));
+  if(!rv.isConnected)return;
+  const legendary=pack.cards.findIndex(c=>c.rarity==='legendary');
+  if(legendary>=0){S.fanfare();const r=slots[legendary].getBoundingClientRect();PT.burst(r.left+r.width/2,r.top+r.height/2,{n:50,speed:7,colors:['#f4daa4','#9fd9f6','#cba8fa','#fff']})}
+  else if(pack.cards.some(c=>c.rarity==='rare'))S.chime();
+  else S.tick(8);
   if(fit){
     const i=pack.cards.findIndex(c=>c.id===fit.id),tag=slots[i].querySelector('.why'),button=slots[i].querySelector('.front button');
     tag.dataset.packFit=fit.id;tag.textContent='Coach’s pick';tag.title=fit.reason;
@@ -1897,8 +1940,9 @@ async function revealCards(pack){
     bar.querySelectorAll('[data-pack-destination]').forEach(button=>button.onclick=()=>choose(pack,slots,i,button.dataset.packDestination));
     (bar.querySelector('[data-pack-destination]:not(:disabled)')||bar.querySelector('#bankPack'))?.focus();
   };
-  slots.forEach((s,i)=>{s.classList.add('pickable');s.onclick=()=>preview(i)});
+  slots.forEach((s,i)=>{s.inert=false;s.classList.add('pickable');s.onclick=()=>preview(i)});
   bar.innerHTML=bankButton();bindBank();
+  (rv.querySelector('.front button')||bar.querySelector('#bankPack'))?.focus({preventScroll:true});
 }
 async function choose(pack,slots,i,want){
   if(b._packPicked||b._closed||!slots[i].classList.contains('pickable'))return;
@@ -2390,6 +2434,8 @@ function dynastyStart(){
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);$('#ticker').innerHTML='';
   const begin=async()=>{
+    const walkout=stadiumWalkout(teamOf('home'),teamOf('away'),{postseason:DYN.stage&&(DYN.label||'Postseason'),rivalry:DYN.rivalry,homeOpener:DYN.homeOpener,neutral:DYN.neutral});
+    if(walkout)await walkout;
     beginPlayback();
     for(const mv of DYN.moves||[]){
       if(mv.how==='ring'){$('#rays').classList.add('on');S.fanfare();await callout('RING OF HONOR','',1600,`${mv.name} · ${mv.exit||'graduated'} · his card retires`);$('#rays').classList.remove('on')}
@@ -2437,7 +2483,7 @@ function resumeBattle(){
   b._lastScore={...b.game.score};setWeather(b.weather);drawField();renderBug();setMarkers(null);
   $('#modal').classList.remove('on');$('#ticker').innerHTML='';if(!req&&b.game.status!=='final')go(null);else decide();
 }
-function startGame(){
+async function startGame(){
   const oid=oppId(),me=W.teamFor(save.team,save.playbook,save.world.userLineup),opp=W.teamFor(oid,save.world.programs[oid].playbook,save.world.programs[oid].lineup);
   b=B.create({coachingWindows:true,defensivePlan:'auto',openingDrive:B.headsetSettings(save.settings.headset).openingDrive,home:me,away:opp,user:'home',mode:save.settings.mode,control:save.settings.control,headset:save.settings.headset,seed:`slice:${save.team}:${save.games}`,weather:weatherFor(),rivalry:W.isRivalry(save.world)});
   if(save.settings.guidedDrivePending)O.start(b);
@@ -2445,6 +2491,8 @@ function startGame(){
   seen=0;staffFrom=0;staffRecaps=[];sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);
   $('#ticker').innerHTML='';
+  const walkout=stadiumWalkout(me,opp,{rivalry:b.rivalry,homeOpener:save.world.week%save.world.order.length===0});
+  if(walkout)await walkout;
   beginPlayback();
   callout('KICKOFF','small',700,`${me.name} vs ${opp.name}`).then(()=>go(null));
 }
