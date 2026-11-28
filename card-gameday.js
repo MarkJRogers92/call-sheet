@@ -2054,13 +2054,25 @@ function normalizeCallSheet(u){
     const dash=document.querySelector('#dashboard');if(!dash||dash.__deciderObs||typeof MutationObserver!=='function')return;
     dash.__deciderObs=new MutationObserver(()=>{try{paintDecidingSnap()}catch(err){}});dash.__deciderObs.observe(dash,{childList:true});
   }
+  function saturdayVisitsText(me){
+    const ownerOf=globalThis.DynastyRecruitingActions?.visitWeekendOwner;
+    const guests=(universe.recruits||[]).filter(r=>{
+      if(!r.visit||r.committed||r.visitWeek!==universe.week+1)return false;
+      const owner=ownerOf?.(r);
+      return !owner||owner===String(me.id);
+    }).length;
+    return guests?`${guests} priority guest${guests===1?'':'s'} this week`:'No visit booked';
+  }
+  extendRender('dashboard',()=>{
+    const visits=document.querySelector('#cardDeskLink [data-rundown-visits]'),me=selected();
+    if(visits&&me)visits.textContent=saturdayVisitsText(me);
+  });
   function saturdayRundownHTML(){
     const me=selected();if(!me||!['regular','postseason'].includes(universe?.phase))return '';
     const g=currentCardGame(),opp=g?T(g.home===me.name?g.away:g.home):null;
     const oppCell=g&&opp?`<div class="cpn-rundown-cell"><span>Opponent</span><b>${g.postseason?escH(g.label):`Week ${g.week} · ${g.home===me.name?'vs':'at'} ${escH(opp.name)}`}</b><button type="button" class="cpn-link" data-coach-cards>Coach with Cards</button></div>`
       :`<div class="cpn-rundown-cell"><span>Opponent</span><b>Week ${universe.week+1}</b><button type="button" class="cpn-link" data-card-dynasty-tab="gamelab">Game Plan</button></div>`;
-    const visitors=(universe.recruits||[]).filter(r=>r.visit&&!r.committed&&r.visitWeek===universe.week+1&&(!globalThis.DynastyRecruitingActions?.visitWeekendOwner?.(r)||globalThis.DynastyRecruitingActions.visitWeekendOwner(r)===String(me.id)));
-    const visitCell=`<div class="cpn-rundown-cell"><span>Visits</span><b>${visitors.length?`${visitors.length} priority guest${visitors.length===1?'':'s'} this week`:'No visit booked'}</b><button type="button" class="cpn-link" data-card-dynasty-tab="recruiting">Recruiting</button></div>`;
+    const visitCell=`<div class="cpn-rundown-cell"><span>Visits</span><b data-rundown-visits>${saturdayVisitsText(me)}</b><button type="button" class="cpn-link" data-card-dynasty-tab="recruiting">Recruiting</button></div>`;
     const starters=typeof roleDesignations==='function'?Object.values(roleDesignations(me).off||{}).concat(Object.values(roleDesignations(me).def||{})).filter(Boolean):[];
     const outCount=starters.filter(p=>typeof gameAvailable==='function'&&!gameAvailable(p)).length;
     const limCount=starters.filter(p=>p?.injury?.status==='limited').length;
