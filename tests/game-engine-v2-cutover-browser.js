@@ -46,7 +46,9 @@ const startNewDynasty=async page=>{await page.goto('file://'+path.join(__dirname
     await page.close();
 
     const quick=await browser.newPage({viewport:{width:1280,height:900}});quick.on('console',m=>{if(m.type()==='error')errors.push(m.text())});quick.on('pageerror',e=>errors.push(String(e)));
-    await startNewDynasty(quick);const quickBefore=await quick.evaluate(()=>window.DynastyGameEngineV2LabBridge.cutoverDebug());
+    await startNewDynasty(quick);
+    await quick.evaluate(()=>window.DynastyCardGameDay?.setIntegration?.('sim-with-cards',false));
+    const quickBefore=await quick.evaluate(()=>window.DynastyGameEngineV2LabBridge.cutoverDebug());
     if(!await quick.locator('#simSeason').isVisible())await quick.click('#programDetails > summary');
     await quick.click('#simSeason');await quick.waitForFunction(()=>window.DynastyGameEngineV2LabBridge.cutoverDebug().phase!=='regular',{timeout:60000});
     const quickAfter=await quick.evaluate(()=>window.DynastyGameEngineV2LabBridge.cutoverDebug());
