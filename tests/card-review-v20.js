@@ -169,10 +169,10 @@ test('rested personnel stay out of every alignment until the lead falls to twent
     B.setBackfield(resumed,'home','starter');B.setGrouping(resumed,'home','11');
     return ['RB','Z','TE'].map(role=>resumed.teams.home.lineup.off[role].id);
   }
-  assert.ok(nextSnap(21).every(id=>!starterIds.includes(id)));
-  assert.deepEqual(nextSnap(20),starterIds);
-  assert.deepEqual(nextSnap(27),starterIds);
-  assert.ok(nextSnap(28).every(id=>!starterIds.includes(id)));
+  assert.ok(nextSnap(17).every(id=>!starterIds.includes(id)));
+  assert.deepEqual(nextSnap(16),starterIds);
+  assert.deepEqual(nextSnap(23),starterIds);
+  assert.ok(nextSnap(24).every(id=>!starterIds.includes(id)));
   assert.deepEqual(resumed.log.filter(e=>e.type==='rest').map(e=>e.resting),[true,false,true]);
 });
 
