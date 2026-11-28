@@ -1091,7 +1091,7 @@ function quickSheetHTML(view,detailsOpen){
   const matchup=selected?matchupHTML():'';
   if(!selected)clearGlow();
   let tacticOptionHTML='';
-  if(selected&&req.situation){
+  if(selected&&req.situation&&typeof snapChoice==='function'&&typeof B.quickTactics==='function'){
     const qTactics=B.quickTactics(b,req,snapChoice(selectedTactics()),sel.tac,DYN?.scouting?.confidence);
     const bestTac=qTactics.find(t=>!t.active&&t.without&&t.with);
     if(bestTac){

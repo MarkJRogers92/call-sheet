@@ -166,6 +166,7 @@ test('both units can earn their set-up combo in the same snap, without lowering 
   pb.off.base[1]='power';home.decks=P.decksOf(pb);
   const b=B.create({home,away:Ro.preset('aerial'),user:'home',mode:'snap',control:'offense',seed:'combo-receipts-0'});
   B.advance(b);
+  Object.assign(b.game,{down:1,distance:20,fieldPosition:8});
   const zone={coverage:'zone',pressure:0,shell:2};
   b.drive={key:b.game.drive+':home',fams:['quick','quick'],plays:['quick_slant','stick'],calls:[zone,zone],
     results:[{family:'quick',yards:5},{family:'quick',yards:5}],combos:[]};
