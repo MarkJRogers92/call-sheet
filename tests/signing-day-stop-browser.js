@@ -14,7 +14,7 @@ const {startNewDynasty}=require('./helpers/start-new-dynasty');
   for(const width of [1280,390]){
    const page=await browser.newPage({viewport:{width,height:width<500?844:900}}),errors=[];
    page.on('pageerror',error=>errors.push(String(error)));page.on('dialog',d=>d.accept());
-   await page.goto(testPageURL());
+   await page.goto(testPageURL(),{waitUntil:'domcontentloaded'});
    await startNewDynasty(page,{staffRecruiting:true});
    await page.evaluate(()=>document.querySelector('#simSeason').click());
    await page.waitForFunction(()=>window.__DL_TEST__.preseasonDebug().phase!=='regular',null,{timeout:180000});
