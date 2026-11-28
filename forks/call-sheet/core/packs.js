@@ -264,9 +264,9 @@ function gamePackChoices(pb,pack,taken=[]){
 // Auto retains the legacy game-pack default: use a deck slot first, otherwise keep the card unselected.
 function rewardDestination(pb,c,game,reserveLimit,want='auto'){
   if(game&&c.kind==='upgrade')return want==='auto'||want==='upgrade'?'upgrade':'invalid';
-  if(!['auto','deck','collection'].includes(want)||!game&&want==='deck')return 'invalid';
-  const pile=D.TACTICS[c.id]?'tactics':'wrinkles',side=cardDef(c.id).side;
-  if(game&&want!=='collection'&&pb[side][pile].length<pb.capacity[pile])return 'active';
+  const def=cardDef(c.id);if(!def||!['auto','deck','collection'].includes(want))return 'invalid';
+  const pile=D.TACTICS[c.id]?'tactics':'wrinkles',side=def.side;
+  if((want==='deck'||game&&want==='auto')&&pb[side][pile].length<pb.capacity[pile])return 'active';
   if(want==='deck')return 'full';
   return (pb.reserve?.[side]?.[pile]?.length||0)<reserveLimit?'stored':'full';
 }
@@ -405,7 +405,7 @@ function awardAchievements(pb,b,side){
 }
 // Packs earned away from a game (signing day, boosters). Cards are drawn when the pack is earned and stored with it,
 // so reopening never rerolls. weights: {category: weight}; categories are a play's family, a call's family, or
-// offTactic / defTactic. bonusRare raises the rare odds. The pick goes to the collection, never over the deck limits.
+// offTactic / defTactic. bonusRare raises the rare odds. The pick can be stored or equipped at claim time.
 function categoryOf(c){const d=cardDef(c.id)||{};return c.kind==='tactic'?(c.side==='off'?'offTactic':'defTactic'):d.family||'other'}
 function rewardPack(pb,{seed,weights={},n=4,bonusRare=0,worldTaken=[],title='Reward Pack',subtitle='',type='reward'}={}){
   const rng=DynastyRng.create(`reward:${seed}`),used=new Set(),cards=[];
@@ -424,11 +424,12 @@ function rewardPack(pb,{seed,weights={},n=4,bonusRare=0,worldTaken=[],title='Rew
   }
   return{type,title,subtitle,cards:cards.map(id=>awardedId(pb,id))};
 }
-// Put an earned card straight into the collection (stored, ready to equip).
+// Earned cards go to the collection by default. Pack claims can choose an open deck slot.
 function grantCard(pb,id,how={}){
   id=awardedId(pb,id);const c=cardDef(id);if(!c)throw new Error(`Unknown card ${id}`);
   const side=c.side,pile=D.TACTICS[id]?'tactics':'wrinkles';
-  ensureCollection(pb)[side][pile].push(id);if(how.finish!==false)rollFinish(pb,id,how.kind||'grant');
+  const target=how.inDeck?pb[side]:ensureCollection(pb)[side];
+  target[pile].push(id);if(how.finish!==false)rollFinish(pb,id,how.kind||'grant');
   if(D.rarityOf(id)==='legendary'&&!pb.legendaries.includes(id))pb.legendaries.push(id);
   (pb.history??=[]).push({id,kind:how.kind||'program',side,...(how.why?{why:String(how.why).slice(0,80)}:{})});
   return{side,pile};

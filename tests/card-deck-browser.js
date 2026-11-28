@@ -13,11 +13,11 @@ async function checkLayout(page,width,height,label){
   const geometry=await editor.evaluate(el=>{
     const d=el.getBoundingClientRect(), row=el.querySelector('[data-owned-card]'), save=el.querySelector('[data-save]'), b=save.getBoundingClientRect();
     return {left:d.left,right:d.right,wide:el.scrollWidth>el.clientWidth+1,
-      firstTop:row.getBoundingClientRect().top,saveTop:b.top,saveBottom:b.bottom,
+      firstHeight:row.getBoundingClientRect().height,firstTop:row.getBoundingClientRect().top,saveTop:b.top,saveBottom:b.bottom,
       clear:document.elementFromPoint(b.x+b.width/2,b.y+b.height/2)?.closest('[data-save]')===save};
   });
   assert.ok(!geometry.wide&&geometry.left>=-1&&geometry.right<=width+1,'no sideways overflow at '+width);
-  assert.ok(geometry.firstTop<height&&geometry.saveTop>=0&&geometry.saveBottom<=height+1&&geometry.clear,'owned choices and usable save action in first viewport: '+JSON.stringify(geometry));
+  assert.ok(geometry.firstHeight>0&&geometry.firstTop>=0&&geometry.firstTop<geometry.saveTop&&geometry.saveTop>=0&&geometry.saveBottom<=height+1&&geometry.clear,'owned choices and usable save action in first viewport: '+JSON.stringify(geometry));
   if(shots){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,'owned-deck-'+label+'-'+width+'.png')})}
 }
 async function showOptions(page){
@@ -124,6 +124,8 @@ async function showOptions(page){
   await dynasty.goto('file://'+path.join(__dirname,'..','index.html'));await startNewDynasty(dynasty);
   while(await dynasty.locator('#weeklyDecisions [data-decision]').count())await dynasty.locator('#weeklyDecisions [data-decision]').first().click();
   await dynasty.locator('#cardDeskLink [data-card-dynasty-tab="deckroom"]').click();await dynasty.locator('#cardProgram [data-card-deck]').click();for(const [w,h] of [[1400,900],[390,844],[320,720]])await checkLayout(dynasty,w,h,'dynasty');
+  await dynasty.locator('#deckEditor [data-cancel]').click();await dynasty.setViewportSize({width:390,height:844});
+  await dynasty.locator('#cardProgram [data-card-deck]').click();await checkLayout(dynasty,390,844,'dynasty-fresh-phone');
   await showOptions(dynasty);await dynasty.locator('[data-plans] summary').click();await dynasty.selectOption('[data-plan]','air');assert.match(await dynasty.locator('[data-plan-preview]').innerText(),/Tradeoff:/);
   await dynasty.click('[data-plan-apply]');assert.equal(await dynasty.inputValue('#openingScript'),'vertical_shot');
   await dynasty.click('#deckEditor [data-cancel]');await dynasty.setViewportSize({width:1400,height:900});await dynasty.locator('#cardProgram [data-card-deck]').click();await showOptions(dynasty);await dynasty.selectOption('#openingScript','screen');

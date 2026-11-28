@@ -135,8 +135,26 @@ test('an entirely full destination never consumes a game or program pack; anothe
   m.rewardPacks=[{key:'album:test',title:'Test pack',type:'album',cards:['two_man','press']}];
   let before=JSON.stringify(m);assert.equal(cg.takeGamePack(pack.key,'two_man').ok,false);assert.equal(JSON.stringify(m),before);
   assert.equal(cg.takeRewardCard('album:test','two_man').ok,false);assert.equal(JSON.stringify(m),before);
+  assert.equal(cg.takeRewardCard('album:test','two_man','deck').ok,false);assert.equal(JSON.stringify(m),before);
   assert.equal(cg.takeGamePack(pack.key,'inside_zone_plus').ok,true);assert.equal(cg.takeRewardCard('album:test','press').ok,true);
   assert.equal(pb.reserve.def.wrinkles.length,500);assert.equal(pb.packsOpened,1);
+});
+test('a program pack can equip its card and record the acquisition, while a full deck leaves the choice unopened',async()=>{
+  const e=loadEngine({seed:642,fullRuntime:true});e.setUserTeam('Chicago Metropolitan');await e.loadSchools();e.initUniverse();
+  const cg=globalThis.DynastyCardGameDay;cg.enable();const m=e.universe.callSheet,pb=m.playbook;
+  const pick=P.POOL.find(c=>c.rarity==='legendary'&&c.kind!=='upgrade'),pile=pick.kind==='tactic'?'tactics':'wrinkles';
+  const active=pb[pick.side][pile],stored=pb.reserve[pick.side][pile];
+  const card=active[0];while(active.length<pb.capacity[pile])active.push(card);
+  m.rewardPacks=[{key:'booster:test',title:'Booster Pack',type:'booster',cards:[pick.id]}];
+  const before=JSON.stringify(m);
+  assert.equal(P.rewardDestination(pb,pick,false,500,'deck'),'full');
+  assert.equal(cg.takeRewardCard('booster:test',pick.id,'deck').ok,false);assert.equal(JSON.stringify(m),before);
+  active.pop();
+  assert.equal(P.rewardDestination(pb,pick,false,500,'deck'),'active');
+  assert.equal(cg.takeRewardCard('booster:test',pick.id,'deck').ok,true);
+  assert.equal(active.length,pb.capacity[pile]);assert.equal(active.at(-1),pick.id);assert.equal(stored.includes(pick.id),false);
+  assert.ok(pb.legendaries.includes(pick.id));assert.deepEqual(pb.history.at(-1),{id:pick.id,side:pick.side,kind:'booster',why:'Booster Pack'});
+  assert.equal(m.rewardPacks.length,0);assert.equal(pb.packsOpened,0);
 });
 
 test('game pack tryouts reuse eligible film and keep battle, reward and practice rolls independent',()=>{

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.39.1 — Deck selection and postgame practice
+
+- Deck editing shows owned copies and live team and card-type limits. The fourth signature slot can be used when facilities unlock it.
+- Program packs honor the chosen destination. Collection shows where the latest pick is and opens the editor on that card.
+- Turning-point film shows the recorded quarter and suggests calls for the controlled side. Practice from the postgame film earns six mastery reps on advancement for an eligible card in the deck.
+- This Week puts deck and pack shortcuts above the rundown on phones.
+
 ## v0.39.0 — Signature sculptures, stadium walkouts, honest reads, and drive film
 
 - **3D signature art, equipment & foil packs:** Position signature sculptures with team-color tinting across cards, Deck Room, and Ring of Honor; equipment illustrations on tactics and weekly drills; interactive peel-open foil reward packs.

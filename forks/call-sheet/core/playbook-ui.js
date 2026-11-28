@@ -410,10 +410,9 @@ const EDITOR_CSS=`
 #deckEditor *,#deckEditor{box-sizing:border-box}#deckEditor h2,#deckEditor h3,#deckEditor h4,#deckEditor p{margin:0;color:inherit;letter-spacing:normal;text-transform:none}#deckEditor h2{font:750 clamp(22px,4vw,31px)/1.15 system-ui,sans-serif}#deckEditor h3{font:700 19px/1.25 system-ui,sans-serif}#deckEditor p{line-height:1.45}#deckEditor h4{font:700 16px/1.25 system-ui,sans-serif}
 #deckEditor .de-head,#deckEditor .de-body,#deckEditor .de-foot{padding:18px 24px}
 #deckEditor .de-head{background:#171f2a;border-bottom:1px solid #354454}
-#deckEditor .de-kicker{color:#d1b765;font:750 10px/1.2 system-ui,sans-serif;letter-spacing:.15em;margin:0 0 5px}
 #deckEditor .de-top{display:flex;align-items:center;justify-content:space-between;gap:12px}
-#deckEditor .de-intro{color:#c9d3df;margin:7px 0 15px;font-size:14px}
-#deckEditor .de-type-legend{font:700 11px/1.3 system-ui,sans-serif;letter-spacing:.08em;color:#aab8c8;margin:0 0 5px}#deckEditor .de-type-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+#deckEditor .de-total{color:#c5d3df;margin:5px 0 12px;font-size:13px;font-variant-numeric:tabular-nums}
+#deckEditor .de-type-nav{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
 #deckEditor button,#deckEditor input,#deckEditor select{font:600 14px/1.2 system-ui,sans-serif;text-transform:none;letter-spacing:normal;text-shadow:none;box-shadow:none;border-radius:7px;background:#273444;border:1px solid #526479;color:#eff5fa;padding:8px 12px;max-width:100%;min-width:0;cursor:pointer;min-height:36px}
 #deckEditor button:hover:not(:disabled){border-color:#b0c1d2}#deckEditor :focus-visible{outline:3px solid #88d2ff;outline-offset:2px}
 #deckEditor button:disabled{opacity:1;color:#91a1b2;background:#17212c;border-color:#354353;cursor:not-allowed}
@@ -440,18 +439,17 @@ const EDITOR_CSS=`
 #deckEditor [data-more-options] section,#deckEditor [data-more-options] details{margin:15px 0}#deckEditor [data-more-options] p{margin:7px 0;color:#c4ceda;font-size:14px}#deckEditor [data-more-options] button{margin:5px 0}
 #deckEditor .de-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;border-top:1px solid #354454;background:#171f2a}
 #deckEditor [data-deck-status]{font-size:13px;color:#b4dbce}#deckEditor [data-deck-status][data-error=true]{color:#ffcf9f}
-#deckEditor .de-family{margin:0 0 10px}#deckEditor .de-family>summary{cursor:pointer;font-weight:700;font-size:15px;padding:6px 2px;color:#f4edda}#deckEditor .de-family>summary small{font-weight:400;color:#9fb0c8;margin-left:6px}
 #deckEditor .de-suggest{margin:8px 0 0;padding:8px 11px;border:1px solid #ffdb7299;border-radius:9px;background:#2a2410;color:#f6ecd0;font-size:14px;line-height:1.4}#deckEditor .de-save-actions{display:flex;gap:7px;flex-shrink:0}#deckEditor [data-save]{background:#ffdb72;color:#251e0e;border-color:#ffdb72}
 @media(max-width:650px){#deckEditor{width:calc(100vw - 12px);height:94vh;height:94dvh;border-radius:12px}#deckEditor .de-head,#deckEditor .de-body,#deckEditor .de-foot{padding:12px}
 #deckEditor .de-side-nav button{font-size:13px;padding:6px 8px}#deckEditor .de-type-nav{gap:4px}
 #deckEditor [data-category]{display:grid;justify-content:center;justify-items:center;gap:4px;font-size:12px;padding:6px 2px;min-height:44px}
 #deckEditor .de-grid,#deckEditor .de-cards,#deckEditor .de-base{grid-template-columns:minmax(0,1fr)}
-#deckEditor .de-intro{font-size:13px;margin:6px 0 10px}#deckEditor .de-card-actions button,#deckEditor .de-save-actions button,#deckEditor select,#deckEditor [data-side]{min-height:44px}
-#deckEditor .de-foot{flex-wrap:wrap;gap:6px}#deckEditor .de-save-actions{margin-left:auto}#deckEditor .de-foot [data-deck-status]{flex:1 1 110px;font-size:12px}#deckEditor .de-kicker{display:none}}
+#deckEditor .de-card-actions button,#deckEditor .de-save-actions button,#deckEditor select,#deckEditor [data-side]{min-height:44px}
+#deckEditor .de-foot{flex-wrap:wrap;gap:6px}#deckEditor .de-save-actions{margin-left:auto}#deckEditor .de-foot [data-deck-status]{flex:1 1 110px;font-size:12px}}
 @media(max-width:720px){#deckEditor button,#deckEditor input,#deckEditor select,#deckEditor [data-side],#deckEditor [data-category]{min-height:44px}#deckEditor summary{display:list-item;min-height:44px;align-content:center}}
 @media(max-width:360px){#deckEditor h2{font-size:20px}#deckEditor .de-top{gap:5px}#deckEditor .de-side-nav{padding:1px}#deckEditor .de-side-nav button{padding:5px}#deckEditor .de-body{scrollbar-gutter:auto}}
 `;
-function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null,practiceFilm=null}={}){
+function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||null,maxStored=Infinity,maxUnusedSignatures=Infinity,suggest=null,practiceFilm=null,focusId=null}={}){
   injectFaceCSS();finishes=pb?.finishes||null;
   const {packs:P,data:D,signatures:S}=root.CallSheet,draft=copyDeck(pb),esc=escF;
   P.ensureCollection(draft);S.registerAll(draft);draft.signatures??=[];draft.reserveSignatures??=[];draft.deckPresets=presetList(draft);
@@ -460,11 +458,22 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
   let staged=null;
   if(suggest?.remove&&suggest?.add){const deck=draft.off.wrinkles,res=draft.reserve.off.wrinkles,i=deck.indexOf(suggest.remove),j=res.indexOf(suggest.add);
     if(i>=0&&j>=0){deck.splice(i,1);res.splice(j,1);deck.push(suggest.add);res.push(suggest.remove);staged=suggest}}
+  let focusBase=-1;
+  const target=focusId&&P.cardDef(focusId);
+  if(target?.side==='off'||target?.side==='def'){
+    side=target.side;
+    category=target.signature?'signatures':Object.hasOwn(D.TACTICS,focusId)?'tactics':'wrinkles';
+    const deck=draft[side];
+    if(category==='wrinkles'&&!deck.wrinkles.includes(focusId)&&!draft.reserve[side].wrinkles.includes(focusId)){
+      focusBase=deck.base.indexOf(focusId);
+      if(focusBase>=0)category='base';
+    }
+  }
   const dialog=document.createElement('dialog');dialog.id='deckEditor';dialog.setAttribute('aria-labelledby','de-title');
-  dialog.innerHTML=`<style>${EDITOR_CSS}</style><div class="de-head"><div class="de-top"><div><div class="de-kicker">DECK ROOM</div><h2 id="de-title">Choose your cards</h2></div>
+  dialog.innerHTML=`<style>${EDITOR_CSS}</style><div class="de-head"><div class="de-top"><h2 id="de-title">Choose your cards</h2>
     <div class="de-side-nav" role="group" aria-label="Choose a side"><button type="button" data-side="off">Offense</button><button type="button" data-side="def">Defense</button></div></div>
-    <p class="de-intro">Keep 4 base calls, at least ${P.MIN_CAPACITY?.wrinkles||6} plays, and at least ${P.MIN_CAPACITY?.tactics||6} tactics on each side. Cards you remove stay in your collection.</p>
-    <p class="de-type-legend">IN DECK / LIMIT</p><div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div>${staged?`<p class="de-suggest" data-suggested-swap><b>Staged from last game:</b> −1 ${esc(staged.removeName||staged.remove)}, +1 ${esc(staged.addName||staged.add)}. ${esc(staged.why||'')} Save deck to keep it, or Cancel to change nothing.</p>`:''}</div>
+    <p class="de-total" data-deck-total></p>
+    <div class="de-type-nav" role="group" aria-label="Card types. Counts show copies in deck and their limit."></div>${staged?`<p class="de-suggest" data-suggested-swap><b>Staged from last game:</b> −1 ${esc(staged.removeName||staged.remove)}, +1 ${esc(staged.addName||staged.add)}. ${esc(staged.why||'')} Save deck to keep it, or Cancel to change nothing.</p>`:''}</div>
     <div class="de-body"></div><div class="de-foot"><div data-deck-status role="status" aria-live="polite"></div>
     <div class="de-save-actions"><button type="button" data-cancel>Cancel</button><button type="button" data-save>Save deck</button></div></div>`;
   document.body.appendChild(dialog);
@@ -473,17 +482,6 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
   const cardName=(id)=>P.cardDef(id)?.name||id;
   const titleOf={wrinkles:'Plays',tactics:'Tactics',base:'Base calls',signatures:'Signatures'};
   const categories=Object.keys(titleOf),nounOf={wrinkles:'play',tactics:'tactic',signatures:'signature'};
-  // Plays and calls grouped by family (run, quick, deep...; zone, man, pressure) to shorten the list on a phone. Groups
-  // start collapsed on narrow screens; the choice survives the redraw after each add or remove.
-  const narrow=typeof matchMedia==='function'&&matchMedia('(max-width:600px)').matches,folded=new Set(),touched=new Set();
-  const familyOf=id=>(D.PLAYS[id]||D.CALLS[id])?.family||'other';
-  const FAMILY={run:'Run',quick:'Quick',deep:'Deep',constraint:'Constraint',trick:'Trick',zone:'Zone',man:'Man',pressure:'Pressure',other:'Other'};
-  const familyGroups=(rows,tile)=>{
-    const groups=new Map();for(const r of rows){const f=familyOf(r.id);(groups.get(f)||groups.set(f,[]).get(f)).push(r)}
-    const rank=Object.keys(FAMILY);return [...groups].sort((a,c)=>rank.indexOf(a[0])-rank.indexOf(c[0])).map(([f,list])=>{const key=side+':'+f,open=touched.has(key)?!folded.has(key):!narrow,inDeck=list.reduce((n,r)=>n+r.inDeck,0);
-      return`<details class="de-family" data-family="${esc(key)}" ${open?'open':''}><summary>${esc(FAMILY[f]||f)} <small>${list.length} card${list.length===1?'':'s'} · ${inDeck} in deck</small></summary><div class="de-grid">${list.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div></details>`}).join('');
-  };
-  dialog.addEventListener('toggle',e=>{const d=e.target;if(!d?.matches?.('details.de-family'))return;const key=d.dataset.family;touched.add(key);if(d.open)folded.delete(key);else folded.add(key)},true);
   const cardNames=ids=>{const groups=new Map();ids.forEach(id=>groups.set(id,(groups.get(id)||0)+1));return [...groups].map(([id,n])=>esc(cardName(id))+(n>1?' ×'+n:'')).join(' · ')||'None'};
   const info=id=>{const c=P.cardDef(id);return `<b>${esc(c.name)}</b><small>${c.cost} Command · ${esc(c.family||'Tactic')}</small><p>${esc(cleanText(c.text))}</p>`};
   const tooManyUnusedSignatures=()=>draft.reserveSignatures.length>maxUnusedSignatures;
@@ -500,6 +498,8 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
       const pile=storageBlock(draft.reserve[s],maxStored);if(pile){const n=draft.reserve[s][pile].length-maxStored;
         return{side:s,category:pile,msg:`Add ${n} ${s==='off'?'offensive':'defensive'} ${nounOf[pile]}${n===1?'':'s'} to the deck before saving. Only ${maxStored} copies of this type can stay outside it.`};}
     }
+    const excessSignatures=draft.signatures.length-S.slotsFor(draft);
+    if(excessSignatures>0)return{side,category:'signatures',msg:`Remove ${excessSignatures} ${excessSignatures===1?'signature':'signatures'} before saving. The team shares ${S.slotsFor(draft)} slots.`};
     if(tooManyUnusedSignatures())return{side,category:'signatures',msg:`Too many signatures outside the deck (maximum ${maxUnusedSignatures}). Add one back before saving.`};
     return null;
   }
@@ -509,13 +509,14 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
     P.repairComboPlans(draft);
     const deck=draft[side],reserve=draft.reserve[side],sideName=side==='off'?'Offense':'Defense',adjective=side==='off'?'offensive':'defensive';
     const c=deckCounts(draft,side),group={wrinkles:c.plays,tactics:c.tactics,base:{active:deck.base.length,limit:4},signatures:c.signatures},g=group[category];
+    $('[data-deck-total]').textContent=`${c.teamActive} / ${c.teamLimit} cards in deck across both sides`;
     dialog.querySelectorAll('[data-side]').forEach(b=>b.setAttribute('aria-pressed',String(side===b.dataset.side)));
     $('.de-type-nav').innerHTML=categories.map(k=>`<button type="button" data-category="${k}" aria-pressed="${category===k}" aria-label="${k==='signatures'?'Team signatures':sideName+' '+titleOf[k]}: ${group[k].active} of ${group[k].limit}${k==='base'?' required':' maximum'}"><span>${titleOf[k]}</span><span data-type-count="${k}">${group[k].active} / ${group[k].limit}</span></button>`).join('');
-    const shared=category==='signatures',heading=shared?'Team signatures':sideName+' · '+titleOf[category];
+    const shared=category==='signatures',heading=shared?'Team signatures':category==='base'?sideName+' base calls':'Owned '+adjective+' '+titleOf[category].toLowerCase();
     const full=g.active>=g.limit,noun=nounOf[category],unused=group[category].stored||0;
     const note=category==='base'?'Exactly 4 different calls, always available. Swap a call below; its old card takes the new card’s place. Keep one free call with no special requirements.':
       shared?`Pick up to ${g.limit} across the whole team. These use no regular slots. You can only play a signature when its player is on the field.`:
-      `Pick ${P.MIN_CAPACITY?.[category]||6} to ${g.limit} ${adjective} ${titleOf[category].toLowerCase()}. Each copy uses one slot. ${category==='wrinkles'?'Extra copies make a play more likely to turn up.':'A larger pile gives you more options but dilutes each draw.'}`;
+      `Keep ${P.MIN_CAPACITY[category]}–${g.limit} copies in the deck. Removed copies stay in your collection.`;
     const wrong=invalidDraft();
     const warning=wrong&&wrong.category===category&&(shared||side===wrong.side)?wrong.msg:full&&unused>0&&noun?`All ${g.limit} slots are in use. Remove one ${noun} from the deck before adding another.`:'';
     const help=`<h3 id="de-list-title" tabindex="-1">${heading}</h3><p class="de-sub">${note}</p>${warning?`<p class="de-banner" id="de-limit-note">${esc(warning)}</p>`:''}`;
@@ -525,11 +526,10 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
       const probability=book=>Math.round(100*firstHandChance(book,sg?.side||side,id,lineup));
       const access=unavailable?esc(unavailable):def.special?'Special teams · available in its game situation':`First ${(sg?.side||side)==='off'?'offensive':'defensive'} series · saved ${probability(pb)}% → draft ${probability(draft)}%`;
       const edition=[originOf(id,def),D.rarityOf(id)!=='common'&&D.rarityOf(id),draft.finishes?.[id]].filter(Boolean).join(' · ');
-      const addDisabled=inDeck>=owned||full,removeDisabled=!inDeck;
       const control=(add,disabled)=>`<button type="button" ${sg?(add?'data-sig-equip':'data-sig-store')+'="'+esc(id)+'"':'data-move="'+(add?'add':'remove')+'"'} aria-label="${add?'Add one':'Remove one'} ${esc(def.name)} ${add?'to':'from'} deck"${disabled?' disabled':''}${add&&full&&warning?' aria-describedby="de-limit-note"':''}>${add?'Add to deck':'Remove from deck'}</button>`;
       return `<article class="de-card" data-owned-card="${esc(id)}" data-selected="${inDeck>0}" tabindex="-1"><div class="de-card-title"><h4>${esc(def.name)}</h4><span data-copy-count title="${owned} owned in this type">${inDeck} of ${owned} in deck</span></div>${signatureIllustrationHTML(sg,team?.colors)}
         <small>${sg?esc(sg.name)+' · '+esc(sg.role)+' · ':''}${def.cost} Command · ${esc(def.family||'Tactic')}${baseAlso?' · 1 more copy is a base call':''}${edition?' · <span class="de-edition">'+esc(edition)+'</span>':''}</small>
-        <p class="de-text">${esc(cleanText(def.text))}</p><small data-draw-chance>${access}</small><div class="de-card-actions">${control(true,addDisabled)}${control(false,removeDisabled)}</div></article>`;
+        <p class="de-text">${esc(cleanText(def.text))}</p><small data-draw-chance>${access}</small><div class="de-card-actions">${inDeck<owned?control(true,full):''}${inDeck?control(false,false):''}</div></article>`;
     }
     let list='';
     if(category==='base'){
@@ -540,7 +540,7 @@ function open(pb,{onSave=()=>{},onClose=()=>{},team=null,lineup=team?.lineup||nu
       list=rows.length?`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned,all.find(s=>s.id===r.id))).join('')}</div>`:'<p class="de-banner">No signatures yet. Player breakouts can earn them; you don’t need one to play.</p>';
     }else{
       const rows=ownedRows(deck[category],reserve[category]);
-      list=rows.length?(category==='wrinkles'?familyGroups(rows,tile):`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div>`):`<p class="de-banner">You don’t own any ${adjective} ${titleOf[category].toLowerCase()} yet. You can still play with your base calls.</p>`;
+      list=rows.length?`<div class="de-grid">${rows.map(r=>tile(r.id,r.inDeck,r.owned)).join('')}</div>`:`<p class="de-banner">You don’t own any ${adjective} ${titleOf[category].toLowerCase()} yet.</p>`;
     }
     const plan=previewPlan(draft,side,planKey,maxStored),spec=GAME_PLANS[side][planKey],advice=deckAdvice(draft,lineup);
     const ready=root.CallSheet.evolution?.ready(draft,{lineup})||[];
@@ -585,8 +585,7 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
     const sig=b.hasAttribute('data-sig-store')||b.hasAttribute('data-sig-equip');
     if(b.dataset.move||sig){
       const add=sig?b.hasAttribute('data-sig-equip'):b.dataset.move==='add',id=b.closest('[data-owned-card]').dataset.ownedCard;
-      {const fam=b.closest('details.de-family')?.dataset.family;if(fam){touched.add(fam);folded.delete(fam)}} // keep the card you just changed in view
-      act(()=>{if(sig){const from=add?draft.reserveSignatures:draft.signatures,to=add?draft.signatures:draft.reserveSignatures,i=from.findIndex(s=>s.id===id);if(i<0||add&&to.length>=S.SLOTS)throw Error('No signature slot available.');to.push(from.splice(i,1)[0])}
+      act(()=>{if(sig){const from=add?draft.reserveSignatures:draft.signatures,to=add?draft.signatures:draft.reserveSignatures,i=from.findIndex(s=>s.id===id);if(i<0||add&&to.length>=S.slotsFor(draft))throw Error('No signature slot available.');to.push(from.splice(i,1)[0])}
         else{const list=add?draft.reserve[side][category]:draft[side][category];P.moveCard(draft,side,category,list.indexOf(id),add)}},
         `${cardName(id)} ${add?'added to':'removed from'} deck.`,()=>focusCard(id,add?'add':'remove',sig));return;
     }
@@ -607,7 +606,9 @@ ${ready.map(r=>`<section><h3>Ready to evolve · ${esc(P.cardDef(r.rootId).name)}
       act(()=>P.setComboPlan(draft,side,id?{id,play}:null),'Installed combo updated.',()=>$('#installedCombo')?.focus({preventScroll:true}));
     }
   });
-  render();const initialIssue=invalidDraft();status(initialIssue?.msg||'Ready to play.',!!initialIssue);dialog.showModal();return dialog;
+  render();const initialIssue=invalidDraft();status(initialIssue?.msg||'Ready to play.',!!initialIssue);dialog.showModal();
+  if(target)$(focusBase>=0?at('[data-base',focusBase):at('[data-owned-card',focusId))?.focus();
+  return dialog;
 }
 root.CallSheet.playbookUI={thirdDownHands,firstHandChance,openingScriptHTML,presetList,savePreset,loadPreset,deckAdvice,deckCounts,ownedRows,previewPlan,open,faceHTML,faceClass,injectFaceCSS,injectPackCSS,packWrapperHTML,peelPack,signatureIllustrationHTML};
 })(typeof window==='object'?window:globalThis);
