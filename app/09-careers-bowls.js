@@ -40,7 +40,8 @@ function careerPostHTML(){
  const mandatory=(universe.jobOffers||[]).length>0;
  const offers=(mandatory?universe.jobOffers:activeCareerInvitations())||[];
  if(!offers.length)return '';
- const last=(universe.careerHistory||[])[universe.careerHistory.length-1];
+ const history=universe.careerHistory||[];
+ const last=history[history.length-1];
  const review=universe.tenure?.seasons.at(-1);
  const title=mandatory?`Your tenure at ${last?.school||'your program'} is over`:'Head coaching invitations';
  const detail=mandatory?`Career: ${careerSummaryText()}. These programs will have you.`:

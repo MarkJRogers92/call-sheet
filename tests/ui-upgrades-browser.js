@@ -34,7 +34,7 @@ const resolveDecisions = async page => {
       await startNewDynasty(page);
 
       // Navigation icons.
-      if (phone) assert.equal(await page.locator('.client-mobile-nav .client-nav-icon').count(), 5, `[${label}] every bottom-bar item has an icon`);
+      if (phone) assert.equal(await page.locator('.client-mobile-nav .client-nav-icon').count(), await page.locator('.client-mobile-nav button').count(), `[${label}] every bottom-bar item has an icon`);
       else assert.ok(await page.locator('.client-rail .client-nav-icon').count() >= 14, `[${label}] every sidebar item has an icon`);
 
       // No internal version labels in any tab (the sidebar footer carries the real version, outside the tabs).
