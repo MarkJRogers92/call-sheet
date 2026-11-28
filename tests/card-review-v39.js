@@ -112,11 +112,46 @@ test('blowout rest at 24/21, pre-snap uncertainty ranges, and turning-point driv
   b._starterLineup={home:{off:{...b.teams.home.lineup.off,QB:{...b.teams.home.lineup.off.QB,id:origQb}},def:{...b.teams.home.lineup.def}}};
   b.teams.home.lineup.off.QB={...b.teams.home.lineup.off.QB,id:'bench_qb'};
   // Turning-point film extraction.
-  b.log.push({type:'snap',offSide:'home',defSide:'away',play:'inside_zone',call:'cover1',yards:24,text:'Touchdown run!',sit:{quarter:3,clock:400,down:3,distance:4,field:76},duels:[],duelResults:[]});
+  b.log.push({type:'snap',offSide:'home',defSide:'away',play:'inside_zone',call:'cover1',yards:24,text:'Touchdown run!',sit:{period:3,clock:400,down:3,distance:4,field:76},duels:[],duelResults:[]});
   const tp=B.turningPointSnaps(b);
   assert.equal(tp.length,1);
   assert.equal(tp[0].swungBy,'Touchdown strike');
-  assert.ok(tp[0].counterId);
+  assert.equal(tp[0].quarter,3,'use the period from the recorded snap');
+  assert.equal(tp[0].counterId,'inside_zone');
+  b.log.push({type:'snap',offSide:'away',defSide:'home',play:'deep_cross',call:'two_high',turnover:'interception',yards:0,sit:{period:4,down:3,distance:8}});
+  const stop=B.turningPointSnaps(b).find(clip=>clip.swungBy==='Interception');
+  assert.equal(stop.counterId,'two_high','review the user’s defensive call after a stop');
+});
+
+test('latest drive film offers existing mastery practice for cards actually in the deck',async()=>{
+  const env=await engine(406),cg=globalThis.DynastyCardGameDay,CS=globalThis.CallSheet,me=env.T('Chicago Metropolitan');
+  cg.enable();
+  const cs=env.universe.callSheet,pb=cs.playbook,id=pb.off.base.find(id=>CS.evolution.progress(pb,id));
+  assert.ok(id,'starter deck includes a trainable card');
+  const root=CS.evolution.rootOf(id);
+  const stored=pb.off.wrinkles.find(card=>CS.evolution.progress(pb,card)&&!pb.off.base.includes(card));
+  assert.ok(stored,'starter deck includes a trainable play outside its base calls');
+  pb.off.wrinkles=pb.off.wrinkles.filter(card=>card!==stored);
+  pb.reserve.off.wrinkles.push(stored);
+  const points=[{quarter:4,down:3,distance:5,counterId:id},{quarter:3,counterId:stored},{quarter:4,counterId:id}];
+  cs.lastTurningPoints={year:env.universe.year,teamId:String(me.id),gameId:'most-recent-game',points};
+  const filmHTML=()=>cg.cardProgramHTML().match(/<section id="turningPointFilm"[\s\S]*?<\/section>/)?.[0]||'';
+  assert.equal([...filmHTML().matchAll(/data-train-turning-card="([^"]+)"/g)].map(m=>m[1]).join(),root);
+  assert.match(filmHTML(),new RegExp(`data-try-turning-card="${stored}"`));
+  pb.mastery[root]=CS.evolution.progress(pb,id).need-6;
+  assert.equal(cg.setInstallFocus(root),root);
+  assert.match(filmHTML(),/scheduled for \+6 mastery reps/);
+  const before=pb.mastery[root]||0;
+  cg.installWeek();
+  assert.equal(pb.mastery[root],before+6);
+  assert.equal(cs.installFocus,null,'the training focus clears when the card is ready to evolve');
+  cg.installWeek();
+  assert.equal(pb.mastery[root],before+6,'a mastered card does not keep earning practice reps');
+  delete cs.lastTurningPoints.teamId;
+  cs.protectionFilm={teamId:String(me.id),gameId:cs.lastTurningPoints.gameId};
+  assert.match(filmHTML(),/Turning-point drive film/,'V39 film remains available before the archive is loaded');
+  cs.lastTurningPoints.teamId='another-program';
+  assert.equal(filmHTML(),'');
 });
 
 test('meshy signature art and walkout manifests are wired into bundle',()=>{

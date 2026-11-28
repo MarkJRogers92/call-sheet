@@ -2516,10 +2516,10 @@ function turningPointSnaps(b,limit=3){
     let counterId=null;
     if(userOff&&(e.turnover||e.kind==='sack'||stopped))counterId=e.kind==='sack'?'max_protect':'inside_zone';
     else if(!userOff&&(td||converted||yards>=15))counterId=play?.family==='run'?'run_fit':'two_high';
-    else counterId=D.PLAYS[e.play]?.id||D.CALLS[e.call]?.id||null;
+    else counterId=(userOff?play?.id:call?.id)||null;
     const counterDef=counterId?(D.PLAYS[counterId]||D.CALLS[counterId]||D.TACTICS[counterId]):null;
     scored.push({
-      score,snap:index,quarter:sit.quarter||1,clock:sit.clock||0,down,distance:dist,spot:sit.field||25,
+      score,snap:index,quarter:sit.period||sit.quarter||1,clock:sit.clock||0,down,distance:dist,spot:sit.field||25,
       offSide:e.offSide,playId:e.play,playName:play?.name||e.play||'Play',
       defId:e.call,defName:call?.name||e.call||'Defense',yards,
       result:e.text||`${yards} yd`,swungBy:swungBy||'Key snap',

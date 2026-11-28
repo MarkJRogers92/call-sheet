@@ -2401,8 +2401,11 @@ function evolutionScreen(r){
 function afterWeek(){b._closed=true;save.activeBattle=null;writeSave();if(DYN){dynastyDone();return}leagueScreen()}
 function dynastyDone(){
   const m=$('#modal');writeSave();
-  m.innerHTML=`<div class="mwrap"><p class="big gold" style="font-size:clamp(40px,7vw,80px)">BACK TO THE WEEK</p><p class="statline">${b._saved?.ok?'The game, your playbook and your cards are saved.':'Your playbook and cards are saved. The game was not recorded.'}</p><button class="btn go" id="home">RETURN TO DYNASTY</button></div>`;
+  const film=!DYN.stage&&b._saved?.ok&&B.turningPointSnaps(b).length?'<button class="btn" data-review-turning-film>REVIEW DRIVE FILM</button>':'';
+  m.innerHTML=`<div class="mwrap"><p class="big gold" style="font-size:clamp(40px,7vw,80px)">BACK TO THE WEEK</p><p class="statline">${b._saved?.ok?'The game, your playbook and your cards are saved.':'Your playbook and cards are saved. The game was not recorded.'}</p><div><button class="btn go" id="home">RETURN TO DYNASTY</button>${film}</div></div>`;
   m.classList.add('on');$('#home').onclick=()=>HOST.close();
+  const review=m.querySelector('[data-review-turning-film]');
+  if(review)review.onclick=()=>HOST.close(undefined,{reviewFilm:true});
 }
 // Dynasty game day: the battle starts at once with the real teams.
 // A playbook from the save only plays cards this build knows; anything else is dropped (base calls fall back).

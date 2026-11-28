@@ -24,6 +24,7 @@ module.exports = function exerciseOwnedDeck() {
     const el = one(card(id) + ' [data-copy-count]');
     if (!new RegExp('(?:^|\\D)' + selected + ' of ' + total + ' in deck\\b','i').test(el.textContent)) throw new Error(id + ' copies: ' + el.textContent);
   };
+  const total = (n, max) => eq(one('[data-deck-total]').textContent,`${n} / ${max} cards in deck across both sides`,'team deck count');
   const click = selector => {
     const button = one(selector);
     if (button.disabled) throw new Error('Unexpected disabled control: ' + selector);
@@ -49,12 +50,14 @@ module.exports = function exerciseOwnedDeck() {
   const order = ids();
   eq([...order].sort(),Array.from(new Set([...pb.off.wrinkles,...pb.reserve.off.wrinkles])).sort(),'one row for each owned play');
   count('wrinkles',12,12);count('tactics',12,18);count('base',4,4);count('signatures',3,3);
+  total(59,71);
   copies('draw',0,2);copies('deep_cross',2,2);
+  eq(all(card('deep_cross')+' [data-move="add"]').length,0,'all equipped copies need only a remove action');
   const blocked=one(card('draw')+' [data-move="add"]');
   eq(blocked.disabled,true,'plays cannot borrow free tactic slots');
   const reason=document.getElementById(blocked.getAttribute('aria-describedby'));
   if(!reason||!/remove one play/i.test(reason.textContent))throw new Error('Explain how to free a play slot for this blocked card');
-  move('deep_cross','remove');copies('deep_cross',1,2);count('wrinkles',11,12);
+  move('deep_cross','remove');copies('deep_cross',1,2);count('wrinkles',11,12);total(58,71);
   eq(document.activeElement.closest('[data-owned-card]')?.dataset.ownedCard,'deep_cross','focus stays on the same card');
   move('deep_cross','remove');copies('deep_cross',0,2);
   eq(ids(),order,'the row stays in its original place after its last active copy is removed');
@@ -75,6 +78,14 @@ module.exports = function exerciseOwnedDeck() {
   eq(saved.off.tactics.filter(x=>x==='motion').length,3,'duplicate tactic selection persisted');
   eq(JSON.stringify(pb),original,'only the saved draft changed');
   open();move('deep_cross','remove');click('[data-cancel]');eq(JSON.stringify(pb),original,'cancel is non-destructive');
+  // A collection shortcut opens the owned card in context and leaves the draft unchanged.
+  playbookUI.open(pb,{focusId:'draw'});
+  eq(document.activeElement.dataset.ownedCard,'draw','the reviewed card receives focus');copies('draw',0,2);
+  click('[data-cancel]');
+  playbookUI.open(pb,{focusId:pb.def.base[0]});
+  eq(one('[data-side="def"]').getAttribute('aria-pressed'),'true','defensive card opens the defensive deck');
+  eq(document.activeElement.value,pb.def.base[0],'a base-only card focuses its base slot');
+  click('[data-cancel]');
   // With both sides of a pile at capacity, deselecting a copy must still permit a clean exchange.
   const near = packs.newPlaybook();
   near.off.wrinkles.push('pa_boot','screen');near.reserve.off.wrinkles=Array(500).fill('draw');
@@ -109,4 +120,8 @@ module.exports = function exerciseOwnedDeck() {
   click(attr('data-sig-store',players[0].id));one('[data-save]').click();eq(saved,null,'do not normalize away excess inactive signatures');
   click(attr('data-sig-equip',players[3].id));click('[data-save]');
   eq(saved.reserveSignatures.map(x=>x.id),[players[0].id],'different signature safely fills the freed shared slot');
+  saved=null;playbookUI.open({...pb,signatureSlots:4},{focusId:players[3].id,onSave:p=>{saved=p}});
+  count('signatures',3,4);total(59,72);
+  click(attr('data-sig-equip',players[3].id));count('signatures',4,4);total(60,72);click('[data-save]');
+  eq(saved.signatures.map(x=>x.id),players.map(x=>x.id),'the facilities slot accepts the fourth signature');
 };

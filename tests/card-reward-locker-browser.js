@@ -41,6 +41,17 @@ const {chromium}=require('playwright-core'),{chromiumPath}=require('./helpers/ch
     assert.deepEqual(meta.playbook.off,before.off);assert.deepEqual(meta.playbook.def,before.def);
     const stored=p=>['off','def'].flatMap(s=>['wrinkles','tactics'].flatMap(k=>p.reserve[s][k])).filter(id=>id===pick).length;
     assert.equal(stored(meta.playbook),stored(before)+1,'collecting adds exactly one owned copy without editing the active deck');
+    const review=page.locator('#latestPackPick [data-card-deck]');
+    assert.equal(await review.getAttribute('data-deck-focus'),pick);
+    assert.equal(await review.evaluate(el=>document.activeElement===el),true,'the pack claim focuses its receipt');
+    await review.click();
+    const owned=page.locator(`#deckEditor [data-owned-card="${pick}"]`);
+    assert.equal(await owned.evaluate(el=>el.contains(document.activeElement)),true,'the deck opens at the claimed card');
+    await owned.locator('[data-move="add"]').click();await page.click('#deckEditor [data-save]');
+    meta=await page.evaluate(()=>window.DynastyCardGameDay.meta());
+    const active=p=>['off','def'].flatMap(s=>['wrinkles','tactics'].flatMap(k=>p[s][k])).filter(id=>id===pick).length;
+    assert.equal(active(meta.playbook),active(before)+1,'saving equips the card for the upcoming game');
+    assert.equal(await review.evaluate(el=>document.activeElement===el),true,'saving returns focus to the pack receipt');
     await page.evaluate(()=>window.__DL_TEST__.goToTab('deckroom'));await page.click('#deckroom [data-card-deck]');await page.click('#deckEditor [data-more-options] > summary');assert.match(await page.locator('#deckEditor').innerText(),/Ready to evolve · Inside Zone/);
     assert.deepEqual(errors,[]);console.log('ok  bank at final, advance, reload, dismiss, reopen, claim once, revisit permanent evolution on phone');
   }finally{await browser.close()}
