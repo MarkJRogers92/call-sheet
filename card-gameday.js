@@ -1902,7 +1902,8 @@ function normalizeCallSheet(u){
     const me=selected();if(!momentsOn()||!me||universe.offseason?.phase!=='spring')return;const meta=cardMeta();
     if(meta.springGameYear===universe.year)return;meta.springGameYear=universe.year;
     try{
-      const pb=userPlaybook(),first=CS.adapter.battleTeam(me,CS.packs.decksOf(pb)),depth=JSON.parse(JSON.stringify(me.roleDepth||{}));
+      const pb=userPlaybook();CS.signatures.registerAll(pb);
+      const first=CS.adapter.battleTeam(me,CS.packs.decksOf(pb)),depth=JSON.parse(JSON.stringify(me.roleDepth||{}));
       for(const k of Object.keys(depth))if(Array.isArray(depth[k])&&depth[k].length>1)depth[k]=depth[k].slice(1);
       const second=CS.adapter.battleTeam({...me,roleDepth:depth,name:`${me.name} White`},CS.packs.decksOf(pb));second.name=`${me.name} White`;first.name=`${me.name} Blue`;
       const b=CS.battle.simulate({home:first,away:second,seed:`spring:${universe.year}:${me.id}`});

@@ -534,8 +534,9 @@ function preparedBracket(b,side){
 function defOptions(b,side){
   const hand=b.hands[side];
   const plays=[...b.decks[side].def.base.map(id=>({id,base:true})),...hand.wrinkles.map((id,i)=>({id,base:false,slot:i}))]
+    .filter(o=>D.CALLS[o.id])
     .map(o=>({...o,card:D.CALLS[o.id],cost:costOf(b,side,D.CALLS[o.id]),blocked:R.signatureBlocked(D.CALLS[o.id],b.teams[side].lineup.def)}));
-  const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id],cost:costOf(b,side,D.TACTICS[id])})).filter(t=>!b.snap?.defInfo?.includes(t.id)&&(!TIMEOUT_CARDS.includes(t.id)||timeoutsLeft(b,side)>0));
+  const tactics=hand.tactics.map((id,i)=>({id,slot:i,card:D.TACTICS[id]})).filter(t=>t.card&&!b.snap?.defInfo?.includes(t.id)&&(!TIMEOUT_CARDS.includes(t.id)||timeoutsLeft(b,side)>0)).map(t=>({...t,cost:costOf(b,side,t.card)}));
   const bracketPlan=preparedBracket(b,side);
   return{plays,tactics,command:hand.command,...(canRedraw(b,side)?{redraw:{cost:redrawCost(b,side),count:hand.wrinkles.length}}:{}),...(bracketPlan?{bracketPlan}:{})};
 }
