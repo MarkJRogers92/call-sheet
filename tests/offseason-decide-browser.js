@@ -54,6 +54,11 @@ async function advanceTo(page,re){
    const over=await page.evaluate(()=>window.__DL_TEST__.signingOverFixture(2));
    assert.equal(over.over,2);
    await page.click('#hubAdvance');await stop.waitFor({state:'visible'});
+   if(/still deciding/.test(await stop.locator('h3').innerText())){
+    await page.click('#offseasonStop [data-offseason-stop-go]');
+    await stop.waitFor({state:'detached'});
+    await page.click('#hubAdvance');await stop.waitFor({state:'visible'});
+   }
    assert.match(await stop.locator('h3').innerText(),/^Your class is 2 over the limit$/);
    await stop.locator('[data-stop-release]').first().click();
    assert.match(await stop.locator('h3').innerText(),/^Your class is 1 over the limit$/);
