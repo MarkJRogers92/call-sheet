@@ -1,10 +1,10 @@
 # Roadmap execution status
 
-Last reconciled: 2026-11-27, source `8081c1b` (`v0.39.1`).
+Last reconciled: 2026-11-27, source `45399e7` (`v0.39.2`).
 
 ## Current source and publication
 
-The source above is the V39 baseline for the v0.39.1 reconciliation. [Call Sheet](https://markjrogers92.github.io/call-sheet/) is served from the fork's GitHub Pages branch. Release notes and deployment history are in `agent_docs/latest_session_work.md`.
+The source above is the V39.2 release reconciliation. [Call Sheet](https://markjrogers92.github.io/call-sheet/) is served from the fork's GitHub Pages branch. Release notes and deployment history are in `agent_docs/latest_session_work.md`.
 
 ## Next action
 

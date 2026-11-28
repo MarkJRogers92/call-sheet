@@ -392,12 +392,15 @@ function normalizeCallSheet(u){
       choices.delete(root);
       const name=escH(tp.counterName||cardName(tp.counterId));
       const preview=interactive&&tp.counterId?`<button type="button" class="cpn-link" data-try-turning-card="${escH(tp.counterId)}">Preview ${name}</button>`:'';
-      const train=!choice?'':root===focus?`<span class="cpn-foot" data-turning-confirmed tabindex="-1">${escH(choice.name)} scheduled for +${INSTALL_REPS} mastery reps when you advance.</span>`:
-        `<button type="button" class="cpn-link" data-train-turning-card="${escH(root)}">Train ${escH(choice.name)} (+${INSTALL_REPS} reps)</button>`;
+      const afterReps=choice?Math.min(choice.need,choice.reps+INSTALL_REPS):0;
+      const readyText=choice&&afterReps>=choice.need?' · ready to evolve':'';
+      const train=!choice?'':root===focus?`<span class="cpn-foot" data-turning-confirmed tabindex="-1">${escH(choice.name)} scheduled for +${INSTALL_REPS} mastery reps (${afterReps}/${choice.need}${readyText}) when you advance.</span>`:
+        `<button type="button" class="cpn-link" data-train-turning-card="${escH(root)}">Train ${escH(choice.name)} (+${INSTALL_REPS} → ${afterReps}/${choice.need}${readyText})</button>`;
       const period=tp.quarter<=4?`Q${tp.quarter}`:tp.quarter===5?'OT':`OT${tp.quarter-4}`;
       return `<li><b>${period} · ${tp.down}&amp;${tp.distance} · ${escH(tp.swungBy)}</b> · ${escH(tp.playName)} vs ${escH(tp.defName)} (${tp.yards>=0?'+':''}${tp.yards} yd)${preview||train?`<div class="cpn-film-actions">${preview}${train}</div>`:''}${preview?'<p class="cpn-foot cpn-practice-result" role="status" data-turning-status></p>':''}</li>`;
     }).join('');
-    return `<section${interactive?' id="turningPointFilm" tabindex="-1"':''} class="cpn-turning-film" aria-label="Turning-point drive film"><h3>Turning-point drive film</h3>${prompt}<ul>${rows}</ul></section>`;
+    const previewNote=interactive&&!prompt?'<p class="cpn-foot" data-turning-preview-only>These clips are preview-only (cards are unequipped, maxed, or lack an evolution branch). <button type="button" class="cpn-link" data-focus-install-picker>Choose another card to practice</button></p>':'';
+    return `<section${interactive?' id="turningPointFilm" tabindex="-1"':''} class="cpn-turning-film" aria-label="Turning-point drive film"><h3>Turning-point drive film</h3>${prompt}${previewNote}<ul>${rows}</ul></section>`;
   }
   function openTurningFilm(){
     if(!latestTurningFilm())return;
@@ -592,7 +595,9 @@ function normalizeCallSheet(u){
     if(g.postseason&&meta.postseasonBattle?.seed!==seed)meta.postseasonBattle={seed,year:universe.year,stage:g.stage,label:g.label,week:g.week,homeId:g.homeId,awayId:g.awayId};
     const opp=home.name===me.name?away:home,conditions=globalThis.DynastyGameConditions?.forGame({home,year:universe.year,week:g.week,...(g.neutral?{neutral:true}:{})})||null;
     const homeOpener=!g.postseason&&!g.neutral&&!(universe.schedule||[]).slice(0,g.week-1).some(games=>games?.some(game=>game.home===g.home&&!game.neutral));
+    const stakes=CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null});
     const cfg={home,away,userSide:home.name===me.name?'home':'away',week:g.week,season:universe.year,neutral:!!g.neutral,stage:g.stage||null,homeOpener,
+      walkoutStakes:stakes.elevated?stakes.text:'',
       label:g.postseason?g.label:`Week ${g.week} · ${g.conf?'Conference':'Non-conference'}`,record:{w:me.w||0,l:me.l||0},
       weather:battleWeather(conditions),conditions,rivalry:(me.protectedRivalIds||[]).includes(opp.id),
       activeBattle:meta.activeBattle?.seed===seed?meta.activeBattle:null,playbook:meta.playbook,combos:meta.combos,settings:meta.settings,games:meta.games,seenHelp:meta.seenHelp,
@@ -684,6 +689,7 @@ function normalizeCallSheet(u){
       const g=findUserGame();if(g&&!g.played){try{sim=simulateCardGame();sim.week=g.week;sim.ranks=rankSnapshot(sim.cfg.userSide==='home'?sim.cfg.away:sim.cfg.home);options={...options,externalState:sim.b.game}}catch(err){console.error('Card simulation failed; using the standard simulation.',err);sim=null}}
     }
     const out=recordGameBase(options);
+    if(out?.ok&&universe?.callSheet)universe.callSheet.pregameSwap=null;
     if(sim&&out?.ok){completeSimCardGame(sim,out.record);try{markArchive(out.result?.gameId,{classic:simClassic(sim),moments:CS.battle.decidingMoments(sim.b)})}catch(err){console.error(err)}if(!options.advancingWeek)try{autosaveAfter('game')}catch(err){console.error(err)}}
     return out;
   };
@@ -989,7 +995,7 @@ function normalizeCallSheet(u){
     dialog.innerHTML=`<style>#rewardPack{width:min(900px,94vw);padding:22px;border:1px solid #66592e;border-radius:16px;background:#10151f;color:#f2efe5;font:15px system-ui}#rewardPack::backdrop{background:#03060bd9}#rewardPack h2{margin:0 0 4px;color:#ffd76a}
 .rp-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:14px;margin:16px 0;perspective:600px}.rp-cards[hidden]{display:none}.rp-cards .cs-face{animation:rpIn .21s ease-out both}.rp-cards .cs-face:nth-of-type(2){animation-delay:.05s}.rp-cards .cs-face:nth-of-type(3){animation-delay:.1s}.rp-cards .cs-face:nth-of-type(4){animation-delay:.15s}.rp-cards .cs-face:nth-of-type(5){animation-delay:.2s}
 @keyframes rpIn{from{opacity:0;transform:rotateY(-80deg)}to{opacity:1;transform:none}}
-.rp-hint{grid-column:1/-1;margin:0}.rp-actions{display:grid;gap:2px}.rp-actions button:disabled{opacity:.6;cursor:not-allowed}.rp-cards .cs-face button,#rewardPack [data-later]{margin-top:6px;padding:9px;border-radius:8px;border:1px solid #66592e;background:#2a2412;color:#ffd76a;cursor:pointer;font-weight:700}
+.rp-hint{grid-column:1/-1;margin:0}.rp-actions{display:grid;gap:2px}.rp-actions button:disabled{opacity:.6;cursor:not-allowed}.rp-cards .cs-face button,#rewardPack [data-later]{margin-top:6px;padding:9px;border-radius:8px;border:1px solid #66592e;background:#2a2412;color:#ffd76a;cursor:pointer;font-weight:700}.rp-cards .cs-face button:focus-visible,#rewardPack [data-later]:focus-visible{outline:2px solid #ffd76a;outline-offset:2px}
 .rp-no-motion .rp-cards .cs-face{animation:none!important}
 @media(prefers-reduced-motion:reduce){.rp-cards .cs-face{animation:none!important}}</style>
       <h2>${escH(pack.title)}</h2><p>${game?`${pack.year} · ${escH(pack.source)}<br>`:''}${escH(pack.subtitle||'')}</p>${UI.packWrapperHTML(pack)}<div class="rp-cards" hidden><p class="rp-hint">Add to deck to make a card available next game. Add to collection to keep it for later.${game?' Upgrades replace the original card.':''}</p>${choices.map(card).join('')}</div><p role="status" data-pack-status></p><button type="button" data-later>Open later</button>`;
@@ -1209,18 +1215,31 @@ function normalizeCallSheet(u){
   }
   const INSTALL_REPS=6;
   function installWeek(){
-    if(!upgradesOn())return;const meta=cardMeta(),root=meta.installFocus;if(!root)return;
+    if(!upgradesOn())return;const meta=cardMeta(),root=meta.installFocus;
+    meta.pregameSwap=null;
+    if(!root)return;
     const focus=installable().find(x=>x.root===root);
     if(!focus){meta.installFocus=null;return}
+    const before=focus.reps||0,gained=focus.need?INSTALL_REPS:0,after=focus.need?Math.min(focus.need,before+gained):0;
+    const clearedWear=wornPlays().some(w=>w.id===root);
     if(focus.need)CS.evolution.addReps(userPlaybook(),root,INSTALL_REPS);
-    if(!focus.need||focus.reps+INSTALL_REPS>=focus.need)meta.installFocus=null;
+    if(!focus.need||before+INSTALL_REPS>=focus.need)meta.installFocus=null;
     for(const g of meta.filmLog||[])if(g.plays?.[root])g.plays[root]=0;
+    meta.lastInstallPayoff={year:universe.year,week:universe.week,teamId:String(selected()?.id||''),root,name:focus.name,gained,before,after,need:focus.need||0,ready:!!(focus.need&&after>=focus.need),clearedWear};
+  }
+  function installPayoffHTML(){
+    const p=universe?.callSheet?.lastInstallPayoff,me=selected();
+    if(!p||!me||p.year!==universe.year||String(p.teamId)!==String(me.id))return '';
+    const detail=p.gained?`+${p.gained} reps (${p.after}/${p.need})${p.ready?' — ready to evolve!':` · ${p.need-p.after} to evolve`}`:'film wear cleared';
+    const evolveBtn=p.ready?` <button type="button" class="cpn-link" data-card-deck data-deck-focus="${escH(p.root)}">Evolve in Deck Room</button>`:'';
+    return `<p class="cpn-last-card" id="lastInstallPayoff"><span>Film practice:</span> <b>${escH(p.name)}</b> ${escH(detail)}.${evolveBtn}</p>`;
   }
   function setInstallFocus(root){const meta=cardMeta();meta.installFocus=root&&installable().some(x=>x.root===root)?root:null;try{autosaveAfter('game')}catch(err){}return meta.installFocus}
   function installTip(){return upgradesOn()&&universe?.callSheet?.playbook?CS.evolution.installSuggestion(installable(),{worn:wornPlays(),perInstall:INSTALL_REPS}):null}
   function upgradesHTML(){
     if(!upgradesOn())return'';const era=eraFor(universe.year),list=installable(),focus=universe.callSheet.installFocus,worn=wornPlays();
     return`<div class="cpn-upgrades"><p class="cpn-foot"><b>${universe.year}: ${escH(era.name)}</b> · ${escH(era.about)} for every team.</p>
+      ${installPayoffHTML()}
       ${(()=>{const tip=installTip();return tip&&tip.root!==focus?`<p class="cpn-foot cpn-install-tip" id="installTip"><b>Suggested install:</b> ${escH(tip.text)}</p>`:''})()}
       ${list.length?`<label class="cpn-foot">Practice this week: <select data-install><option value="">None</option>${list.map(x=>`<option value="${escH(x.root)}" ${x.root===focus?'selected':''}>${escH(x.name)} · ${x.need?`${x.reps}/${x.need} (+${INSTALL_REPS} reps)`:'rehearse to clear film wear'}</option>`).join('')}</select></label>`:''}
       ${worn.length?`<p class="cpn-foot">Opponents have film on ${worn.map(w=>escH(w.name)).join(' and ')} (Key −1). Mix it up, or install it again to reset.</p>`:''}</div>`;
@@ -1655,6 +1674,54 @@ function normalizeCallSheet(u){
         This season · ${escH(row.performance)}${action?`<br>${action}`:''}</p>`;
     }).join('')}</section>`;
   }
+  function pregameSwapSuggestion(me,opp,g){
+    if(!me||!opp||!g||g.played||g.postseason)return null;
+    const meta=cardMeta(),seed=battleSeed(g);
+    if(meta.pregameSwap&&meta.pregameSwap.seed===seed)return{active:true,...meta.pregameSwap};
+    if(deckEditsLocked())return null;
+    const pb=userPlaybook(),ident=opponentIdentityFor(me,opp);
+    const preferSide=ident?.side==='off'||ident?.side==='def'?ident.side:'off';
+    const sides=preferSide==='off'?['off','def']:['def','off'];
+    for(const side of sides){
+      for(const slot of ['wrinkles','tactics']){
+        const deck=pb[side]?.[slot]||[],res=pb.reserve?.[side]?.[slot]||[];
+        if(!deck.length||!res.length)continue;
+        const addId=res.find(id=>!deck.includes(id))||res[0];
+        const removeId=deck.find(id=>id!==addId);
+        if(!addId||!removeId)continue;
+        return{active:false,seed,side,slot,addId,removeId,addName:cardName(addId),removeName:cardName(removeId),reason:ident?`Counter ${opp.name} (${ident.label})`:`Fresh matchup look vs ${opp.name}`};
+      }
+    }
+    return null;
+  }
+  function applyPregameSwap(){
+    const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;
+    if(!g||!opp||deckEditsLocked())return{ok:false,reason:'locked'};
+    const meta=cardMeta();
+    if(meta.pregameSwap)return{ok:false,reason:'already-swapped'};
+    const s=pregameSwapSuggestion(me,opp,g);
+    if(!s||s.active)return{ok:false,reason:'none'};
+    const pb=userPlaybook(),deck=pb[s.side]?.[s.slot],res=pb.reserve?.[s.side]?.[s.slot];
+    const di=deck?deck.indexOf(s.removeId):-1,ri=res?res.indexOf(s.addId):-1;
+    if(di<0||ri<0)return{ok:false,reason:'missing'};
+    deck.splice(di,1,s.addId);res.splice(ri,1,s.removeId);
+    meta.pregameSwap={seed:s.seed,side:s.side,slot:s.slot,addId:s.addId,removeId:s.removeId,addName:s.addName,removeName:s.removeName,reason:s.reason};
+    try{autosaveAfter('card-pregame-swap')}catch(err){}
+    return{ok:true,swap:meta.pregameSwap};
+  }
+  function revertPregameSwap(){
+    const meta=cardMeta(),sw=meta.pregameSwap;
+    if(!sw)return{ok:false,reason:'none'};
+    if(deckEditsLocked())return{ok:false,reason:'locked'};
+    const pb=userPlaybook(),deck=pb[sw.side]?.[sw.slot],res=pb.reserve?.[sw.side]?.[sw.slot];
+    if(!deck||!res){meta.pregameSwap=null;return{ok:false,reason:'missing'}}
+    const di=deck.indexOf(sw.addId),ri=res.indexOf(sw.removeId);
+    if(di<0||ri<0){meta.pregameSwap=null;return{ok:false,reason:'missing'}}
+    deck.splice(di,1,sw.removeId);res.splice(ri,1,sw.addId);
+    meta.pregameSwap=null;
+    try{autosaveAfter('card-pregame-swap')}catch(err){}
+    return{ok:true};
+  }
   // The matchup: their four best starters as cards (nemeses marked).
   function paintMatchupCards(){
     const feature=document.querySelector('#broadcastFeature');if(!feature)return;let box=feature.querySelector('#matchupCards');
@@ -1668,8 +1735,13 @@ function normalizeCallSheet(u){
     const top=[...Object.entries(lu.off),...Object.entries(lu.def)].map(([role,bp])=>({role,bp,p:byId.get(String(bp.id))})).filter(x=>x.p).sort((a,b)=>b.bp.ovr-a.bp.ovr).slice(0,4);
     if(!box){feature.insertAdjacentHTML('beforeend','<div id="matchupCards" class="cs-cards"></div>');box=feature.querySelector('#matchupCards')}
     const history=rivalryHistory(me,opp),rematch=rivalryWinFor(g,me,opp),ident=opponentIdentityFor(me,opp),film=filmNote(me,opp,g),stakes=CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null});
-    const recruiting=recruitingMatchupHTML(recruitingMatchupRows(me,opp,lu),g,opp);
-    box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4>${stakes.elevated?`<p class="cpn-foot" id="packStakes"><b>${escH(stakes.text)}</b></p>`:''}${rivalryHistoryHTML(history,g,opp)}${recruiting}${rematch?`<p class="cpn-foot" id="rivalryWinFilm">${escH(rematch.text)}</p>`:''}${ident?`<p class="cpn-foot" id="opponentIdentity">${escH(ident.text)}</p>`:''}${film?`<p class="cpn-foot" id="filmNote">${escH(film.text)}</p>`:''}<div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
+    const recruiting=recruitingMatchupHTML(recruitingMatchupRows(me,opp,lu),g,opp),swap=pregameSwapSuggestion(me,opp,g),locked=deckEditsLocked();
+    const swapHTML=swap?`<p class="cpn-foot" id="pregameSwap">${swap.active?`<b>Pregame swap active:</b> ${escH(swap.addName)} in for ${escH(swap.removeName)}. <button type="button" class="cpn-link" data-revert-pregame-swap${locked?' disabled':''}>Undo swap</button>`:`<b>Suggested matchup swap:</b> Bring in ${escH(swap.addName)} for ${escH(swap.removeName)} (${escH(swap.reason)}). <button type="button" class="cpn-link" data-apply-pregame-swap>Swap for this game</button>`}</p>`:'';
+    box.innerHTML=`<h4>${escH(opp.name)} · players to beat</h4>${stakes.elevated?`<p class="cpn-foot" id="packStakes"><b>${escH(stakes.text)}</b></p>`:''}${rivalryHistoryHTML(history,g,opp)}${recruiting}${rematch?`<p class="cpn-foot" id="rivalryWinFilm">${escH(rematch.text)}</p>`:''}${ident?`<p class="cpn-foot" id="opponentIdentity">${escH(ident.text)}</p>`:''}${swapHTML}${film?`<p class="cpn-foot" id="filmNote">${escH(film.text)}</p>`:''}<div class="cs-mini-row">${top.map(x=>miniCardHTML(x.p,opp,{role:x.role})).join('')}</div>`;wireCards(box);
+    const applyBtn=box.querySelector('[data-apply-pregame-swap]');
+    if(applyBtn)applyBtn.onclick=()=>{if(!applyPregameSwap().ok)return;paintMatchupCards();paintCardRoom();box.querySelector('[data-revert-pregame-swap]')?.focus()};
+    const revertBtn=box.querySelector('[data-revert-pregame-swap]');
+    if(revertBtn)revertBtn.onclick=()=>{if(!revertPregameSwap().ok)return;paintMatchupCards();paintCardRoom();box.querySelector('[data-apply-pregame-swap]')?.focus()};
     const prepButton=box.querySelector('[data-rivalry-prep]');
     if(prepButton)prepButton.onclick=()=>{
       if(!setRivalryPrep(prepButton.getAttribute('aria-pressed')!=='true'))return;
@@ -2005,14 +2077,14 @@ function normalizeCallSheet(u){
         const name=escH(cardName(recentId)),location=picked.selected?`${picked.selected} in deck${picked.owned>picked.selected?` · ${picked.owned-picked.selected} in collection`:''}`:'In collection';
         latest=`<div id="latestPackPick" class="cpn-actions"><p class="cpn-last-card"><span>Latest pack pick</span> · <b>${name}</b> · ${location}</p><button type="button" class="cpn-link" data-card-deck data-deck-focus="${escH(recentId)}" aria-label="Review ${name} in Deck Room"${locked?' disabled':''}>Review in Deck Room</button></div>`;
       }
-      const faces=[...copies].map(([id,c])=>ui.faceHTML(id,{printFinishes:pb.finishes||{},teamColors,footer:`<small>${c.owned} owned · ${c.selected} in deck</small>${provenanceHTML(CS.packs.cardDef(id)?.signature)}`})).join('');
+      const faces=[...copies].map(([id,c])=>ui.faceHTML(id,{printFinishes:pb.finishes||{},teamColors,footer:`<small>${c.owned} owned · ${c.selected} in deck${c.selected?' <span class="cpn-badge">Equipped</span>':''}</small>${provenanceHTML(CS.packs.cardDef(id)?.signature)}`})).join('');
       return `<details class="cpn-pile" data-card-fold="cards-${side}" ${side==='off'?'open':''}><summary>${side==='off'?'Offense':'Defense'} · ${inDeck.length+unselected.length} owned</summary>${faces?`<div class="cpn-faces">${faces}</div>`:'<p class="cpn-foot">No cards yet.</p>'}</details>`;
     }).join('');
     const log=(cs.newsLog||[]).slice().reverse().slice(0,8),packs=cs.rewardPacks||[],banked=pb.gamePacks||[];
     return `<div id="cardBinder" class="card cpn"><span class="eyebrow">CARDS &amp; DECK / CALL SHEET</span><h2>Collection</h2>
       <p class="cpn-intro">Every card your program owns, including the ones you haven’t picked for your deck.</p>
       ${banked.length?`<section class="cpn-locker"><h3>Saved game packs · ${banked.length}</h3><p class="cpn-foot">Open these between games. If a legendary gets claimed or an upgrade no longer fits, its slot offers a rare alternate.</p><button type="button" class="cpn-btn cpn-reward" data-game-pack="${escH(banked[0].key)}" ${cs.activeBattle?'disabled':''}>Open ${escH(banked[0].title)}</button> <span class="cpn-foot">${banked[0].year} · ${escH(banked[0].source)}</span></section>`:''}
-      <div class="cpn-actions">${packs.length?`<button type="button" class="cpn-btn cpn-reward" data-reward-pack ${cs.activeBattle?'disabled':''}>Open ${escH(packs[0].title)}${packs.length>1?` (+${packs.length-1} more)`:''}</button>`:banked.length?'':'<span class="cpn-foot">No unopened reward packs.</span>'}<button type="button" data-card-deck class="cpn-link"${locked?' disabled':''}>Build Deck</button></div>
+      <div class="cpn-actions">${packs.length?`<button type="button" class="cpn-btn cpn-reward" data-reward-pack ${cs.activeBattle?'disabled':''}>Open ${escH(packs[0].title)}${packs.length>1?` (+${packs.length-1} more)`:''}</button>`:banked.length?'':'<span class="cpn-foot">No unopened reward packs.</span>'}<button type="button" data-card-deck class="cpn-link"${locked?' disabled aria-describedby="collectionDeckLock"':''}>Build Deck</button>${locked?'<span id="collectionDeckLock" class="cpn-foot">Deck locked during active game</span>':''}</div>
       ${latest}
       ${binder}${pursuitHTML()}${albumsHTML()}${ringHTML()}${trophyCaseHTML()}
       <div class="cpn-league"><h3>Around the League</h3>${log.length?`<ul class="cpn-feed">${log.map(newsHTML).join('')}</ul>`:'<p class="muted cpn-empty">Sim a week and opponents on your schedule start opening packs.</p>'}</div></div>`;
@@ -2036,6 +2108,10 @@ function normalizeCallSheet(u){
       if(!turningPracticeChoices(latestTurningFilm()?.points||[]).has(root)||setInstallFocus(root)!==root)return;
       paintCardRoom();
       host.querySelector('[data-turning-confirmed]')?.focus();
+    };
+    for(const button of host.querySelectorAll('[data-focus-install-picker]'))button.onclick=()=>{
+      const fold=host.querySelector('[data-card-fold="training"]');if(fold)fold.open=true;
+      host.querySelector('select[data-install]')?.focus();
     };
     for(const el of host.querySelectorAll('[data-card-fold]'))if(folds.has(el.dataset.cardFold))el.open=folds.get(el.dataset.cardFold);
   }
@@ -2097,7 +2173,8 @@ function normalizeCallSheet(u){
     const wonLine=won?`<p class="cpn-last-card" id="lastGameCard"><span>From ${escH(won.source)}:</span> <b>${escH(won.name)}</b> ${wonWhere}</p>`:'';
     let tipLine='';try{const tip=installTip();if(tip?.reason==='finish'&&!universe.callSheet.installFocus)tipLine=`<p class="cpn-last-card" id="installTipWeek"><span>Install:</span> ${escH(tip.text)} Pick it in Deck Room.</p>`}catch(err){console.error(err)}
     const rundown=saturdayRundownHTML();
-    const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b><button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}${wonLine}${tipLine}${rundown}</div>`;
+    const payoffLine=installPayoffHTML();
+    const shortcut=`<div id="cardDeskLink" class="card cpn-shortcut" data-dview="week"><b>Cards &amp; Deck</b><button type="button" data-card-dynasty-tab="deckroom">Deck Room</button>${packs?`<button type="button" data-card-dynasty-tab="collection">${packs} unopened pack${packs===1?'':'s'}</button>`:''}${payoffLine}${wonLine}${tipLine}${rundown}</div>`;
     if(old)old.outerHTML=shortcut;else dash.insertAdjacentHTML('beforeend',shortcut);
     try{
       if(cardGameIsDefault()){
@@ -2130,6 +2207,7 @@ function normalizeCallSheet(u){
 .cpn-fold,.cpn-pile,.cpn-albums{border-top:1px solid #3d4561;padding:4px 0}.cpn .cpn-fold:first-of-type{margin-top:20px}.cpn details summary{cursor:pointer;font-weight:700;padding:12px 0;min-height:44px}.cpn .cpn-league{margin-top:22px}.cpn .cs-face{min-width:0;overflow-wrap:anywhere}
 .cpn-connections{margin:16px 0}.cpn-connections h4{margin:0 0 8px;color:#fff}.cpn-bridge-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,240px),1fr));gap:10px}.cpn-bridge-grid article{background:rgba(255,255,255,.06);border:1px solid #394365;border-radius:10px;padding:12px}.cpn-bridge-grid p{font-size:13px;line-height:1.5;color:#c5cfee;margin:6px 0}.cpn-link{min-height:44px;margin:4px 8px 0 0;padding:6px 0;background:none;border:0;color:#ffe291;text-decoration:underline;font:inherit;font-size:13px;cursor:pointer}.cpn-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:flex-start;gap:12px}
 .cpn-btn{background:#ffd34d;color:#1a1300;border:0;border-radius:999px;padding:8px 14px;font-weight:800;cursor:pointer}
+.cpn-badge{display:inline-block;margin-left:4px;padding:1px 6px;border-radius:999px;border:1px solid #8a7432;background:#ffd34d1f;color:#ffe291;font:700 10px/1.3 sans-serif;letter-spacing:.05em;text-transform:uppercase}
 .cpn-btn:focus-visible,#cardSettings :focus-visible{outline:3px solid #9fe3ff;outline-offset:2px}
 .cpn-film-prep{padding:12px 14px;margin:12px 0 16px;border:1px solid #6b603d;border-radius:10px;background:#e7c76b12}.cpn-film-prep h3{margin:0 0 6px;font-size:18px}.cpn-film-prep p{margin:5px 0 8px;line-height:1.45}.cpn-film-prep button{min-height:44px}
 .cpn-turning-film{scroll-margin-top:60px}.cpn-turning-film ul{padding-inline-start:20px}.cpn-turning-film li+li{margin-top:10px}.cpn-film-actions{display:flex;gap:4px 10px;align-items:center;flex-wrap:wrap}.cpn-practice-result:empty{margin:0}
@@ -2662,7 +2740,7 @@ function normalizeCallSheet(u){
   globalThis.DynastyRecruitCard={dossierHTML:id=>{try{return recruitDossierCardHTML(id)}catch(err){console.error(err);return''}}};
   if(typeof document!=='undefined'&&document.head&&typeof document.createElement==='function'&&!document.getElementById('rwCardHintStyles')){const st=document.createElement('style');st.id='rwCardHintStyles';st.textContent='.rw-card-hint{margin:12px 0;padding:10px 12px;border:1px dashed #8ea2d6aa;border-radius:10px;background:#141c30}.rw-card-hint p{margin:4px 0;color:#e6ecf7;font-size:14px;line-height:1.4}.rw-card-hint small{color:#9fb0c8}';document.head.appendChild(st)}
   globalThis.DynastyCardGameDay={signingGoals:(season=universe.year)=>{const me=selected();const cls=(me.roster||[]).filter(p=>String(recruitmentOf(p)?.schoolId)===String(me.id)&&Number(recruitmentOf(p)?.season)===season);return signingGoals(cls,me,season)},seasonRecap:()=>CS.battle.seasonRecap(universe.callSheet?.seasonCalls?.[String(universe.year)]),hireFilmEffect,setRivalryPrep,rivalryHistory:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?rivalryHistory(me,opp):null},opponentIdentity:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?opponentIdentityFor(me,opp):null},packStakes:()=>{const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;return opp?CS.packs.packStakes({rivalry:(me.protectedRivalIds||[]).includes(opp.id),stage:g.stage||null}):null},filmNote:()=>{const g=currentCardGame(),me=selected();return g&&me?filmNote(me,T(g.home===me.name?g.away:g.home),g):null},installTip,cardProgramHTML:()=>cardProgramHTML(),recruitDeckFit:id=>{const r=universe?.recruits?.find(x=>String(x.id)===String(id)),pe=r&&selected()?prospectEstimate(r,selected()):null;return pe?{fit:prospectDeckFit(pe.bp),ovr:[pe.lo,pe.hi],archetype:pe.bp.archetype}:null},open:openCardGameDay,blocker:cardGameBlocker,weather:battleWeather,
-    applyFilmPrep,applyProtectionPrep:()=>applyFilmPrep('protection'),setRecruitingBracket,
+    applyFilmPrep,applyProtectionPrep:()=>applyFilmPrep('protection'),setRecruitingBracket,pregameSwapSuggestion,applyPregameSwap,revertPregameSwap,
     recruitingMatchup:()=>{
       const g=currentCardGame(),me=selected(),opp=g&&me?T(g.home===me.name?g.away:g.home):null;
       if(!opp||g.played)return {rows:[],html:''};

@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.39.2 — Quick sheet tradeoffs, matchup swaps, isolated previews, and AI diversity
+
+- **Quick Call Sheet tradeoffs & tactic tips:** Comparative tradeoff badges (`Best odds`, `Best stop odds`, `Higher ceiling`, `Limits gain`, `Saves Command`, `Safer call`), `~` prefix on unconfirmed looks, 1-line tactic tips, and Full Sheet goal-to-go gain display.
+- **Turning-point film payoff & reversible pregame swap:** Install practice shows the `+6` payoff summary in both This Week and Deck Room, preview-only turning-point film links straight to Practice this week, and Game Day offers a reversible one-click pregame matchup swap.
+- **AI coordinator diversity & walkout polish:** Coordinator call selection adds repeat decay and scheme identity bonuses; stadium walkouts frame event stakes and accessibility polish (Equipped badges, lock descriptions, reward pack focus outlines).
+- **PWA & preview isolation:** Scoped service worker caches and IndexedDB/`localStorage` keys for `/preview/<name>/` builds, isolated `/` vs `/battle/` navigation caching, and added `card-browser` CI coverage.
+
 ## v0.39.1 — Deck selection and postgame practice
 
 - Deck editing shows owned copies and live team and card-type limits. The fourth signature slot can be used when facilities unlock it.

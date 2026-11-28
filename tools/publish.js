@@ -159,7 +159,7 @@ function writePreviewIndex() {
   .prod{display:inline-block;margin-top:24px;color:#77d6a3}
 </style></head><body>
   <h1>Dynasty Lab previews</h1>
-  <p>Unreleased builds. Each runs from its own save storage scope.</p>
+  <p>Unreleased builds. Each preview uses its own isolated save scope; export and import portable JSON to test existing dynasties.</p>
   <ul>
 ${rows}
   </ul>

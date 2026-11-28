@@ -163,3 +163,53 @@ test('meshy signature art and walkout manifests are wired into bundle',()=>{
   assert.match(doc,/cs-signature-art-assets/);
   assert.match(doc,/cs-walkout-assets/);
 });
+
+test('preview scope isolates storage keys from production',()=>{
+  const {previewScope,storageScopeKey}=require('../storage.js');
+  assert.equal(previewScope('/'),null);
+  assert.equal(previewScope('/battle/'),null);
+  assert.equal(previewScope('/preview/v0-39-1/index.html'),'v0-39-1');
+  assert.equal(storageScopeKey('dl_autosave','/'),'dl_autosave');
+  assert.equal(storageScopeKey('dl_autosave','/preview/v0-39-1/index.html'),'dl_autosave:preview:v0-39-1');
+});
+
+test('snapDecisions includes comparative tradeoff tags and aiOffense diversifies calls by scheme',()=>{
+  const b=B.create({home:Ro.preset('aerial'),away:Ro.preset('ground'),user:'home',mode:'snap',control:'offense',seed:'v39-tradeoff'});
+  const req=B.advance(b);
+  const dec=B.snapDecisions(b,req);
+  assert.ok(dec.choices.some(c=>typeof c.tradeoff==='string'&&c.tradeoff.length>0),'snapDecisions assigns comparative tradeoff tags');
+  const countCalls=(homeP,awayP,seed)=>{
+    const g=B.simulate({home:Ro.preset(homeP),away:Ro.preset(awayP),seed});
+    const counts=new Map();
+    for(const e of g.log)if(e.type==='snap'&&e.offSide==='home')counts.set(e.play,(counts.get(e.play)||0)+1);
+    return counts;
+  };
+  const groundCalls=countCalls('ground','tempo','v39-div-g');
+  const aerialCalls=countCalls('aerial','ground','v39-div-a');
+  assert.ok(groundCalls.size>=4,`ground offense uses at least 4 distinct plays (got ${groundCalls.size})`);
+  assert.ok(aerialCalls.size>=4,`aerial offense uses at least 4 distinct plays (got ${aerialCalls.size})`);
+});
+
+test('installWeek records lastInstallPayoff and pregame swap is reversible and locked in active battle',async()=>{
+  const env=await engine(409),cg=globalThis.DynastyCardGameDay,CS=globalThis.CallSheet;
+  cg.enable();
+  const cs=env.universe.callSheet,pb=cs.playbook,id=pb.off.base.find(x=>CS.evolution.progress(pb,x));
+  const root=CS.evolution.rootOf(id);
+  cg.setInstallFocus(root);
+  cg.installWeek();
+  assert.equal(cs.lastInstallPayoff?.root,root);
+  assert.match(cg.cardProgramHTML(),/id="lastInstallPayoff"/);
+  const stored=pb.off.wrinkles.find(card=>!pb.off.base.includes(card));
+  assert.ok(stored,'starter deck has a wrinkle to place in reserve');
+  pb.off.wrinkles=pb.off.wrinkles.filter(card=>card!==stored);
+  pb.reserve.off.wrinkles.push(stored);
+  const swap1=cg.applyPregameSwap();
+  assert.equal(swap1.ok,true);
+  assert.ok(cs.pregameSwap);
+  const rev=cg.revertPregameSwap();
+  assert.equal(rev.ok,true);
+  assert.equal(cs.pregameSwap,null);
+  cs.activeBattle={seed:cg.launch().seed};
+  assert.equal(cg.applyPregameSwap().ok,false);
+  cs.activeBattle=null;
+});

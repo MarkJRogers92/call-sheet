@@ -111,7 +111,7 @@ let browserStore = DynastyStorage.create({slot:activeSaveSlot});
 // Session presentation observes real persistence. It never serializes a live game or
 // changes the portable save schema. Calendar and checkpoint versions guard late writes.
 let sessionSaveRecord=null,sessionCheckpointVersion=0;
-const SESSION_VIEW_KEY='dynastyLabSessionContextV1';
+const SESSION_VIEW_KEY=(typeof DynastyStorage!=='undefined'&&DynastyStorage.storageScopeKey?.('dynastyLabSessionContextV1'))||'dynastyLabSessionContextV1';
 const SESSION_VIEW_SELECTS=['positionFilter','statsScope','newsScope','newsWeek','gameHistoryYear'];
 let sessionViewRestoredFor=null,sessionViewRestoring=false;
 function sessionSaveContext(target=universe,slot=activeSaveSlot){

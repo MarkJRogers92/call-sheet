@@ -7,7 +7,7 @@
  else{root.DynastyLegacy=api;api.mount?.()}
 })(typeof window!=='undefined'?window:this,function(){
 'use strict';
-const KEY='dynastyLabLegacy',VERSION=1;
+const KEY=(typeof globalThis!=='undefined'&&globalThis.DynastyStorage?.storageScopeKey?.('dynastyLabLegacy'))||'dynastyLabLegacy',VERSION=1;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const all=f=>{const years=new Map((f.seasons||[]).map(s=>[s.year,s]));if(f.current?.regularDone&&!years.has(f.year))years.set(f.year,{year:f.year,...f.current});return [...years.values()].sort((a,b)=>a.year-b.year)};
 const ACHIEVEMENTS=[

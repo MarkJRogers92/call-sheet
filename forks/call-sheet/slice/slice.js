@@ -482,8 +482,8 @@ function callForecastHTML(compact=false,recommendation=null){
   const objective=forecastObjective(goal?'touchdown':'first',req.role,req.situation.down);
   const yardLabel=offense?(compact?'Est.':'Est. gain'):(compact?'Est. allowed':'Est. yards allowed');
   const showGoalDistance=goal&&!compact&&offense;
-  const yardage=showGoalDistance?`<span>${100-req.situation.field} yd to goal</span>`:`<span>${yardLabel} <b>${yards} yd</b></span>`;
-  const shown=[showGoalDistance?'':`${yards} yd ${offense?'gain':'allowed'}`,`${objective} ${chance}`,label].filter(Boolean).join(' · ');
+  const yardage=showGoalDistance?`<span>${yardLabel} <b>${yards} yd</b> · ${100-req.situation.field} to goal</span>`:`<span>${yardLabel} <b>${yards} yd</b></span>`;
+  const shown=[`${yards} yd ${offense?'gain':'allowed'}`,showGoalDistance?`${100-req.situation.field} yd to goal`:'',`${objective} ${chance}`,label].filter(Boolean).join(' · ');
   const title=offense?'Estimated gain and conversion chance from the visible look.':'Estimated yards allowed and opponent conversion chance across possible plays.';
   return `<div class="call-forecast" id="callForecast" aria-label="Selected ${offense?'play':'defensive call'} forecast" title="${title}" data-forecast-play="${esc(sel.play)}" data-forecast-shown="${esc(shown)}"><small>${esc(label)}</small>${yardage}<span>${objective} <b>${chance}</b></span>${compact?'':forecastReadHTML()}</div>`;
 }
@@ -1042,8 +1042,9 @@ function quickEstimateHTML(forecast){
   if(!forecast)return '';
   const goal=forecastObjective(forecast.goal,req.role,req.situation.down);
   const {yards,first}=forecastNumbers(forecast);
+  const prefix=forecast.confidence==='Unconfirmed look'?'~':'';
   const label=req.role==='def'?'Est. allowed':'Est.';
-  return `<span class="quick-estimate"><span>${label} <b>${esc(yards)} yd</b></span><span>${goal} <b>${esc(first)}%</b></span><small>${esc(forecast.confidence)}</small></span>`;
+  return `<span class="quick-estimate"><span>${label} <b>${prefix}${esc(yards)} yd</b></span><span>${goal} <b>${esc(first)}%</b></span><small>${esc(forecast.confidence)}</small></span>`;
 }
 function comboEffect(combo){
   const duel={G:'Gate',K:'Key',F:'Finish'}[combo.duel];
@@ -1079,7 +1080,8 @@ function quickSheetHTML(view,detailsOpen){
     const detail=prefix&&c.detail.startsWith(prefix)?c.detail.slice(prefix.length):c.detail;
     const badge=c.badge?`<em class="quick-badge ${/COMBO|CMD IF/.test(c.badge)?'sequence-ready':''}">${esc(c.badge)}</em>`:'';
     const actor=c.actor?`<span class="quick-actor">${c.actor.kind==='runner'?'Ball carrier':'Target'} · ${esc(c.actor.name)}</span>`:'';
-    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span class="quick-choice-title"><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${actor}${c.aim?`<span class="quick-aim">${esc(c.aim)}</span>`:''}${quickEstimateHTML(c.forecast)}${badge}${c.forecast?'':`<span class="trade">${esc(detail)}</span>`}</button>`;
+    const tradeoff=c.tradeoff?`<span class="quick-tradeoff">${esc(c.tradeoff)}</span>`:'';
+    return `<button type="button" class="quick-choice" data-quick-call="${esc(c.id)}" aria-pressed="${c.id===sel.play}"><span class="quick-choice-title"><b>${esc(c.label)}</b><small>${p.cost} CMD</small></span>${actor}${c.aim?`<span class="quick-aim">${esc(c.aim)}</span>`:''}${tradeoff}${quickEstimateHTML(c.forecast)}${badge}${c.forecast?'':`<span class="trade">${esc(detail)}</span>`}</button>`;
   }).join('');
   const opener=opt.plays.find(p=>p.id===opt.openingScript);
   const tactics=selectedTactics().map(id=>D.TACTICS[id]?.name).filter(Boolean);
@@ -1088,6 +1090,21 @@ function quickSheetHTML(view,detailsOpen){
   const estimate=selected?(selectedView?.forecast||B.quickForecast(b,req,snapChoice(selectedTactics()),DYN?.scouting?.confidence)):null;
   const matchup=selected?matchupHTML():'';
   if(!selected)clearGlow();
+  let tacticOptionHTML='';
+  if(selected&&req.situation){
+    const qTactics=B.quickTactics(b,req,snapChoice(selectedTactics()),sel.tac,DYN?.scouting?.confidence);
+    const bestTac=qTactics.find(t=>!t.active&&t.without&&t.with);
+    if(bestTac){
+      const mid=p=>(p[0]+p[1])/2;
+      const dy=mid(bestTac.with.yards)-mid(bestTac.without.yards);
+      const df=mid(bestTac.with.first)-mid(bestTac.without.first);
+      if(Math.abs(dy)>=0.5||Math.abs(df)>=3){
+        const sign=(n,u)=>`${n>=0?'+':''}${u==='yd'?n.toFixed(1):Math.round(n)} ${u}`;
+        const bits=[Math.abs(dy)>=0.5?sign(dy,'yd'):'',Math.abs(df)>=3?sign(df,'% conv'):''].filter(Boolean).join(', ');
+        tacticOptionHTML=`<p class="quick-tactic-tip"><b>Tactic option:</b> ${esc(bestTac.name)} (${bestTac.cost} CMD) · ${esc(bits)}</p>`;
+      }
+    }
+  }
   const details=selected?`<details class="quick-details" data-play="${esc(sel.play)}" ${detailsOpen?'open':''}><summary>Matchup, assignments &amp; tactics</summary>${selectedView?.forecast?`<p class="trade">${esc(selectedView.detail)}</p>`:''}${forecastReadHTML()}${assignmentHTML()}${matchup}${quickTacticsHTML()}</details>`:'';
   return `<div class="quick-scroll"><div class="quick-board">
     <div class="quick-heading"><span class="eyebrow">${b.guidedDrive?.active?'Guided drive · ':view.ownDrive?'Your drive · ':''}${req.role==='off'?'Offense':'Defense'} · ${opt.command} command left</span>${opener?`<small>Scripted: ${esc(opener.card.name)}</small>`:''}</div>
@@ -1098,7 +1115,7 @@ function quickSheetHTML(view,detailsOpen){
     ${equippedComboHTML(view.comboSetup)}
     <section class="quick-choices" aria-label="Contrasting calls">${cards||'<p>No available quick call. Open the full sheet or delegate this snap.</p>'}</section>
     ${b.coachedSnap?coachedSnapReviewHTML():''}
-    <div class="quick-tools">${quickFeatureHTML(selectedView?.actor)}${details}${redrawButton()}</div>
+    <div class="quick-tools">${quickFeatureHTML(selectedView?.actor)}${tacticOptionHTML}${details}${redrawButton()}</div>
     ${redrawText()?`<p class="call-notice">${esc(redrawText())}</p>`:''}
     ${guidedDriveHTML()}</div></div>
     <div class="quick-footer">
@@ -1389,7 +1406,7 @@ modal.addEventListener('keydown',ev=>{
 });
 
 // ================================================================ flow
-function stadiumWalkout(home,away,{postseason,rivalry,homeOpener,neutral}={}){
+function stadiumWalkout(home,away,{postseason,rivalry,homeOpener,neutral,stakes}={}){
   const label=postseason||(rivalry?'Rivalry Week':homeOpener?'Home Opener':'');
   if(!label||FX.reduce||FX.skipping||save.settings.fast||document.hidden)return null;
   let assets;
@@ -1399,9 +1416,11 @@ function stadiumWalkout(home,away,{postseason,rivalry,homeOpener,neutral}={}){
   if(!clip)return null;
   const dialog=document.createElement('dialog');
   dialog.id='stadiumWalkout';dialog.setAttribute('aria-label','Stadium walkout');
+  dialog.dataset.event=postseason?'postseason':rivalry?'rivalry':homeOpener?'home-opener':'featured';
+  dialog.setAttribute('aria-describedby','walkoutMatchup');
   const accent=home.colors?.[1];
   if(/^#[\da-f]{6}$/i.test(accent||''))dialog.style.setProperty('--walkout-accent',accent);
-  dialog.innerHTML=`<div class="walkout-stage"><video muted playsinline aria-hidden="true"></video><div class="walkout-matchup"><p>${esc(label)}</p><h2>${esc(away.name)} ${neutral?'vs':'at'} ${esc(home.name)}</h2></div></div><button type="button" id="skipWalkout" autofocus>Skip walkout</button>`;
+  dialog.innerHTML=`<div class="walkout-stage"><video muted playsinline aria-hidden="true"></video><div class="walkout-matchup" id="walkoutMatchup"><p>${esc(label)}</p><h2>${esc(away.name)} ${neutral?'vs':'at'} ${esc(home.name)}</h2>${stakes?`<small class="walkout-stakes">${esc(stakes)}</small>`:''}</div></div><button type="button" id="skipWalkout" autofocus>Skip walkout</button>`;
   const video=dialog.querySelector('video'),skip=dialog.querySelector('button');
   video.muted=true;
   if(assets.poster)video.poster=assets.poster;
@@ -2437,7 +2456,7 @@ function dynastyStart(){
   setWeather(b.weather);seen=0;sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);$('#ticker').innerHTML='';
   const begin=async()=>{
-    const walkout=stadiumWalkout(teamOf('home'),teamOf('away'),{postseason:DYN.stage&&(DYN.label||'Postseason'),rivalry:DYN.rivalry,homeOpener:DYN.homeOpener,neutral:DYN.neutral});
+    const walkout=stadiumWalkout(teamOf('home'),teamOf('away'),{postseason:DYN.stage&&(DYN.label||'Postseason'),rivalry:DYN.rivalry,homeOpener:DYN.homeOpener,neutral:DYN.neutral,stakes:DYN.walkoutStakes});
     if(walkout)await walkout;
     beginPlayback();
     for(const mv of DYN.moves||[]){
@@ -2494,7 +2513,7 @@ async function startGame(){
   seen=0;staffFrom=0;staffRecaps=[];sel={play:null,tac:[]};err='';lastLook={};b._lastScore={home:0,away:0};
   drawField();renderBug();setMarkers(null);
   $('#ticker').innerHTML='';
-  const walkout=stadiumWalkout(me,opp,{rivalry:b.rivalry,homeOpener:save.world.week%save.world.order.length===0});
+  const walkout=stadiumWalkout(me,opp,{rivalry:b.rivalry,homeOpener:b.user==='home'&&save.world.week%save.world.order.length===0});
   if(walkout)await walkout;
   beginPlayback();
   callout('KICKOFF','small',700,`${me.name} vs ${opp.name}`).then(()=>go(null));

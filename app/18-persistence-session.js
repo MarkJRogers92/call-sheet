@@ -126,14 +126,15 @@ function importSave(file){return storageOperation(async()=>{
   return true;
 })}
 function refreshTeamOptions(sel){$('#userTeam').innerHTML='';universe.teams.slice().sort((a,b)=>a.name.localeCompare(b.name)).forEach(s=>{let o=document.createElement('option');o.value=s.name;o.textContent=s.name;$('#userTeam').appendChild(o)});$('#userTeam').value=T(sel)?sel:universe.teams[0].name;renderControlMode()}
+const PREFS_STORAGE_KEY=(typeof DynastyStorage!=='undefined'&&DynastyStorage.storageScopeKey?.('dynastyLabPreferences'))||'dynastyLabPreferences';
 function titlePreferences(){
  let prefs={motion:!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,watchSpeed:'850'};
- try{prefs={...prefs,...JSON.parse(localStorage.getItem('dynastyLabPreferences')||'{}')}}catch{}
+ try{prefs={...prefs,...JSON.parse(localStorage.getItem(PREFS_STORAGE_KEY)||'{}')}}catch{}
  if(!['1400','850','400'].includes(String(prefs.watchSpeed)))prefs.watchSpeed='850';
  prefs.motion=prefs.motion!==false;return prefs;
 }
 function applyTitlePreferences(){const p=titlePreferences();document.body.classList.toggle('motion-reduced',!p.motion);$('#titleMotion').checked=p.motion;$('#titleWatchSpeed').value=String(p.watchSpeed)}
-function saveTitlePreferences(){const p={motion:$('#titleMotion').checked,watchSpeed:$('#titleWatchSpeed').value};try{localStorage.setItem('dynastyLabPreferences',JSON.stringify(p))}catch{setTitleStatus('Options could not be saved. Check this device\'s storage settings.');return}applyTitlePreferences();setTitleStatus('Options saved on this device.');showTitlePanel()}
+function saveTitlePreferences(){const p={motion:$('#titleMotion').checked,watchSpeed:$('#titleWatchSpeed').value};try{localStorage.setItem(PREFS_STORAGE_KEY,JSON.stringify(p))}catch{setTitleStatus('Options could not be saved. Check this device\'s storage settings.');return}applyTitlePreferences();setTitleStatus('Options saved on this device.');showTitlePanel()}
 function setTitleStatus(x){if($('#titleStatus'))$('#titleStatus').textContent=x}
 function slotBytes(n){if(!Number.isFinite(n)||n<=0)return'';const mb=n/1048576;return mb>=10?`${mb.toFixed(0)} MB`:`${mb.toFixed(1)} MB`}
 function titleCalendarStage(phase,week){if(phase==='preseason')return'Preseason';if(phase==='regular')return `Week ${(Number(week)||0)+1}`;if(phase==='complete')return'Season complete';return'Postseason'}

@@ -108,7 +108,7 @@ test('every version source agrees',()=>{
  assert.match(rd('body.html'),/<span data-app-version>/,'header carries a version placeholder');
  // And the built artifact must actually show it in all three places.
  const built=rd('index.html');
- assert.ok(built.includes(`<title>Dynasty Lab v${version}</title>`),'built title shows the version');
+ assert.ok(built.includes(`<title>Call Sheet v${version}</title>`),'built title shows the version');
  assert.ok(built.includes(`<span data-app-version>v${version}</span>`),'built header shows the version');
  assert.ok(built.includes(`APP_VERSION='${version}'`),'built script carries the version');
 });

@@ -104,17 +104,28 @@ async function playWeek(page){
   assert.equal(afterGame.lastTurningPoints.week,week+1);
   assert.equal(await film.locator('li').count(),afterGame.lastTurningPoints.points.length);
   const train=film.locator('[data-train-turning-card]:enabled').first();
-  const root=await train.getAttribute('data-train-turning-card');
-  const reps=afterGame.playbook.mastery[root]||0;
-  await train.click();
-  const scheduled=await meta();
-  assert.equal(scheduled.installFocus,root);
-  assert.equal(scheduled.playbook.mastery[root]||0,reps,'planning practice does not grant the reps yet');
-  await go(page,'dashboard');
-  while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
-  await page.locator('#hubAdvance').click();
-  await page.waitForFunction(previous=>window.__DL_TEST__.preseasonDebug().week===previous+1,week,{timeout:30000});
-  await page.waitForFunction(({root,reps})=>window.DynastyCardGameDay.meta().playbook.mastery[root]===reps+6,{root,reps},{timeout:30000});
+  if(await train.count()){
+    const root=await train.getAttribute('data-train-turning-card');
+    const reps=afterGame.playbook.mastery[root]||0;
+    await train.click();
+    const scheduled=await meta();
+    assert.equal(scheduled.installFocus,root);
+    assert.equal(scheduled.playbook.mastery[root]||0,reps,'planning practice does not grant the reps yet');
+    await go(page,'dashboard');
+    while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
+    await page.locator('#hubAdvance').click();
+    await page.waitForFunction(previous=>window.__DL_TEST__.preseasonDebug().week===previous+1,week,{timeout:30000});
+    await page.waitForFunction(({root,reps})=>window.DynastyCardGameDay.meta().playbook.mastery[root]===reps+6,{root,reps},{timeout:30000});
+    assert.match(await page.locator('#lastInstallPayoff').innerText(),/\+6 reps/);
+  }else{
+    assert.equal(await film.locator('[data-turning-preview-only]').isVisible(),true,'preview-only film explains why no train button is active');
+    await film.locator('[data-focus-install-picker]').click();
+    assert.equal(await page.locator('#deckroom select[data-install]').isVisible(),true,'preview-only link opens the practice picker');
+    await go(page,'dashboard');
+    while(await page.locator('#weeklyDecisions [data-decision]').count())await page.locator('#weeklyDecisions [data-decision]').first().click();
+    await page.locator('#hubAdvance').click();
+    await page.waitForFunction(previous=>window.__DL_TEST__.preseasonDebug().week===previous+1,week,{timeout:30000});
+  }
   assert.equal((await meta()).games,1,'advancing past a recorded game does not play it twice');
 }
 

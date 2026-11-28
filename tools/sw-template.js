@@ -2,19 +2,42 @@
 // The page itself is fetched from the network first so a new release shows up as soon as there is a connection, and
 // from the cache when there is none. Art and fonts never change under the same name, so they are served from cache.
 const VERSION='__VERSION__';
-const CACHE=`dynasty-lab-${VERSION}`;
+const SCOPE_PATH=new URL(self.registration.scope).pathname.replace(/\/index\.html$/,'/');
+const PREVIEW=SCOPE_PATH.match(/\/preview\/([^/]+)\//)?.[1]||null;
+const PREFIX=PREVIEW?`dynasty-lab-preview-${PREVIEW}-`:'dynasty-lab-';
+const CACHE=`${PREFIX}${VERSION}`;
 const ASSETS=__ASSETS__;
+function navCacheKey(url){
+  const u=new URL(url);
+  u.search='';u.hash='';
+  if(u.pathname.endsWith('/index.html'))u.pathname=u.pathname.slice(0,-10);
+  else if(!u.pathname.endsWith('/')&&!/\.[a-z0-9]+$/i.test(u.pathname))u.pathname+='/';
+  return u.href;
+}
 self.addEventListener('install',event=>{
-  event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['./',...ASSETS])).then(()=>self.skipWaiting()));
+  event.waitUntil(caches.open(CACHE).then(cache=>
+    cache.addAll(['./',...ASSETS]).then(()=>cache.add('./battle/').catch(()=>{}))
+  ).then(()=>self.skipWaiting()));
 });
 self.addEventListener('activate',event=>{
-  event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k.startsWith('dynasty-lab-')&&k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
+  event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>{
+    if(k===CACHE)return false;
+    if(PREVIEW)return k.startsWith(PREFIX);
+    return k.startsWith('dynasty-lab-')&&!k.startsWith('dynasty-lab-preview-');
+  }).map(k=>caches.delete(k)))).then(()=>self.clients.claim()));
 });
 self.addEventListener('fetch',event=>{
   const request=event.request;
   if(request.method!=='GET'||new URL(request.url).origin!==self.location.origin)return;
   if(request.mode==='navigate'){
-    event.respondWith(fetch(request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put('./',copy))}return response}).catch(()=>caches.match('./',{cacheName:CACHE})));
+    const key=navCacheKey(request.url);
+    const isBattle=/\/battle\/$/.test(new URL(key).pathname);
+    event.respondWith(
+      fetch(request).then(response=>{
+        if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(key,copy))}
+        return response;
+      }).catch(()=>caches.match(key,{cacheName:CACHE}).then(hit=>hit||(isBattle?Response.error():caches.match('./',{cacheName:CACHE}))))
+    );
     return;
   }
   event.respondWith(caches.match(request,{cacheName:CACHE}).then(hit=>hit||fetch(request).then(response=>{if(response.ok){const copy=response.clone();caches.open(CACHE).then(cache=>cache.put(request,copy))}return response})));

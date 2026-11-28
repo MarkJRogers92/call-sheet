@@ -1,5 +1,9 @@
 # Latest session work
 
+## v0.39.2
+
+Added Quick Call Sheet comparative tradeoff tags and tactic tips, turning-point film install payoff feedback, reversible pregame matchup swaps, AI coordinator repeat decay and scheme identity bonuses, stadium walkout event framing, `/preview/<name>/` storage + service worker isolation, `/` vs `/battle/` route separation, and standing `card-browser` CI coverage.
+
 ## v0.39.1
 
 Deck Room shows owned copies and capacity by card type. Pack picks go to the selected destination. Postgame drive film can schedule mastery practice, and This Week refreshes priority visits when you return from recruiting.

@@ -158,7 +158,7 @@ async function showOptions(page){
   assert.deepEqual(await dynasty.evaluate(()=>window.DynastyCardGameDay.meta()),checkpointBeforeChallenge,'challenges preserve the weekly checkpoint, record and inventory');
   // Reopening the weekly battle reconstructs its original screen from the host save.
   await dynasty.locator('#cardProgram [data-coach-cards]').click();frame=await (await dynasty.waitForSelector('#cardGameDay iframe')).contentFrame();await frame.waitForFunction(()=>window.__slice?.req);
-  assert.deepEqual(await frame.evaluate(()=>({game:window.__slice.b.game,rng:window.__slice.b.rng})),saved);
+  assert.deepEqual(await frame.evaluate(()=>JSON.parse(JSON.stringify({game:window.__slice.b.game,rng:window.__slice.b.rng}))),JSON.parse(JSON.stringify(saved)));
   assert.equal(await frame.locator('#sheetToggle').getAttribute('aria-expanded'),'true','Dynasty remembers the Full Call Sheet when the battle reopens');
   await frame.evaluate(()=>{window.SliceFX.speed=.001;window.SliceFX.skipping=true});await frame.click('#bSim');await frame.waitForSelector('#openPack');
   const progress=await dynasty.evaluate(()=>({games:window.DynastyCardGameDay.meta().games,record:window.DynastyCardGameDay.meta().playbook.record}));

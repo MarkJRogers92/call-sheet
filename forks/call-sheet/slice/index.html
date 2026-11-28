@@ -410,15 +410,18 @@ button{font:inherit;color:inherit;cursor:pointer;border:0;background:none}
 #quickDefensePlan{font:13px/1.35 system-ui;color:#c3cedd;margin:0 0 8px}
 #quickDefensePlan strong{color:#f1df9e}
 .quick-choices{display:grid;grid-template-columns:repeat(auto-fit,minmax(165px,1fr));gap:8px}
-.quick-choice{padding:10px 12px;border:1px solid #505b6d;border-radius:8px;background:#1c2735;min-width:0;text-align:left;align-self:stretch}
+.quick-choice{padding:10px 12px;border:1px solid #66768c;border-radius:8px;background:#1c2735;min-width:0;text-align:left;align-self:stretch}
 .quick-choice-title b{font:800 19px/1.1 var(--cond);color:white}.quick-choice-title small{white-space:nowrap;color:#d2ccbb}
 .quick-choice .trade,.quick-details .trade{display:block;color:#c9d3db;font:13px/1.35 system-ui;margin:5px 0 0}
 .quick-actor{display:block;margin-top:4px;color:#c5d7e5;font:600 12px/1.25 system-ui;overflow-wrap:anywhere}
+.quick-tradeoff{display:inline-block;margin-top:4px;padding:1px 6px;border-radius:4px;background:rgba(241,198,109,.15);border:1px solid rgba(241,198,109,.4);color:#f6dc91;font:700 11.5px/1.25 system-ui}
+.quick-tactic-tip{grid-column:1/-1;margin:2px 0;padding:4px 8px;border-left:2px solid #f2c74f;background:rgba(242,199,79,.08);color:#e6edef;font:12px/1.3 system-ui}
+.quick-tactic-tip b{color:#f6dc91}
 .equipped-combo{grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 9px;margin:0 0 8px;padding:6px 9px;border-left:2px solid #c6a44f;background:#302919;color:#ded9cb;font:12px/1.35 system-ui}
 .equipped-combo strong,.equipped-combo b{color:#f5d783}
 .quick-aim{display:block;margin-top:4px;font:600 12px/1.2 system-ui;color:#c4d9db}
 .quick-estimate{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 9px;margin-top:5px;font:12px/1.3 system-ui;color:#d2d9e3}
-.quick-estimate b{font-weight:750;color:#f5df9a;font-variant-numeric:tabular-nums}.quick-estimate small{color:#acc4ca;font-size:11px}
+.quick-estimate b{font-weight:750;color:#f5df9a;font-variant-numeric:tabular-nums}.quick-estimate small{color:#b9cfd4;font-size:12px}
 .quick-choice[aria-pressed="true"]{background:#352f20;border-color:#f2c74f;box-shadow:inset 3px 0 #f2c74f}
 .quick-tools{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:6px 10px;margin-top:6px}
 .quick-tools:empty{display:none}.quick-tools>[data-redraw]{grid-column:2}
@@ -632,7 +635,7 @@ html.motion-reduced .fan .card{--rx:0deg!important;--ry:0deg!important;--lift:0p
 .call-forecast span{white-space:nowrap}
 .call-forecast b{color:#f6dc91;font-variant-numeric:tabular-nums}
 .quick-footer .call-forecast{grid-column:2;grid-row:1;font:600 12px/1.2 system-ui}
-@media(max-width:600px){.quick-footer .call-forecast{grid-column:1/-1;grid-row:2}}
+@media(max-width:600px){.quick-footer .call-forecast{grid-column:1/-1;grid-row:2}.call-forecast span{white-space:normal}}
 @media(max-width:600px){
   #root.full-snap #stage{height:clamp(144px,21dvh,184px)}
   .full-snap #fieldWrap{flex:1 1 auto;min-height:112px}
@@ -738,6 +741,10 @@ html.motion-reduced #hand .fan .card.dealt{animation:none!important}
 .walkout-matchup{position:relative;margin:0;padding:56px 5% 4%;background:linear-gradient(0deg,rgba(8,12,16,.98),rgba(8,12,16,.67) 54%,transparent);text-align:left}
 .walkout-matchup p{margin:0 0 7px;color:#f1d494;color:color-mix(in srgb,#f1d494 72%,var(--walkout-accent,#f1d494));font:800 15px/1.2 var(--cond);letter-spacing:.15em;text-transform:uppercase}
 .walkout-matchup h2{margin:0;color:#fff;font:800 clamp(28px,5vw,66px)/.98 var(--cond);text-wrap:balance}
+#stadiumWalkout[data-event="postseason"] .walkout-matchup p{color:#ffd87a}
+#stadiumWalkout[data-event="rivalry"] .walkout-matchup{background:linear-gradient(0deg,rgba(18,10,12,.98),rgba(18,10,12,.72) 54%,transparent)}
+#stadiumWalkout[data-event="home-opener"] .walkout-matchup p{color:#9fd8ff}
+.walkout-stakes{display:block;margin-top:8px;color:#dbe4f2;font:600 14px/1.3 var(--sans)}
 #skipWalkout{position:absolute;z-index:1;top:max(16px,env(safe-area-inset-top));right:max(16px,env(safe-area-inset-right));min-height:44px;padding:0 14px;border:1px solid #b2a584;border-radius:4px;color:#fff7e0;background:#11181e;font:800 16px/1 var(--cond)}
 #skipWalkout:focus-visible{outline:2px solid #ffe4a4;outline-offset:4px}
 @media(max-aspect-ratio:1/1){

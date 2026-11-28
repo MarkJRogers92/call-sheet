@@ -14,13 +14,28 @@
   const SLOT_IDS = [DEFAULT_SLOT, 'dynasty-2', 'dynasty-3'];
   const slotKey = (slot, i) => `${slot}:${i}`;
   const defaultLabel = id => `Dynasty ${SLOT_IDS.indexOf(id) + 1}`;
+  function previewScope(pathname) {
+    try {
+      const p = pathname === undefined ? (root.location?.pathname || '') : pathname;
+      const m = String(p).match(/\/preview\/([^/]+)\//);
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch { return null; }
+  }
+  function storageScopeKey(key, pathname) {
+    const scope = previewScope(pathname);
+    return scope ? `${key}:preview:${scope}` : key;
+  }
+  const defaultDbName = () => {
+    const scope = previewScope();
+    return scope ? `DynastyLabDB-preview-${scope}` : 'DynastyLabDB';
+  };
   const byteSize = value => {
     const text = JSON.stringify(value);
     if (typeof TextEncoder === 'function') return new TextEncoder().encode(text).length;
     return unescape(encodeURIComponent(text)).length;
   };
 
-  function createBrowser({indexedDB = root.indexedDB, name = 'DynastyLabDB', slot = DEFAULT_SLOT} = {}) {
+  function createBrowser({indexedDB = root.indexedDB, name = defaultDbName(), slot = DEFAULT_SLOT} = {}) {
     if (typeof slot !== 'string' || !slot || /[:;]/.test(slot))
       throw new Error(`Invalid save slot "${slot}".`);
     function open() {
@@ -422,6 +437,8 @@
   const api = {
     create,
     createBrowser,
+    previewScope,
+    storageScopeKey,
     revisionOf,
     planCoreParts,
     SLOT_IDS,

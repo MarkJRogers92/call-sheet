@@ -644,6 +644,7 @@ function aiOffense(b,side,look,opts={}){
   // Coordinators keep to their scheme's run/pass mix: the further off it, the stronger the pull back.
   const bx=b.box[side],calls=bx.rushAtt+bx.passAtt+bx.sacks,runShare=calls?bx.rushAtt/calls:1-(team.coach.passRate??.5);
   const balance=sit.down>=3&&sit.distance>4?0:6*((1-(team.coach.passRate??.5))-runShare)+1.1;
+  const recentCalls=b.log.filter(e=>e.type==='snap'&&e.offSide===side);
   const lines=[];
   const bias=b.aiBias?.[side],shaped=bias&&o.plays.filter(p=>!p.blocked&&p.cost<=cap&&Object.entries(bias).every(([k,v])=>p.card[k]===v));
   for(const p of shaped?.length?shaped:o.plays){
@@ -658,7 +659,10 @@ function aiOffense(b,side,look,opts={}){
       const clockValue=closing?((p.card.family==='run'&&(sit.down<3||sit.distance<=3)?4:0)-(p.card.clockStop?4:0)-20*ev.turnover):0;
       // A gain leaving fourth-and-one or two retains value when the coach intends to go.
       const shortFourth=b.snap?.twoDown&&sit.distance>2?R.evaluate(snap,{...sit,distance:sit.distance-2}).first-ev.first:0;
-      lines.push({play:p.id,tactics:ts.map(t=>t.id),u:utility(ev,sit)+14*shortFourth+clockValue-cost*(sit.down>=3?.2:.55)-(p.base?0:.15)+(isRun?balance:-balance)});
+      const repeats=recentCalls.filter(e=>e.play===p.id).length;
+      const passPref=team.coach?.passRate??.5,identityMatch=passPref>=.56?!!p.card.pass:passPref<=.44?!p.card.pass:(p.card.family==='pa'||!!p.card.tempo);
+      const identityBonus=identityMatch?.55:0;
+      lines.push({play:p.id,tactics:ts.map(t=>t.id),u:utility(ev,sit)+14*shortFourth+clockValue-cost*(sit.down>=3?.2:.55)-(p.base?0:.15)-.85*repeats+identityBonus+(isRun?balance:-balance)});
     }
   }
   if(!lines.length)return{play:b.decks[side].off.base[0],tactics:[]};
@@ -2896,6 +2900,36 @@ function snapDecisions(b,req=b?.pending,selection={},confidence){
     return{id:o.id,label:c.name,detail:twoDown&&aim?aim+'. '+detail:detail,
       ...(aim?{aim}:{}),...(forecast?{forecast}:{}),...(badge?{badge}:{}),...(matchup?{matchup}:{}),...(actor?{actor}:{})};
   });
+  if(choices.length>=2){
+    const mid=p=>Array.isArray(p)?(p[0]+p[1])/2:0;
+    const scored=choices.map(c=>({c,r:reads.get(c.id),cost:legal.find(o=>o.id===c.id)?.cost??0})).filter(x=>x.r?.forecast);
+    if(scored.length>=2){
+      const firstVals=scored.map(x=>mid(x.r.forecast.first)),yardVals=scored.map(x=>mid(x.r.forecast.yards));
+      const minFirst=Math.min(...firstVals),maxFirst=Math.max(...firstVals),minYard=Math.min(...yardVals),maxYard=Math.max(...yardVals);
+      const minCost=Math.min(...scored.map(x=>x.cost)),maxCost=Math.max(...scored.map(x=>x.cost));
+      const maxTurn=Math.max(...scored.map(x=>x.r.ev?.turnover??0));
+      let bestOdds=null;
+      if(offense&&maxFirst-minFirst>=3){
+        bestOdds=scored.reduce((a,z)=>mid(z.r.forecast.first)>mid(a.r.forecast.first)?z:a).c;
+        bestOdds.tradeoff='Best odds';
+      }else if(!offense&&maxFirst-minFirst>=3){
+        bestOdds=scored.reduce((a,z)=>mid(z.r.forecast.first)<mid(a.r.forecast.first)?z:a).c;
+        bestOdds.tradeoff='Best stop odds';
+      }
+      if(offense&&maxYard-minYard>=0.8){
+        const ceil=scored.reduce((a,z)=>mid(z.r.forecast.yards)>mid(a.r.forecast.yards)?z:a).c;
+        if(!ceil.tradeoff)ceil.tradeoff='Higher ceiling';
+      }else if(!offense&&maxYard-minYard>=0.8){
+        const lim=scored.reduce((a,z)=>mid(z.r.forecast.yards)<mid(a.r.forecast.yards)?z:a).c;
+        if(!lim.tradeoff)lim.tradeoff='Limits gain';
+      }
+      for(const x of scored){
+        if(x.c.tradeoff)continue;
+        if(x.cost<maxCost&&x.cost===minCost)x.c.tradeoff='Saves Command';
+        else if(offense&&(x.r.ev?.turnover??1)<=maxTurn-0.04)x.c.tradeoff='Safer call';
+      }
+    }
+  }
   const defensePlan=opponentPlanRead(b,req);
   return{clue,choices,...(defensePlan?{defensePlan}:{}),...(comboSetup?{comboSetup}:{})};
 }
