@@ -16708,7 +16708,7 @@ function careerHistoryHTML(){
 }
 function careerPostHTML(){
  const mandatory=(universe.jobOffers||[]).length>0;
- const offers=mandatory?universe.jobOffers:activeCareerInvitations();
+ const offers=(mandatory?universe.jobOffers:activeCareerInvitations())||[];
  if(!offers.length)return '';
  const last=(universe.careerHistory||[])[universe.careerHistory.length-1];
  const review=universe.tenure?.seasons.at(-1);
