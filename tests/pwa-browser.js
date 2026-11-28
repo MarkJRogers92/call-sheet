@@ -59,6 +59,7 @@ function serve(){
   assert.deepEqual(problems,[],'nothing was blocked or failed online');
 
   // Offline: reloading root serves Dynasty, and navigating to /battle/ serves Quick Battle (no cache-key collision).
+  await page.waitForFunction(()=>!!navigator.serviceWorker.controller,null,{timeout:30000});
   await context.setOffline(true);problems.length=0;
   await page.reload();await page.waitForSelector('#titleContinue:not([disabled])',{timeout:30000});
   assert.equal(await page.title(),`Call Sheet v${version}`,'offline root serves Dynasty HTML');
