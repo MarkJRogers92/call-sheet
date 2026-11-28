@@ -1,19 +1,30 @@
-name: Call Sheet v0.39.1 browser verification
+name: Verify live Call Sheet v0.39.1
 on:
   push:
     branches: [codex/verify-v0391]
 permissions:
   contents: read
 jobs:
-  weekly-loop:
+  hosted-builds:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          cache: npm
-      - run: npm ci
-      - run: npm run build && git diff --exit-code -- index.html sw.js
-      - run: npm run test:card-pages-browser
+      - name: Check the served Dynasty and Quick Battle fingerprints
+        shell: bash
+        run: |
+          check_page() {
+            local url="$1" output="$2"
+            for attempt in {1..24}; do
+              if curl -fsSL --max-time 12 "$url?build=751a169479c1" -o "$output" &&
+                grep -Fq 'name="call-sheet-build" content="751a169479c1"' "$output"; then
+                echo "$url"
+                sha256sum "$output"
+                return
+              fi
+              sleep 5
+            done
+            echo "Expected build not served at $url" >&2
+            return 1
+          }
+          check_page 'https://markjrogers92.github.io/call-sheet/' "$RUNNER_TEMP/dynasty.html"
+          check_page 'https://markjrogers92.github.io/call-sheet/battle/' "$RUNNER_TEMP/battle.html"
