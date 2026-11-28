@@ -1,5 +1,9 @@
 # Latest session work
 
+## v0.39.1
+
+Deck Room shows owned copies and capacity by card type. Pack picks go to the selected destination. Postgame drive film can schedule mastery practice, and This Week refreshes priority visits when you return from recruiting.
+
 ## v0.39.0
 
 Merged Meshy 3D signature sculptures, foil-pack peel animations, drill/tactic equipment art, and stadium walkout video intros with V38 review fixes (title overlay pointer-events, camp/preseason depth preservation, visit pitch focuses & cancel cleanup, takeover goal completion, limited-player lineup preference) plus Upgrades 1–5 (pre-snap uncertainty ranges, smooth duel stacking & blowout rotation, Saturday rundown, compact 390px Call Sheet, and turning-point drive film).
